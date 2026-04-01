@@ -1,0 +1,14 @@
+{
+  "name": "@founder-control-plane/web",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@founder-control-plane/shared": "workspace:*"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "bun test"
+  }
+}

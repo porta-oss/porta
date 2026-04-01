@@ -1,0 +1,40 @@
+{
+  "name": "founder-control-plane",
+  "private": true,
+  "packageManager": "bun@1.3.6",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"bun run --cwd apps/api dev\" \"bun run --cwd apps/web dev\"",
+    "dev:api": "bun run --cwd apps/api dev",
+    "dev:web": "bun run --cwd apps/web dev",
+    "services:up": "docker compose up -d postgres redis",
+    "services:down": "docker compose down",
+    "playwright:install": "bunx playwright install --with-deps chromium",
+    "test": "bun test",
+    "test:unit": "bun test",
+    "test:list:e2e": "bunx playwright test --list",
+    "verify:s01": "./scripts/verify-s01.sh"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.44.7",
+    "elysia": "^1.4.8",
+    "pg": "^8.16.3",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^24.7.2",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.1.0",
+    "concurrently": "^9.2.1",
+    "jsdom": "^27.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.10",
+    "vitest": "^3.2.4"
+  }
+}
