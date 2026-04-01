@@ -19,6 +19,8 @@
     "verify:s01": "./scripts/verify-s01.sh"
   },
   "dependencies": {
+    "@elysiajs/cors": "^1.4.1",
+    "better-auth": "^1.5.6",
     "drizzle-orm": "^0.44.7",
     "elysia": "^1.4.8",
     "pg": "^8.16.3",
@@ -28,10 +30,12 @@
   "devDependencies": {
     "@playwright/test": "^1.58.2",
     "@types/node": "^24.7.2",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.1.0",
     "concurrently": "^9.2.1",
+    "drizzle-kit": "^0.31.10",
     "jsdom": "^27.0.0",
     "typescript": "^5.9.3",
     "vite": "^7.1.10",

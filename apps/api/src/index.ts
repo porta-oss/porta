@@ -1,14 +1,20 @@
 import { createApiApp } from './app';
-import { readApiEnv } from './lib/env';
+import { createBootstrapDiagnostics, readApiEnv } from './lib/env';
 
-const env = readApiEnv(process.env);
-const app = createApiApp(process.env);
+try {
+  const env = readApiEnv(process.env, { strict: true });
+  const app = await createApiApp(process.env, { env });
 
-app.listen(env.apiPort);
+  app.listen(env.apiPort);
 
-console.info('[api] bootstrap ready', {
-  apiPort: env.apiPort,
-  apiUrl: env.apiUrl,
-  webUrl: env.webUrl,
-  startupRoutePrefix: '/api/startups'
-});
+  console.info('[api] bootstrap ready', {
+    apiPort: env.apiPort,
+    apiUrl: env.apiUrl,
+    webUrl: env.webUrl,
+    authMountPath: app.runtime.auth.bootstrap.basePath,
+    startupRoutePrefix: '/api/startups'
+  });
+} catch (error) {
+  console.error('[api] bootstrap failed', createBootstrapDiagnostics(process.env, error));
+  process.exit(1);
+}
