@@ -1,14 +1,7 @@
-import { AuthenticatedLayout } from './routes/_authenticated';
-import { SignInPage } from './routes/auth/sign-in';
-import { OnboardingPage } from './routes/_authenticated/onboarding';
+import { RouterProvider } from '@tanstack/react-router';
+
+import { router } from './router';
 
 export function App() {
-  return (
-    <div>
-      <SignInPage />
-      <AuthenticatedLayout isAuthenticated>
-        <OnboardingPage />
-      </AuthenticatedLayout>
-    </div>
-  );
+  return <RouterProvider router={router} />;
 }
