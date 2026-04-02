@@ -12,9 +12,11 @@ export interface ApiEnv {
   magicLinkSenderEmail: string;
   googleClientId?: string;
   googleClientSecret?: string;
+  connectorEncryptionKey: string;
   authContextTimeoutMs: number;
   databaseConnectTimeoutMs: number;
   databasePoolMax: number;
+  founderProofMode: boolean;
 }
 
 const DEFAULTS = {
@@ -69,6 +71,21 @@ function parseRuntimeMode(value: string | undefined): RuntimeMode {
   return normalized;
 }
 
+const VALID_FOUNDER_PROOF_VALUES = new Set(['true', 'false', '1', '0', '']);
+
+function parseFounderProofMode(value: string | undefined): boolean {
+  const raw = (value ?? '').trim().toLowerCase();
+
+  if (!VALID_FOUNDER_PROOF_VALUES.has(raw)) {
+    throw new Error(
+      `FOUNDER_PROOF_MODE must be one of: true, false, 1, 0, or absent. Received: "${value}". ` +
+      'Set it explicitly or remove it to keep the default (disabled).'
+    );
+  }
+
+  return raw === 'true' || raw === '1';
+}
+
 function redactSecret(secret: string | undefined) {
   if (!secret) {
     return '[missing]';
@@ -92,6 +109,7 @@ export function readApiEnv(source: Record<string, string | undefined>, options?:
   const redisUrl = source.REDIS_URL ?? DEFAULTS.REDIS_URL;
   const googleClientId = source.GOOGLE_CLIENT_ID?.trim() || undefined;
   const googleClientSecret = source.GOOGLE_CLIENT_SECRET?.trim() || undefined;
+  const connectorEncryptionKey = source.CONNECTOR_ENCRYPTION_KEY?.trim() ?? '';
 
   if (strict && !source.DATABASE_URL) {
     throw new Error('DATABASE_URL is required in strict mode. Copy .env.example to .env before running runtime-only commands.');
@@ -99,6 +117,22 @@ export function readApiEnv(source: Record<string, string | undefined>, options?:
 
   if (strict && betterAuthSecret.length < 32) {
     throw new Error('BETTER_AUTH_SECRET must be at least 32 characters in strict mode.');
+  }
+
+  if (strict && !connectorEncryptionKey) {
+    throw new Error(
+      'CONNECTOR_ENCRYPTION_KEY is required in strict mode. Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
+    );
+  }
+
+  if (connectorEncryptionKey && connectorEncryptionKey.length !== 64) {
+    throw new Error(
+      `CONNECTOR_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes). Received length: ${connectorEncryptionKey.length}.`
+    );
+  }
+
+  if (connectorEncryptionKey && !/^[0-9a-fA-F]+$/.test(connectorEncryptionKey)) {
+    throw new Error('CONNECTOR_ENCRYPTION_KEY contains non-hex characters.');
   }
 
   return {
@@ -113,6 +147,7 @@ export function readApiEnv(source: Record<string, string | undefined>, options?:
     magicLinkSenderEmail: source.MAGIC_LINK_SENDER_EMAIL ?? DEFAULTS.MAGIC_LINK_SENDER_EMAIL,
     googleClientId,
     googleClientSecret,
+    connectorEncryptionKey,
     authContextTimeoutMs: parseInteger(
       'AUTH_CONTEXT_TIMEOUT_MS',
       source.AUTH_CONTEXT_TIMEOUT_MS ?? DEFAULTS.AUTH_CONTEXT_TIMEOUT_MS,
@@ -125,7 +160,8 @@ export function readApiEnv(source: Record<string, string | undefined>, options?:
       250,
       60000
     ),
-    databasePoolMax: parseInteger('DATABASE_POOL_MAX', source.DATABASE_POOL_MAX ?? DEFAULTS.DATABASE_POOL_MAX, 1, 100)
+    databasePoolMax: parseInteger('DATABASE_POOL_MAX', source.DATABASE_POOL_MAX ?? DEFAULTS.DATABASE_POOL_MAX, 1, 100),
+    founderProofMode: parseFounderProofMode(source.FOUNDER_PROOF_MODE)
   };
 }
 
@@ -150,6 +186,7 @@ export function createBootstrapDiagnostics(source: Record<string, string | undef
   return {
     message,
     nodeEnv: source.NODE_ENV ?? DEFAULTS.NODE_ENV,
+    founderProofMode: source.FOUNDER_PROOF_MODE ?? 'absent',
     config: {
       apiUrl: source.API_URL ?? DEFAULTS.API_URL,
       webUrl: source.WEB_URL ?? DEFAULTS.WEB_URL,
@@ -157,6 +194,7 @@ export function createBootstrapDiagnostics(source: Record<string, string | undef
       databaseConfigured: summarizeConfigured(source.DATABASE_URL),
       redisConfigured: summarizeConfigured(source.REDIS_URL),
       betterAuthSecret: redactSecret(source.BETTER_AUTH_SECRET),
+      connectorEncryptionKeyConfigured: summarizeConfigured(source.CONNECTOR_ENCRYPTION_KEY),
       googleClientIdConfigured: summarizeConfigured(source.GOOGLE_CLIENT_ID),
       googleClientSecretConfigured: summarizeConfigured(source.GOOGLE_CLIENT_SECRET)
     }

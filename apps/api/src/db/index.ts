@@ -17,8 +17,18 @@ const { Pool } = pg as unknown as {
 
 const AUTH_MIGRATION_URL = new URL('../../drizzle/0000_s01_auth.sql', import.meta.url);
 const STARTUP_MIGRATION_URL = new URL('../../drizzle/0001_s01_startup.sql', import.meta.url);
+const CONNECTOR_MIGRATION_URL = new URL('../../drizzle/0002_s02_connector.sql', import.meta.url);
+const HEALTH_MIGRATION_URL = new URL('../../drizzle/0003_s03_startup_health.sql', import.meta.url);
+const INSIGHT_MIGRATION_URL = new URL('../../drizzle/0004_s05_startup_insight.sql', import.meta.url);
+const INTERNAL_TASK_MIGRATION_URL = new URL('../../drizzle/0005_s06_internal_task.sql', import.meta.url);
+const CUSTOM_METRIC_MIGRATION_URL = new URL('../../drizzle/0006_s07_custom_metric.sql', import.meta.url);
 const AUTH_TABLE_NAMES = ['account', 'session', 'verification', 'member', 'invitation', 'workspace', 'user'] as const;
-const APP_TABLE_NAMES = [...AUTH_TABLE_NAMES, 'startup'] as const;
+const CONNECTOR_TABLE_NAMES = ['connector', 'sync_job'] as const;
+const HEALTH_TABLE_NAMES = ['health_snapshot', 'health_funnel_stage'] as const;
+const INSIGHT_TABLE_NAMES = ['startup_insight'] as const;
+const INTERNAL_TASK_TABLE_NAMES = ['internal_task'] as const;
+const CUSTOM_METRIC_TABLE_NAMES = ['custom_metric'] as const;
+const APP_TABLE_NAMES = [...AUTH_TABLE_NAMES, 'startup', ...CONNECTOR_TABLE_NAMES, ...HEALTH_TABLE_NAMES, ...INSIGHT_TABLE_NAMES, ...INTERNAL_TASK_TABLE_NAMES, ...CUSTOM_METRIC_TABLE_NAMES] as const;
 
 interface DatabasePool {
   query: (sql: string) => Promise<unknown>;
@@ -86,6 +96,56 @@ async function ensureExpectedSchemaState(pool: DatabasePool) {
 
   if (!existingStartupTables.has('startup')) {
     await applyMigration(pool, STARTUP_MIGRATION_URL);
+  }
+
+  const existingConnectorTables = await listExistingTables(pool, CONNECTOR_TABLE_NAMES);
+
+  if (existingConnectorTables.size === 0) {
+    await applyMigration(pool, CONNECTOR_MIGRATION_URL);
+  } else if (existingConnectorTables.size !== CONNECTOR_TABLE_NAMES.length) {
+    throw new Error(
+      `Unexpected partial connector schema detected. Expected ${CONNECTOR_TABLE_NAMES.length} connector tables (${CONNECTOR_TABLE_NAMES.join(', ')}), found ${existingConnectorTables.size}. Reset the database or repair the migration state before booting the API.`
+    );
+  }
+
+  const existingHealthTables = await listExistingTables(pool, HEALTH_TABLE_NAMES);
+
+  if (existingHealthTables.size === 0) {
+    await applyMigration(pool, HEALTH_MIGRATION_URL);
+  } else if (existingHealthTables.size !== HEALTH_TABLE_NAMES.length) {
+    throw new Error(
+      `Unexpected partial startup-health schema detected. Expected ${HEALTH_TABLE_NAMES.length} health tables (${HEALTH_TABLE_NAMES.join(', ')}), found ${existingHealthTables.size}. Reset the database or repair the migration state before booting the API.`
+    );
+  }
+
+  const existingInsightTables = await listExistingTables(pool, INSIGHT_TABLE_NAMES);
+
+  if (existingInsightTables.size === 0) {
+    await applyMigration(pool, INSIGHT_MIGRATION_URL);
+  } else if (existingInsightTables.size !== INSIGHT_TABLE_NAMES.length) {
+    throw new Error(
+      `Unexpected partial startup-insight schema detected. Expected ${INSIGHT_TABLE_NAMES.length} insight tables (${INSIGHT_TABLE_NAMES.join(', ')}), found ${existingInsightTables.size}. Reset the database or repair the migration state before booting the API.`
+    );
+  }
+
+  const existingInternalTaskTables = await listExistingTables(pool, INTERNAL_TASK_TABLE_NAMES);
+
+  if (existingInternalTaskTables.size === 0) {
+    await applyMigration(pool, INTERNAL_TASK_MIGRATION_URL);
+  } else if (existingInternalTaskTables.size !== INTERNAL_TASK_TABLE_NAMES.length) {
+    throw new Error(
+      `Unexpected partial internal-task schema detected. Expected ${INTERNAL_TASK_TABLE_NAMES.length} internal-task tables (${INTERNAL_TASK_TABLE_NAMES.join(', ')}), found ${existingInternalTaskTables.size}. Reset the database or repair the migration state before booting the API.`
+    );
+  }
+
+  const existingCustomMetricTables = await listExistingTables(pool, CUSTOM_METRIC_TABLE_NAMES);
+
+  if (existingCustomMetricTables.size === 0) {
+    await applyMigration(pool, CUSTOM_METRIC_MIGRATION_URL);
+  } else if (existingCustomMetricTables.size !== CUSTOM_METRIC_TABLE_NAMES.length) {
+    throw new Error(
+      `Unexpected partial custom-metric schema detected. Expected ${CUSTOM_METRIC_TABLE_NAMES.length} custom-metric tables (${CUSTOM_METRIC_TABLE_NAMES.join(', ')}), found ${existingCustomMetricTables.size}. Reset the database or repair the migration state before booting the API.`
+    );
   }
 }
 

@@ -66,9 +66,9 @@ export function AppShell({
         <p style={{ margin: 0, fontSize: '0.8rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#cbd5e1' }}>
           Founder dashboard
         </p>
-        <h1 style={{ margin: 0, fontSize: '1.75rem' }}>Authenticated workspace shell</h1>
+        <h1 style={{ margin: 0, fontSize: '1.75rem' }}>Portfolio overview</h1>
         <p style={{ margin: 0, color: '#e5e7eb' }}>
-          {user.name ? `${user.name} (${user.email})` : user.email} is viewing the protected workspace surface.
+          {user.name ? `${user.name} (${user.email})` : user.email} — prioritize and monitor your startups from one surface.
         </p>
       </header>
 

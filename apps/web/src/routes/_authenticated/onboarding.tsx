@@ -1,11 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 
+import type { ConnectorProvider, ConnectorSummary } from '@shared/connectors';
 import { DEFAULT_STARTUP_DRAFT, type StartupDraft, type StartupRecord, type WorkspaceSummary } from '@shared/types';
 
+import { ConnectorSetupCard } from '../../components/connector-setup-card';
+import { ConnectorStatusPanel } from '../../components/connector-status-panel';
 import { StartupForm } from '../../components/startup-form';
 import { API_BASE_URL, getErrorMessage } from '../../lib/auth-client';
 import { authenticatedRoute } from '../_authenticated';
+
+// ------------------------------------------------------------------
+// API interface
+// ------------------------------------------------------------------
 
 export interface OnboardingApi {
   listWorkspaces: () => Promise<{ workspaces: WorkspaceSummary[]; activeWorkspaceId: string | null }>;
@@ -13,12 +20,18 @@ export interface OnboardingApi {
   setActiveWorkspace: (input: { workspaceId: string }) => Promise<{ activeWorkspaceId: string; workspace: WorkspaceSummary }>;
   listStartups: () => Promise<{ workspace: WorkspaceSummary; startups: StartupRecord[] }>;
   createStartup: (input: StartupDraft) => Promise<{ workspace: WorkspaceSummary; startup: StartupRecord; startups: StartupRecord[] }>;
+  listConnectors: (startupId: string) => Promise<{ connectors: ConnectorSummary[] }>;
+  createConnector: (startupId: string, provider: ConnectorProvider, config: Record<string, string>) => Promise<{ connector: ConnectorSummary }>;
 }
 
 export interface OnboardingPageProps {
   api?: OnboardingApi;
   navigateTo?: (to: '/app') => void;
 }
+
+// ------------------------------------------------------------------
+// Internal types
+// ------------------------------------------------------------------
 
 interface OnboardingApiErrorShape {
   code: string;
@@ -29,6 +42,7 @@ interface BootstrapState {
   workspaces: WorkspaceSummary[];
   activeWorkspaceId: string | null;
   startups: StartupRecord[];
+  connectors: ConnectorSummary[];
 }
 
 const REQUEST_TIMEOUT_MS = 4000;
@@ -36,14 +50,13 @@ const REQUEST_TIMEOUT_MS = 4000;
 const EMPTY_BOOTSTRAP: BootstrapState = {
   workspaces: [],
   activeWorkspaceId: null,
-  startups: []
+  startups: [],
+  connectors: [],
 };
 
-export const onboardingRoute = createRoute({
-  getParentRoute: () => authenticatedRoute,
-  path: 'app/onboarding',
-  component: OnboardingRouteComponent
-});
+// ------------------------------------------------------------------
+// Validation / request helpers
+// ------------------------------------------------------------------
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -63,6 +76,18 @@ function isStartupRecord(value: unknown): value is StartupRecord {
     typeof value.stage === 'string' &&
     typeof value.timezone === 'string' &&
     typeof value.currency === 'string' &&
+    typeof value.createdAt === 'string' &&
+    typeof value.updatedAt === 'string'
+  );
+}
+
+function isConnectorSummary(value: unknown): value is ConnectorSummary {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    typeof value.startupId === 'string' &&
+    typeof value.provider === 'string' &&
+    typeof value.status === 'string' &&
     typeof value.createdAt === 'string' &&
     typeof value.updatedAt === 'string'
   );
@@ -135,6 +160,10 @@ async function requestJson(path: string, init?: RequestInit) {
 
   return payload;
 }
+
+// ------------------------------------------------------------------
+// Default API implementation
+// ------------------------------------------------------------------
 
 function createDefaultOnboardingApi(): OnboardingApi {
   return {
@@ -213,9 +242,34 @@ function createDefaultOnboardingApi(): OnboardingApi {
         startup: payload.startup,
         startups: payload.startups
       };
+    },
+    async listConnectors(startupId) {
+      const payload = await requestJson(`/connectors?startupId=${encodeURIComponent(startupId)}`);
+
+      if (!isRecord(payload) || !Array.isArray(payload.connectors) || !payload.connectors.every(isConnectorSummary)) {
+        throw new OnboardingApiError('MALFORMED_CONNECTOR_LIST', 'The connector list was malformed. Retry the onboarding step.');
+      }
+
+      return { connectors: payload.connectors };
+    },
+    async createConnector(startupId, provider, config) {
+      const payload = await requestJson('/connectors', {
+        method: 'POST',
+        body: JSON.stringify({ startupId, provider, config })
+      });
+
+      if (!isRecord(payload) || !isConnectorSummary(payload.connector)) {
+        throw new OnboardingApiError('MALFORMED_CONNECTOR_CREATE', 'Connector creation returned an unexpected response. Retry the setup step.');
+      }
+
+      return { connector: payload.connector };
     }
   };
 }
+
+// ------------------------------------------------------------------
+// Error message
+// ------------------------------------------------------------------
 
 function getOnboardingErrorMessage(error: unknown, fallback: string) {
   if (error instanceof OnboardingApiError) {
@@ -224,6 +278,16 @@ function getOnboardingErrorMessage(error: unknown, fallback: string) {
 
   return getErrorMessage(error, fallback);
 }
+
+// ------------------------------------------------------------------
+// Route
+// ------------------------------------------------------------------
+
+export const onboardingRoute = createRoute({
+  getParentRoute: () => authenticatedRoute,
+  path: 'app/onboarding',
+  component: OnboardingRouteComponent
+});
 
 function OnboardingRouteComponent() {
   const navigate = useNavigate();
@@ -237,6 +301,10 @@ function OnboardingRouteComponent() {
   );
 }
 
+// ------------------------------------------------------------------
+// Page component
+// ------------------------------------------------------------------
+
 export function OnboardingPage({ api = createDefaultOnboardingApi(), navigateTo }: OnboardingPageProps) {
   const [bootstrapState, setBootstrapState] = useState<BootstrapState>(EMPTY_BOOTSTRAP);
   const [workspaceName, setWorkspaceName] = useState('');
@@ -246,12 +314,28 @@ export function OnboardingPage({ api = createDefaultOnboardingApi(), navigateTo 
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [startupError, setStartupError] = useState<string | null>(null);
+  const [connectorError, setConnectorError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [skippedProviders, setSkippedProviders] = useState<Set<ConnectorProvider>>(new Set());
 
   const activeWorkspace = useMemo(
     () => bootstrapState.workspaces.find((workspace) => workspace.id === bootstrapState.activeWorkspaceId) ?? null,
     [bootstrapState.activeWorkspaceId, bootstrapState.workspaces]
   );
+
+  const primaryStartup = bootstrapState.startups[0] ?? null;
+
+  // Determine which connectors exist per provider
+  const posthogConnector = bootstrapState.connectors.find((c) => c.provider === 'posthog') ?? null;
+  const stripeConnector = bootstrapState.connectors.find((c) => c.provider === 'stripe') ?? null;
+
+  // Connector step is visible after a startup exists
+  const showConnectorStep = activeWorkspace !== null && primaryStartup !== null;
+
+  // All connectors done or skipped?
+  const posthogDone = posthogConnector !== null || skippedProviders.has('posthog');
+  const stripeDone = stripeConnector !== null || skippedProviders.has('stripe');
+  const allConnectorsDone = posthogDone && stripeDone;
 
   async function loadBootstrap() {
     setViewState('loading');
@@ -260,16 +344,29 @@ export function OnboardingPage({ api = createDefaultOnboardingApi(), navigateTo 
     try {
       const workspaceState = await api.listWorkspaces();
       let startups: StartupRecord[] = [];
+      let connectors: ConnectorSummary[] = [];
 
       if (workspaceState.activeWorkspaceId) {
         const startupState = await api.listStartups();
         startups = startupState.startups;
+
+        // Load connectors for the primary startup
+        if (startups[0]) {
+          try {
+            const connectorState = await api.listConnectors(startups[0].id);
+            connectors = connectorState.connectors;
+          } catch {
+            // Non-fatal — show connector setup even if list fails
+            connectors = [];
+          }
+        }
       }
 
       setBootstrapState({
         workspaces: workspaceState.workspaces,
         activeWorkspaceId: workspaceState.activeWorkspaceId,
-        startups
+        startups,
+        connectors,
       });
       setSelectedWorkspaceId((current) => {
         if (current) {
@@ -353,15 +450,38 @@ export function OnboardingPage({ api = createDefaultOnboardingApi(), navigateTo 
       });
       setBootstrapState((current) => ({
         ...current,
-        startups: response.startups
+        startups: response.startups,
       }));
-      setNotice(`${response.startup.name} is ready inside ${response.workspace.name}. Redirecting to the dashboard shell.`);
-      navigateTo?.('/app');
+      setNotice(`${response.startup.name} is ready inside ${response.workspace.name}. Connect your data sources next, or skip to the dashboard.`);
       setViewState('ready');
     } catch (error) {
       setStartupError(getOnboardingErrorMessage(error, 'Startup creation failed. Retry without leaving the form.'));
       setViewState('ready');
     }
+  }
+
+  async function handleConnectProvider(provider: ConnectorProvider, config: Record<string, string>) {
+    if (!primaryStartup) return;
+
+    setConnectorError(null);
+
+    try {
+      const result = await api.createConnector(primaryStartup.id, provider, config);
+      setBootstrapState((current) => ({
+        ...current,
+        connectors: [...current.connectors.filter((c) => c.provider !== provider), result.connector],
+      }));
+    } catch (error) {
+      throw error; // Let the card component handle the error display
+    }
+  }
+
+  function handleSkipProvider(provider: ConnectorProvider) {
+    setSkippedProviders((current) => new Set([...current, provider]));
+  }
+
+  function handleFinishOnboarding() {
+    navigateTo?.('/app');
   }
 
   return (
@@ -375,6 +495,7 @@ export function OnboardingPage({ api = createDefaultOnboardingApi(), navigateTo 
       {bootstrapError ? <p role="alert">{bootstrapError}</p> : null}
       {notice ? <p role="status">{notice}</p> : null}
 
+      {/* Step 1: Workspace */}
       <section aria-label="workspace setup" style={{ display: 'grid', gap: '1rem', padding: '1rem', border: '1px solid #e5e7eb' }}>
         <div>
           <h3 style={{ marginBottom: '0.5rem' }}>1. Pick the active workspace</h3>
@@ -441,6 +562,7 @@ export function OnboardingPage({ api = createDefaultOnboardingApi(), navigateTo 
         {workspaceError ? <p role="alert">{workspaceError}</p> : null}
       </section>
 
+      {/* Step 2: Startup */}
       <section aria-label="startup setup" style={{ display: 'grid', gap: '1rem', padding: '1rem', border: '1px solid #e5e7eb' }}>
         <div>
           <h3 style={{ marginBottom: '0.5rem' }}>2. Add the first startup</h3>
@@ -451,14 +573,11 @@ export function OnboardingPage({ api = createDefaultOnboardingApi(), navigateTo 
           </p>
         </div>
 
-        {bootstrapState.startups.length > 0 ? (
+        {primaryStartup ? (
           <div>
             <p role="status">
-              Startup onboarding is complete. {bootstrapState.startups[0]?.name} is attached to {activeWorkspace?.name ?? 'the active workspace'}.
+              Startup onboarding is complete. {primaryStartup.name} is attached to {activeWorkspace?.name ?? 'the active workspace'}.
             </p>
-            <button type="button" onClick={() => navigateTo?.('/app')}>
-              Return to dashboard shell
-            </button>
           </div>
         ) : (
           <StartupForm
@@ -470,6 +589,69 @@ export function OnboardingPage({ api = createDefaultOnboardingApi(), navigateTo 
           />
         )}
       </section>
+
+      {/* Step 3: Connectors */}
+      {showConnectorStep ? (
+        <section aria-label="connector setup" style={{ display: 'grid', gap: '1rem', padding: '1rem', border: '1px solid #e5e7eb' }}>
+          <div>
+            <h3 style={{ marginBottom: '0.5rem' }}>3. Connect data sources</h3>
+            <p style={{ marginTop: 0 }}>
+              Connect PostHog and Stripe to start syncing product and revenue data for {primaryStartup.name}. You can skip and add them later from the dashboard.
+            </p>
+          </div>
+
+          {connectorError ? <p role="alert">{connectorError}</p> : null}
+
+          {/* Show already-connected connectors */}
+          {bootstrapState.connectors.length > 0 ? (
+            <ConnectorStatusPanel
+              connectors={bootstrapState.connectors}
+            />
+          ) : null}
+
+          {/* PostHog setup card (unless connected or skipped) */}
+          {!posthogConnector && !skippedProviders.has('posthog') ? (
+            <ConnectorSetupCard
+              provider="posthog"
+              existing={posthogConnector}
+              disabled={viewState === 'loading'}
+              onConnect={handleConnectProvider}
+              onSkip={handleSkipProvider}
+            />
+          ) : null}
+
+          {/* Stripe setup card (unless connected or skipped) */}
+          {!stripeConnector && !skippedProviders.has('stripe') ? (
+            <ConnectorSetupCard
+              provider="stripe"
+              existing={stripeConnector}
+              disabled={viewState === 'loading'}
+              onConnect={handleConnectProvider}
+              onSkip={handleSkipProvider}
+            />
+          ) : null}
+
+          {allConnectorsDone ? (
+            <div style={{ display: 'grid', gap: '0.5rem' }}>
+              <p role="status">
+                {bootstrapState.connectors.length > 0
+                  ? 'Data sources configured. You can proceed to the dashboard.'
+                  : 'Connectors skipped. You can add them later from the dashboard.'}
+              </p>
+              <button type="button" onClick={handleFinishOnboarding}>
+                Continue to dashboard
+              </button>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {/* Legacy: if startup exists but no connector step, still show dashboard nav */}
+      {primaryStartup && !showConnectorStep ? (
+        <button type="button" onClick={() => navigateTo?.('/app')}>
+          Return to dashboard shell
+        </button>
+      ) : null}
 
       {viewState === 'error' ? (
         <button type="button" onClick={() => void loadBootstrap()}>

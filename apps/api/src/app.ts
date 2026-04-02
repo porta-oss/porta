@@ -16,6 +16,30 @@ import {
   serializeStartupRecord,
   validateStartupDraft
 } from './routes/startup';
+import {
+  handleListConnectors,
+  handleCreateConnector,
+  handleDeleteConnector,
+  handleTriggerSync,
+  handleGetConnectorStatus,
+  type ConnectorRuntime
+} from './routes/connector';
+import { createPostHogValidator, createFounderProofPostHogValidator } from './lib/connectors/posthog';
+import type { PostHogValidator } from './lib/connectors/posthog';
+import { createStripeValidator, createFounderProofStripeValidator } from './lib/connectors/stripe';
+import type { StripeValidator } from './lib/connectors/stripe';
+import { createPostgresValidator } from './lib/connectors/postgres';
+import type { PostgresValidator } from './lib/connectors/postgres';
+import { createSyncQueueProducer } from './lib/connectors/queue';
+import type { SyncQueueProducer } from './lib/connectors/queue';
+import { createTaskSyncQueueProducer } from './lib/tasks/queue';
+import type { TaskSyncQueueProducer } from './lib/tasks/queue';
+import { loadStartupHealth } from './lib/startup-health';
+import { loadLatestInsight } from './lib/startup-insight';
+import {
+  handleCreateTask,
+  handleListTasks,
+} from './routes/internal-task';
 
 interface AuthenticatedSession {
   session: {
@@ -63,6 +87,11 @@ interface ApiRuntime {
   env: ApiEnv;
   db: ApiDatabase;
   auth: ApiAuthRuntime;
+  posthogValidator: PostHogValidator;
+  stripeValidator: StripeValidator;
+  postgresValidator: PostgresValidator;
+  queueProducer: SyncQueueProducer;
+  taskSyncQueueProducer: TaskSyncQueueProducer;
 }
 
 interface WorkspaceAuthApi {
@@ -354,6 +383,11 @@ export async function createApiApp(
     db?: ApiDatabase;
     auth?: ApiAuthRuntime;
     bootstrapDatabase?: boolean;
+    posthogValidator?: PostHogValidator;
+    stripeValidator?: StripeValidator;
+    postgresValidator?: PostgresValidator;
+    queueProducer?: SyncQueueProducer;
+    taskSyncQueueProducer?: TaskSyncQueueProducer;
   }
 ): Promise<ApiApp> {
   const env = options?.env ?? readApiEnv(envSource, { strict: true });
@@ -364,14 +398,26 @@ export async function createApiApp(
   }
 
   const auth = options?.auth ?? createAuthRuntime(env, db);
+  const posthogValidator = options?.posthogValidator ?? (env.founderProofMode ? createFounderProofPostHogValidator() : createPostHogValidator());
+  const stripeValidator = options?.stripeValidator ?? (env.founderProofMode ? createFounderProofStripeValidator() : createStripeValidator());
+  const postgresValidator = options?.postgresValidator ?? createPostgresValidator();
+  const queueProducer = options?.queueProducer ?? createSyncQueueProducer(env.redisUrl);
+  const taskSyncQueueProducer = options?.taskSyncQueueProducer ?? createTaskSyncQueueProducer(env.redisUrl);
   const startupRoutes = createStartupRouteContract();
-  const runtime: ApiRuntime = { env, db, auth };
+  const runtime: ApiRuntime = { env, db, auth, posthogValidator, stripeValidator, postgresValidator, queueProducer, taskSyncQueueProducer };
 
   console.info('[auth] bootstrap ready', {
     mountPath: auth.bootstrap.basePath,
     googleConfigured: auth.bootstrap.providers.google.configured,
     magicLinkTransport: auth.bootstrap.magicLinkTransport
   });
+
+  if (env.founderProofMode) {
+    console.info('[founder-proof] mode enabled — connector validation uses deterministic demo credentials', {
+      posthogValidator: 'founder-proof',
+      stripeValidator: 'founder-proof'
+    });
+  }
 
   const app = new Elysia({ prefix: '/api' })
     .use(
@@ -388,6 +434,7 @@ export async function createApiApp(
     .get('/health', () => ({
       status: 'ok' as const,
       service: 'api',
+      founderProofMode: env.founderProofMode,
       startupRoutes,
       auth: {
         mounted: true,
@@ -403,7 +450,21 @@ export async function createApiApp(
       database: {
         configured: true,
         poolMax: env.databasePoolMax,
-        tables: ['user', 'session', 'account', 'verification', 'workspace', 'member', 'invitation', 'startup']
+        tables: ['user', 'session', 'account', 'verification', 'workspace', 'member', 'invitation', 'startup', 'connector', 'sync_job', 'health_snapshot', 'health_funnel_stage', 'startup_insight', 'internal_task', 'custom_metric']
+      },
+      connectors: {
+        encryptionKeyConfigured: env.connectorEncryptionKey.length === 64,
+        validationMode: env.founderProofMode ? 'founder-proof' as const : 'live' as const,
+        tablesReady: true
+      },
+      startupHealth: {
+        tablesReady: true
+      },
+      startupInsight: {
+        tablesReady: true
+      },
+      internalTask: {
+        tablesReady: true
       }
     }))
     .get('/auth/session', ({ authContext }) => {
@@ -836,6 +897,307 @@ export async function createApiApp(
         })
       }
     )
+    .get('/connectors', async ({ authContext, request, set, query }) => {
+      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/connectors');
+      if ('error' in activeWorkspace) return activeWorkspace;
+
+      const connectorRuntime: ConnectorRuntime = {
+        db: runtime.db,
+        env: runtime.env,
+        posthogValidator: runtime.posthogValidator,
+        stripeValidator: runtime.stripeValidator,
+        postgresValidator: runtime.postgresValidator,
+        queueProducer: runtime.queueProducer
+      };
+
+      return handleListConnectors(
+        connectorRuntime,
+        { workspace: activeWorkspace.workspace },
+        query.startupId,
+        set
+      );
+    }, {
+      query: t.Object({
+        startupId: t.Optional(t.String())
+      })
+    })
+    .post('/connectors', async ({ authContext, request, set, body }) => {
+      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/connectors');
+      if ('error' in activeWorkspace) return activeWorkspace;
+
+      const connectorRuntime: ConnectorRuntime = {
+        db: runtime.db,
+        env: runtime.env,
+        posthogValidator: runtime.posthogValidator,
+        stripeValidator: runtime.stripeValidator,
+        postgresValidator: runtime.postgresValidator,
+        queueProducer: runtime.queueProducer
+      };
+
+      return handleCreateConnector(
+        connectorRuntime,
+        { workspace: activeWorkspace.workspace },
+        body,
+        set
+      );
+    }, {
+      body: t.Object({
+        startupId: t.String(),
+        provider: t.String(),
+        config: t.Record(t.String(), t.String())
+      })
+    })
+    .delete('/connectors/:id', async ({ authContext, request, set, params }) => {
+      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/connectors/:id');
+      if ('error' in activeWorkspace) return activeWorkspace;
+
+      const connectorRuntime: ConnectorRuntime = {
+        db: runtime.db,
+        env: runtime.env,
+        posthogValidator: runtime.posthogValidator,
+        stripeValidator: runtime.stripeValidator,
+        postgresValidator: runtime.postgresValidator,
+        queueProducer: runtime.queueProducer
+      };
+
+      return handleDeleteConnector(
+        connectorRuntime,
+        { workspace: activeWorkspace.workspace },
+        params.id,
+        set
+      );
+    })
+    .post('/connectors/:id/sync', async ({ authContext, request, set, params }) => {
+      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/connectors/:id/sync');
+      if ('error' in activeWorkspace) return activeWorkspace;
+
+      const connectorRuntime: ConnectorRuntime = {
+        db: runtime.db,
+        env: runtime.env,
+        posthogValidator: runtime.posthogValidator,
+        stripeValidator: runtime.stripeValidator,
+        postgresValidator: runtime.postgresValidator,
+        queueProducer: runtime.queueProducer
+      };
+
+      return handleTriggerSync(
+        connectorRuntime,
+        { workspace: activeWorkspace.workspace },
+        params.id,
+        set
+      );
+    })
+    .get('/connectors/:id/status', async ({ authContext, request, set, params }) => {
+      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/connectors/:id/status');
+      if ('error' in activeWorkspace) return activeWorkspace;
+
+      const connectorRuntime: ConnectorRuntime = {
+        db: runtime.db,
+        env: runtime.env,
+        posthogValidator: runtime.posthogValidator,
+        stripeValidator: runtime.stripeValidator,
+        postgresValidator: runtime.postgresValidator,
+        queueProducer: runtime.queueProducer
+      };
+
+      return handleGetConnectorStatus(
+        connectorRuntime,
+        { workspace: activeWorkspace.workspace },
+        params.id,
+        set
+      );
+    })
+    .get('/startups/:startupId/health', async ({ authContext, request, set, params }) => {
+      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/startups/:startupId/health');
+      if ('error' in activeWorkspace) return activeWorkspace;
+
+      // Validate startup ownership
+      const startupRows = await withTimeout(
+        runtime.db.db.select({ id: startupTable.id }).from(startupTable).where(
+          eq(startupTable.id, params.startupId)
+        ),
+        runtime.env.authContextTimeoutMs,
+        'Startup lookup'
+      );
+      const startupRow = startupRows[0];
+
+      if (!startupRow) {
+        set.status = 404;
+        return {
+          error: {
+            code: 'STARTUP_NOT_FOUND',
+            message: 'Startup not found.'
+          }
+        };
+      }
+
+      // Verify startup belongs to active workspace
+      const ownershipRows = await withTimeout(
+        runtime.db.db.select({ id: startupTable.id }).from(startupTable).where(
+          eq(startupTable.workspaceId, activeWorkspace.workspace.id)
+        ),
+        runtime.env.authContextTimeoutMs,
+        'Startup ownership check'
+      );
+      const owned = ownershipRows.some((row) => row.id === params.startupId);
+
+      if (!owned) {
+        set.status = 403;
+        return {
+          error: {
+            code: 'STARTUP_SCOPE_INVALID',
+            message: 'The startup does not belong to the active workspace.'
+          }
+        };
+      }
+
+      try {
+        const payload = await withTimeout(
+          loadStartupHealth(runtime.db.db, params.startupId),
+          runtime.env.authContextTimeoutMs,
+          'Startup health read'
+        );
+
+        return payload;
+      } catch (error) {
+        console.error('[startup-health] read failed', {
+          startupId: params.startupId,
+          error: error instanceof Error ? error.message : String(error)
+        });
+
+        set.status = 500;
+        return {
+          error: {
+            code: 'HEALTH_READ_FAILED',
+            message: 'Failed to load startup health data. Please retry.'
+          }
+        };
+      }
+    })
+    .get('/startups/:startupId/insight', async ({ authContext, request, set, params }) => {
+      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/startups/:startupId/insight');
+      if ('error' in activeWorkspace) return activeWorkspace;
+
+      // Validate startup ownership
+      const startupRows = await withTimeout(
+        runtime.db.db.select({ id: startupTable.id }).from(startupTable).where(
+          eq(startupTable.id, params.startupId)
+        ),
+        runtime.env.authContextTimeoutMs,
+        'Startup lookup'
+      );
+      const startupRow = startupRows[0];
+
+      if (!startupRow) {
+        set.status = 404;
+        return {
+          error: {
+            code: 'STARTUP_NOT_FOUND',
+            message: 'Startup not found.'
+          }
+        };
+      }
+
+      // Verify startup belongs to active workspace
+      const ownershipRows = await withTimeout(
+        runtime.db.db.select({ id: startupTable.id }).from(startupTable).where(
+          eq(startupTable.workspaceId, activeWorkspace.workspace.id)
+        ),
+        runtime.env.authContextTimeoutMs,
+        'Startup ownership check'
+      );
+      const owned = ownershipRows.some((row) => row.id === params.startupId);
+
+      if (!owned) {
+        set.status = 403;
+        return {
+          error: {
+            code: 'STARTUP_SCOPE_INVALID',
+            message: 'The startup does not belong to the active workspace.'
+          }
+        };
+      }
+
+      try {
+        const payload = await withTimeout(
+          loadLatestInsight(runtime.db.db, params.startupId),
+          runtime.env.authContextTimeoutMs,
+          'Startup insight read'
+        );
+
+        return payload;
+      } catch (error) {
+        console.error('[startup-insight] read failed', {
+          startupId: params.startupId,
+          error: error instanceof Error ? error.message : String(error)
+        });
+
+        set.status = 500;
+        return {
+          error: {
+            code: 'INSIGHT_READ_FAILED',
+            message: 'Failed to load startup insight data. Please retry.'
+          }
+        };
+      }
+    })
+    .post('/tasks', async ({ authContext, request, set, body }) => {
+      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/tasks');
+      if ('error' in activeWorkspace) return activeWorkspace;
+
+      const result = await handleCreateTask(
+        runtime,
+        { workspace: activeWorkspace.workspace },
+        body as { startupId: string; actionIndex: number },
+        set
+      );
+
+      // Enqueue task-sync job after successful creation, without blocking the response.
+      // Task creation must never roll back because of queue failure.
+      const resultObj = result as Record<string, unknown> | null;
+      if (resultObj && 'task' in resultObj && 'created' in resultObj && resultObj.created === true) {
+        const task = resultObj.task as { id: string };
+        try {
+          const enqueueResult = await runtime.taskSyncQueueProducer.enqueue({ taskId: task.id });
+          if (!enqueueResult.success) {
+            console.warn('[tasks] task sync enqueue failed — task preserved', {
+              taskId: task.id,
+              error: enqueueResult.error,
+            });
+            // Surface sync warning in response but keep the task
+            (resultObj as Record<string, unknown>).syncWarning = enqueueResult.error;
+          }
+        } catch (err) {
+          console.error('[tasks] task sync enqueue threw — task preserved', {
+            taskId: task.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          (resultObj as Record<string, unknown>).syncWarning = 'Task sync queue unavailable. The task is saved and will sync later.';
+        }
+      }
+
+      return result;
+    }, {
+      body: t.Object({
+        startupId: t.String(),
+        actionIndex: t.Number()
+      })
+    })
+    .get('/tasks', async ({ authContext, request, set, query }) => {
+      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/tasks');
+      if ('error' in activeWorkspace) return activeWorkspace;
+
+      return handleListTasks(
+        runtime,
+        { workspace: activeWorkspace.workspace },
+        query.startupId ?? '',
+        set
+      );
+    }, {
+      query: t.Object({
+        startupId: t.Optional(t.String())
+      })
+    })
     .all('/auth', ({ request }) => auth.auth.handler(request))
     .all('/auth/*', ({ request }) => auth.auth.handler(request));
 

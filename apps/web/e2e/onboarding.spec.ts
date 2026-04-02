@@ -63,14 +63,14 @@ test.describe('founder onboarding flow', () => {
     await page.getByRole('button', { name: 'Create startup' }).click();
 
     await expect(page).toHaveURL(/\/app$/);
-    await expect(page.getByText(`Workspace ${workspaceName} is mounted inside the authenticated shell.`)).toBeVisible();
+    await expect(page.getByText(/Primary startup:/)).toBeVisible();
     await expect(page.getByLabel('startup list').getByText(startupName)).toBeVisible();
     await expect(page.getByText(/Primary startup:/)).toBeVisible();
 
     await page.reload();
 
     await expect(page).toHaveURL(/\/app$/);
-    await expect(page.getByText(`Workspace ${workspaceName} is mounted inside the authenticated shell.`)).toBeVisible();
+    await expect(page.getByText(/Primary startup:/)).toBeVisible();
     await expect(page.getByLabel('startup list').getByText(startupName)).toBeVisible();
   });
 });

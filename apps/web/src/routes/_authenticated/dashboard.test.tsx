@@ -3,10 +3,19 @@ import '../../test/setup-dom';
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 
+import type { ConnectorProvider, ConnectorSummary } from '@shared/connectors';
+import type { HealthSnapshotSummary } from '@shared/startup-health';
+import { emptySupportingMetrics, emptyFunnelStages } from '@shared/startup-health';
 import type { StartupRecord, WorkspaceSummary } from '@shared/types';
 
 import type { AuthSnapshot } from '../../lib/auth-client';
-import { DashboardPage, type DashboardApi } from './dashboard';
+import { DashboardPage, type DashboardApi, type StartupHealthPayload } from './dashboard';
+
+function setNativeInputValue(element: HTMLInputElement, value: string) {
+  const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+  descriptor?.set?.call(element, value);
+  fireEvent.input(element, { target: { value } });
+}
 
 const WORKSPACE_A: WorkspaceSummary = {
   id: 'workspace_a',
@@ -31,6 +40,20 @@ function createStartup(workspaceId = WORKSPACE_A.id, name = 'Acme Analytics'): S
     currency: 'USD',
     createdAt: new Date('2026-01-01T00:00:00.000Z').toISOString(),
     updatedAt: new Date('2026-01-01T00:00:00.000Z').toISOString()
+  };
+}
+
+function createConnector(provider: ConnectorProvider, status: ConnectorSummary['status'] = 'connected'): ConnectorSummary {
+  return {
+    id: `connector_${provider}`,
+    startupId: `${WORKSPACE_A.id}_Acme Analytics`,
+    provider,
+    status,
+    lastSyncAt: status === 'connected' ? '2026-01-01T12:00:00.000Z' : null,
+    lastSyncDurationMs: status === 'connected' ? 1200 : null,
+    lastSyncError: status === 'error' ? 'Provider validation failed' : null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z'
   };
 }
 
@@ -78,7 +101,69 @@ function createApi(overrides: Partial<DashboardApi> = {}): DashboardApi {
       mock(async () => ({
         workspace: WORKSPACE_A,
         startups: [createStartup()]
-      }))
+      })),
+    listConnectors: overrides.listConnectors ?? mock(async () => ({ connectors: [] })),
+    createConnector:
+      overrides.createConnector ??
+      mock(async (_startupId: string, provider: ConnectorProvider) => ({
+        connector: createConnector(provider, 'pending')
+      })),
+    triggerSync: overrides.triggerSync ?? mock(async () => {}),
+    deleteConnector: overrides.deleteConnector ?? mock(async () => {}),
+    fetchHealth: overrides.fetchHealth ?? mock(async () => createHealthyPayload()),
+    fetchInsight: overrides.fetchInsight ?? mock(async () => ({ insight: null, displayStatus: 'unavailable' as const, diagnosticMessage: 'No insight available yet.' })),
+    listTasks: overrides.listTasks ?? mock(async () => ({ tasks: [], startupId: '', count: 0 })),
+    createTask: overrides.createTask ?? mock(async () => { throw new Error('not implemented'); }),
+    createPostgresMetric: overrides.createPostgresMetric ?? mock(async () => { throw new Error('not implemented'); }),
+  };
+}
+
+function createHealthyPayload(): StartupHealthPayload {
+  return {
+    health: {
+      startupId: `${WORKSPACE_A.id}_Acme Analytics`,
+      healthState: 'ready',
+      blockedReason: null,
+      northStarKey: 'mrr',
+      northStarValue: 12500,
+      northStarPreviousValue: 11000,
+      supportingMetrics: {
+        active_users: { value: 340, previous: 300 },
+        customer_count: { value: 42, previous: 38 },
+        churn_rate: { value: 2.1, previous: 2.5 },
+        arpu: { value: 297, previous: 289 },
+        trial_conversion_rate: { value: 18.5, previous: 16.2 },
+      },
+      funnel: [
+        { stage: 'visitor', label: 'Visitors', value: 8200, position: 0 },
+        { stage: 'signup', label: 'Sign-ups', value: 620, position: 1 },
+        { stage: 'activation', label: 'Activated', value: 210, position: 2 },
+        { stage: 'paying_customer', label: 'Paying Customers', value: 42, position: 3 },
+      ],
+      computedAt: new Date().toISOString(),
+      syncJobId: 'job_123',
+    },
+    connectors: [
+      { provider: 'posthog', status: 'connected', lastSyncAt: new Date().toISOString(), lastSyncError: null },
+      { provider: 'stripe', status: 'connected', lastSyncAt: new Date().toISOString(), lastSyncError: null },
+    ],
+    status: 'ready',
+    blockedReasons: [],
+    lastSnapshotAt: new Date().toISOString(),
+    customMetric: null,
+  };
+}
+
+function createBlockedPayload(): StartupHealthPayload {
+  return {
+    health: null,
+    connectors: [],
+    status: 'blocked',
+    blockedReasons: [
+      { code: 'NO_CONNECTORS', message: 'No data connectors are configured. Connect PostHog or Stripe to populate health metrics.' },
+    ],
+    lastSnapshotAt: null,
+    customMetric: null,
   };
 }
 
@@ -92,9 +177,8 @@ describe('dashboard shell route', () => {
     const view = render(<DashboardPage authState={createAuthenticatedSnapshot()} api={api} />);
 
     expect(await view.findByRole('main', { name: 'dashboard shell' })).toBeTruthy();
-    expect(await view.findByText('Workspace Acme Ventures is mounted inside the authenticated shell.')).toBeTruthy();
-    expect(view.getByText(/Primary startup:/)).toBeTruthy();
-    expect(await view.findAllByText('Acme Analytics')).toHaveLength(2);
+    expect(view.getByRole('heading', { name: 'Portfolio overview' })).toBeTruthy();
+    expect((await view.findAllByText('Acme Analytics')).length).toBeGreaterThanOrEqual(2);
   });
 
   test('keeps the shell chrome visible and points back to onboarding when the active workspace has no startups', async () => {
@@ -104,7 +188,7 @@ describe('dashboard shell route', () => {
     const view = render(<DashboardPage authState={createAuthenticatedSnapshot()} api={api} />);
 
     expect(await view.findByRole('main', { name: 'dashboard shell' })).toBeTruthy();
-    expect(await view.findByText('No startups are attached to this workspace yet.')).toBeTruthy();
+    expect((await view.findAllByText('No startups are attached to this workspace yet.')).length).toBeGreaterThan(0);
     expect(view.getByRole('link', { name: 'Complete onboarding' })).toBeTruthy();
   });
 
@@ -127,14 +211,14 @@ describe('dashboard shell route', () => {
     const view = render(<DashboardPage authState={createAuthenticatedSnapshot()} api={api} />);
 
     expect((await view.findByRole('alert')).textContent).toContain('Startup navigation failed to load.');
-    expect(view.getByRole('heading', { name: 'Authenticated workspace shell' })).toBeTruthy();
+    expect(view.getByRole('heading', { name: 'Portfolio overview' })).toBeTruthy();
 
     fireEvent.click(view.getByRole('button', { name: 'Retry startup load' }));
 
     await waitFor(() => {
       expect(listStartups).toHaveBeenCalledTimes(2);
     });
-    expect(await view.findAllByText('Acme Analytics')).toHaveLength(2);
+    expect((await view.findAllByText('Acme Analytics')).length).toBeGreaterThanOrEqual(2);
   });
 
   test('shows a shell bootstrap failure loudly when workspace context cannot be parsed', async () => {
@@ -186,6 +270,153 @@ describe('dashboard shell route', () => {
     await waitFor(() => {
       expect(setActiveWorkspace).toHaveBeenCalledWith({ workspaceId: WORKSPACE_B.id });
     });
-    expect(await view.findAllByText('Beta Analytics')).toHaveLength(2);
+    expect((await view.findAllByText('Beta Analytics')).length).toBeGreaterThanOrEqual(2);
+  });
+
+  // ---------------------------------------------------------------
+  // Connector status and management tests
+  // ---------------------------------------------------------------
+
+  test('shows connector status panel with connected and failed connectors', async () => {
+    const api = createApi({
+      listConnectors: mock(async () => ({
+        connectors: [
+          createConnector('posthog', 'connected'),
+          createConnector('stripe', 'error'),
+        ]
+      })),
+    });
+
+    const view = render(<DashboardPage authState={createAuthenticatedSnapshot()} api={api} />);
+
+    expect(await view.findByText('Connected')).toBeTruthy();
+    expect(view.getByText('Sync failed')).toBeTruthy();
+    expect(view.getByText('Provider validation failed')).toBeTruthy();
+  });
+
+  test('shows setup cards for providers without active connectors', async () => {
+    const api = createApi({
+      listConnectors: mock(async () => ({ connectors: [] })),
+    });
+
+    const view = render(<DashboardPage authState={createAuthenticatedSnapshot()} api={api} />);
+
+    expect(await view.findByRole('form', { name: 'PostHog setup form' })).toBeTruthy();
+    expect(view.getByRole('form', { name: 'Stripe setup form' })).toBeTruthy();
+  });
+
+  test('hides the setup card after a connector is created successfully', async () => {
+    const createConnector = mock(async (_startupId: string, provider: ConnectorProvider) => ({
+      connector: {
+        id: `connector_new_${provider}`,
+        startupId: `${WORKSPACE_A.id}_Acme Analytics`,
+        provider,
+        status: 'pending' as const,
+        lastSyncAt: null,
+        lastSyncDurationMs: null,
+        lastSyncError: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z'
+      }
+    }));
+    const api = createApi({
+      listConnectors: mock(async () => ({ connectors: [] })),
+      createConnector,
+    });
+
+    const view = render(<DashboardPage authState={createAuthenticatedSnapshot()} api={api} />);
+    await view.findByRole('form', { name: 'Stripe setup form' });
+
+    // Fill and submit the Stripe form
+    setNativeInputValue(view.getByLabelText('Secret key') as HTMLInputElement, 'sk_test_valid123');
+    fireEvent.submit(view.getByRole('form', { name: 'Stripe setup form' }));
+
+    await waitFor(() => {
+      expect(createConnector).toHaveBeenCalled();
+    });
+
+    // Stripe setup form should disappear since connector now exists
+    await waitFor(() => {
+      expect(view.queryByRole('form', { name: 'Stripe setup form' })).toBeNull();
+    });
+  });
+
+  test('resync button triggers a sync and refreshes connector list', async () => {
+    let syncCallCount = 0;
+    const triggerSync = mock(async () => { syncCallCount += 1; });
+    let listCall = 0;
+    const listConnectors = mock(async () => {
+      listCall += 1;
+      return {
+        connectors: [createConnector('posthog', 'connected')]
+      };
+    });
+    const api = createApi({
+      listConnectors,
+      triggerSync,
+    });
+
+    const view = render(<DashboardPage authState={createAuthenticatedSnapshot()} api={api} />);
+
+    const resyncButton = await view.findByRole('button', { name: 'Resync' });
+    fireEvent.click(resyncButton);
+
+    await waitFor(() => {
+      expect(syncCallCount).toBe(1);
+    });
+  });
+
+  test('disconnect button calls delete and refreshes the connector list', async () => {
+    let deleteCallCount = 0;
+    const deleteConnector = mock(async () => { deleteCallCount += 1; });
+    const api = createApi({
+      listConnectors: mock(async () => ({
+        connectors: [createConnector('posthog', 'connected')]
+      })),
+      deleteConnector,
+    });
+
+    const view = render(<DashboardPage authState={createAuthenticatedSnapshot()} api={api} />);
+
+    const disconnectButton = await view.findByRole('button', { name: 'Disconnect' });
+    fireEvent.click(disconnectButton);
+
+    await waitFor(() => {
+      expect(deleteCallCount).toBe(1);
+    });
+  });
+
+  test('shows resync failure as an inline error without losing connector state', async () => {
+    const triggerSync = mock(async () => {
+      throw new Error('Sync enqueue failed.');
+    });
+    const api = createApi({
+      listConnectors: mock(async () => ({
+        connectors: [createConnector('posthog', 'connected')]
+      })),
+      triggerSync,
+    });
+
+    const view = render(<DashboardPage authState={createAuthenticatedSnapshot()} api={api} />);
+
+    const resyncButton = await view.findByRole('button', { name: 'Resync' });
+    fireEvent.click(resyncButton);
+
+    const alerts = await view.findAllByRole('alert');
+    const syncAlert = alerts.find((a) => a.textContent?.includes('Sync enqueue failed'));
+    expect(syncAlert).toBeTruthy();
+
+    // Connector should still be visible
+    expect(view.getByText('Connected')).toBeTruthy();
+  });
+
+  test('shows zero-connectors message when no connectors exist', async () => {
+    const api = createApi({
+      listConnectors: mock(async () => ({ connectors: [] })),
+    });
+
+    const view = render(<DashboardPage authState={createAuthenticatedSnapshot()} api={api} />);
+
+    expect(await view.findByText('No connectors configured yet. Connect PostHog or Stripe to start syncing data.')).toBeTruthy();
   });
 });

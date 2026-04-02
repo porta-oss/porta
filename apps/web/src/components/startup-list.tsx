@@ -27,7 +27,7 @@ export function StartupList({ workspaceName, startups, status, error = null, onR
         <p style={{ margin: 0, fontSize: '0.75rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6b7280' }}>
           Startup scope
         </p>
-        <h2 style={{ margin: '0.35rem 0 0', fontSize: '1.125rem' }}>{workspaceName ? `${workspaceName} startups` : 'Startup shell state'}</h2>
+        <h2 style={{ margin: '0.35rem 0 0', fontSize: '1.125rem' }}>{workspaceName ? `${workspaceName} startups` : 'Portfolio navigation'}</h2>
       </div>
 
       {status === 'loading' ? <p role="status">Loading startup navigation for the active workspace…</p> : null}

@@ -32,5 +32,27 @@ services:
       retries: 12
       start_period: 3s
 
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    container_name: founder-control-plane-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-founder_control_plane}
+      REDIS_URL: redis://redis:6379
+      CONNECTOR_ENCRYPTION_KEY: ${CONNECTOR_ENCRYPTION_KEY}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-3}
+      JOB_TIMEOUT_MS: ${JOB_TIMEOUT_MS:-30000}
+    profiles:
+      - full
+
 volumes:
   postgres-data:
