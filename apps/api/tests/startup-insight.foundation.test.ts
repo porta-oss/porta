@@ -1,57 +1,54 @@
-import { randomUUID } from 'node:crypto';
-
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
+import type {
+  EvidencePacket,
+  InsightAction,
+  InsightExplanation,
+} from "@shared/startup-insight";
 import {
+  computeDirection,
   INSIGHT_CONDITION_CODES,
-  INSIGHT_GENERATION_STATUSES,
   INSIGHT_CONDITION_LABELS,
+  INSIGHT_GENERATION_STATUSES,
   isInsightConditionCode,
   isInsightGenerationStatus,
-  validateInsightActions,
-  validateEvidencePacket,
-  validateInsightExplanation,
-  computeDirection,
-  MIN_INSIGHT_ACTIONS,
   MAX_INSIGHT_ACTIONS,
-} from '@shared/startup-insight';
-import type {
-  InsightConditionCode,
-  EvidencePacket,
-  InsightExplanation,
-  InsightAction,
-  LatestInsightPayload,
-} from '@shared/startup-insight';
-
-import { createApiApp, type ApiApp } from '../src/app';
+  MIN_INSIGHT_ACTIONS,
+  validateEvidencePacket,
+  validateInsightActions,
+  validateInsightExplanation,
+} from "@shared/startup-insight";
 import {
   createInsightRepository,
   type InsightRepository,
   type ReplaceInsightInput,
-} from '../../worker/src/repository';
+} from "../../worker/src/repository";
+import { type ApiApp, createApiApp } from "../src/app";
 
 // ---------------------------------------------------------------------------
 // Test environment
 // ---------------------------------------------------------------------------
 
-const VALID_HEX_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+const VALID_HEX_KEY =
+  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 const TEST_ENV = {
-  NODE_ENV: 'test',
-  API_PORT: '3000',
-  API_URL: 'http://localhost:3000',
-  WEB_URL: 'http://localhost:5173',
-  DATABASE_URL: 'postgres://postgres:postgres@127.0.0.1:5432/founder_control_plane',
-  REDIS_URL: 'redis://127.0.0.1:6379',
-  BETTER_AUTH_URL: 'http://localhost:3000',
-  BETTER_AUTH_SECRET: '0123456789abcdef0123456789abcdef',
-  GOOGLE_CLIENT_ID: 'google-client-id',
-  GOOGLE_CLIENT_SECRET: 'google-client-secret',
-  MAGIC_LINK_SENDER_EMAIL: 'dev@founder-control-plane.local',
+  NODE_ENV: "test",
+  API_PORT: "3000",
+  API_URL: "http://localhost:3000",
+  WEB_URL: "http://localhost:5173",
+  DATABASE_URL:
+    "postgres://postgres:postgres@127.0.0.1:5432/founder_control_plane",
+  REDIS_URL: "redis://127.0.0.1:6379",
+  BETTER_AUTH_URL: "http://localhost:3000",
+  BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
+  GOOGLE_CLIENT_ID: "google-client-id",
+  GOOGLE_CLIENT_SECRET: "google-client-secret",
+  MAGIC_LINK_SENDER_EMAIL: "dev@founder-control-plane.local",
   CONNECTOR_ENCRYPTION_KEY: VALID_HEX_KEY,
-  AUTH_CONTEXT_TIMEOUT_MS: '2000',
-  DATABASE_CONNECT_TIMEOUT_MS: '5000',
-  DATABASE_POOL_MAX: '5',
+  AUTH_CONTEXT_TIMEOUT_MS: "2000",
+  DATABASE_CONNECT_TIMEOUT_MS: "5000",
+  DATABASE_POOL_MAX: "5",
 } as const;
 
 let app: ApiApp;
@@ -62,7 +59,11 @@ beforeAll(async () => {
 
   const dbHandle = {
     execute: async (query: unknown) => {
-      return (app.runtime.db.db as unknown as { execute: (q: unknown) => Promise<{ rows: unknown[] }> }).execute(query);
+      return (
+        app.runtime.db.db as unknown as {
+          execute: (q: unknown) => Promise<{ rows: unknown[] }>;
+        }
+      ).execute(query);
     },
   };
   insightRepo = createInsightRepository(dbHandle);
@@ -85,7 +86,10 @@ async function send(path: string) {
 }
 
 /** Insert a workspace + startup directly for testing. */
-async function seedStartup(): Promise<{ workspaceId: string; startupId: string }> {
+async function seedStartup(): Promise<{
+  workspaceId: string;
+  startupId: string;
+}> {
   const workspaceId = randomUUID();
   const startupId = randomUUID();
   const userId = randomUUID();
@@ -93,37 +97,39 @@ async function seedStartup(): Promise<{ workspaceId: string; startupId: string }
   await app.runtime.db.pool.query(
     `INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at)
      VALUES ('${userId}', 'Test User', 'test-${userId}@example.com', true, NOW(), NOW())
-     ON CONFLICT (id) DO NOTHING`,
+     ON CONFLICT (id) DO NOTHING`
   );
   await app.runtime.db.pool.query(
     `INSERT INTO "workspace" (id, name, slug, created_at)
      VALUES ('${workspaceId}', 'Test WS', 'test-ws-${workspaceId.slice(0, 8)}', NOW())
-     ON CONFLICT (id) DO NOTHING`,
+     ON CONFLICT (id) DO NOTHING`
   );
   await app.runtime.db.pool.query(
     `INSERT INTO "member" (id, organization_id, user_id, role, created_at)
      VALUES ('${randomUUID()}', '${workspaceId}', '${userId}', 'owner', NOW())
-     ON CONFLICT (id) DO NOTHING`,
+     ON CONFLICT (id) DO NOTHING`
   );
   await app.runtime.db.pool.query(
     `INSERT INTO "startup" (id, workspace_id, name, type, stage, timezone, currency, created_at, updated_at)
      VALUES ('${startupId}', '${workspaceId}', 'Test Startup', 'b2b_saas', 'mvp', 'UTC', 'USD', NOW(), NOW())
-     ON CONFLICT (id) DO NOTHING`,
+     ON CONFLICT (id) DO NOTHING`
   );
 
   return { workspaceId, startupId };
 }
 
-function makeEvidencePacket(overrides?: Partial<EvidencePacket>): EvidencePacket {
+function makeEvidencePacket(
+  overrides?: Partial<EvidencePacket>
+): EvidencePacket {
   return {
-    conditionCode: 'mrr_declining',
+    conditionCode: "mrr_declining",
     items: [
       {
-        metricKey: 'mrr',
-        label: 'Monthly Recurring Revenue',
-        currentValue: 10000,
-        previousValue: 12500,
-        direction: 'down',
+        metricKey: "mrr",
+        label: "Monthly Recurring Revenue",
+        currentValue: 10_000,
+        previousValue: 12_500,
+        direction: "down",
       },
     ],
     snapshotComputedAt: new Date().toISOString(),
@@ -132,30 +138,44 @@ function makeEvidencePacket(overrides?: Partial<EvidencePacket>): EvidencePacket
   };
 }
 
-function makeExplanation(overrides?: Partial<InsightExplanation>): InsightExplanation {
+function makeExplanation(
+  overrides?: Partial<InsightExplanation>
+): InsightExplanation {
   return {
-    observation: 'MRR has declined 20% from $12,500 to $10,000 over the last period.',
-    hypothesis: 'Recent churn in the mid-market segment may be driving the revenue decrease.',
+    observation:
+      "MRR has declined 20% from $12,500 to $10,000 over the last period.",
+    hypothesis:
+      "Recent churn in the mid-market segment may be driving the revenue decrease.",
     actions: [
-      { label: 'Review churn cohorts', rationale: 'Identify which customer segments are churning fastest.' },
-      { label: 'Check pricing alignment', rationale: 'Verify pricing matches perceived value for churning customers.' },
+      {
+        label: "Review churn cohorts",
+        rationale: "Identify which customer segments are churning fastest.",
+      },
+      {
+        label: "Check pricing alignment",
+        rationale:
+          "Verify pricing matches perceived value for churning customers.",
+      },
     ],
-    model: 'claude-sonnet-4-20250514',
+    model: "claude-sonnet-4-20250514",
     latencyMs: 1200,
     ...overrides,
   };
 }
 
-function makeInsightInput(startupId: string, overrides?: Partial<ReplaceInsightInput>): ReplaceInsightInput {
+function makeInsightInput(
+  startupId: string,
+  overrides?: Partial<ReplaceInsightInput>
+): ReplaceInsightInput {
   return {
     insightId: randomUUID(),
     startupId,
-    conditionCode: 'mrr_declining',
+    conditionCode: "mrr_declining",
     evidence: makeEvidencePacket(),
     explanation: makeExplanation(),
-    generationStatus: 'success',
+    generationStatus: "success",
     lastError: null,
-    model: 'claude-sonnet-4-20250514',
+    model: "claude-sonnet-4-20250514",
     explainerLatencyMs: 1200,
     generatedAt: new Date(),
     ...overrides,
@@ -166,27 +186,27 @@ function makeInsightInput(startupId: string, overrides?: Partial<ReplaceInsightI
 // 1. Shared Contract — Condition Code Guards
 // ============================================================================
 
-describe('insight contract — condition code guards', () => {
-  test('isInsightConditionCode accepts known values and rejects unknown', () => {
+describe("insight contract — condition code guards", () => {
+  test("isInsightConditionCode accepts known values and rejects unknown", () => {
     for (const code of INSIGHT_CONDITION_CODES) {
       expect(isInsightConditionCode(code)).toBe(true);
     }
-    expect(isInsightConditionCode('unknown_condition')).toBe(false);
-    expect(isInsightConditionCode('')).toBe(false);
-    expect(isInsightConditionCode('MRR_DECLINING')).toBe(false); // case-sensitive
+    expect(isInsightConditionCode("unknown_condition")).toBe(false);
+    expect(isInsightConditionCode("")).toBe(false);
+    expect(isInsightConditionCode("MRR_DECLINING")).toBe(false); // case-sensitive
   });
 
-  test('isInsightGenerationStatus accepts known values and rejects unknown', () => {
+  test("isInsightGenerationStatus accepts known values and rejects unknown", () => {
     for (const status of INSIGHT_GENERATION_STATUSES) {
       expect(isInsightGenerationStatus(status)).toBe(true);
     }
-    expect(isInsightGenerationStatus('pending')).toBe(false);
-    expect(isInsightGenerationStatus('')).toBe(false);
+    expect(isInsightGenerationStatus("pending")).toBe(false);
+    expect(isInsightGenerationStatus("")).toBe(false);
   });
 
-  test('condition labels cover all codes', () => {
+  test("condition labels cover all codes", () => {
     for (const code of INSIGHT_CONDITION_CODES) {
-      expect(typeof INSIGHT_CONDITION_LABELS[code]).toBe('string');
+      expect(typeof INSIGHT_CONDITION_LABELS[code]).toBe("string");
       expect(INSIGHT_CONDITION_LABELS[code].length).toBeGreaterThan(0);
     }
   });
@@ -196,67 +216,69 @@ describe('insight contract — condition code guards', () => {
 // 2. Shared Contract — Action Count Enforcement
 // ============================================================================
 
-describe('insight contract — action count enforcement', () => {
-  test('validateInsightActions accepts 1 action', () => {
+describe("insight contract — action count enforcement", () => {
+  test("validateInsightActions accepts 1 action", () => {
     const actions: InsightAction[] = [
-      { label: 'Do something', rationale: 'Because it helps.' },
+      { label: "Do something", rationale: "Because it helps." },
     ];
     expect(validateInsightActions(actions)).toBeNull();
   });
 
-  test('validateInsightActions accepts 2 actions', () => {
+  test("validateInsightActions accepts 2 actions", () => {
     const actions: InsightAction[] = [
-      { label: 'First', rationale: 'Reason one.' },
-      { label: 'Second', rationale: 'Reason two.' },
+      { label: "First", rationale: "Reason one." },
+      { label: "Second", rationale: "Reason two." },
     ];
     expect(validateInsightActions(actions)).toBeNull();
   });
 
-  test('validateInsightActions accepts 3 actions (max)', () => {
+  test("validateInsightActions accepts 3 actions (max)", () => {
     const actions: InsightAction[] = [
-      { label: 'A', rationale: 'R1.' },
-      { label: 'B', rationale: 'R2.' },
-      { label: 'C', rationale: 'R3.' },
+      { label: "A", rationale: "R1." },
+      { label: "B", rationale: "R2." },
+      { label: "C", rationale: "R3." },
     ];
     expect(validateInsightActions(actions)).toBeNull();
   });
 
-  test('validateInsightActions rejects 0 actions', () => {
+  test("validateInsightActions rejects 0 actions", () => {
     const err = validateInsightActions([]);
     expect(err).toContain(`${MIN_INSIGHT_ACTIONS}`);
-    expect(err).toContain('0');
+    expect(err).toContain("0");
   });
 
-  test('validateInsightActions rejects 4+ actions', () => {
+  test("validateInsightActions rejects 4+ actions", () => {
     const actions: InsightAction[] = [
-      { label: 'A', rationale: 'R1.' },
-      { label: 'B', rationale: 'R2.' },
-      { label: 'C', rationale: 'R3.' },
-      { label: 'D', rationale: 'R4.' },
+      { label: "A", rationale: "R1." },
+      { label: "B", rationale: "R2." },
+      { label: "C", rationale: "R3." },
+      { label: "D", rationale: "R4." },
     ];
     const err = validateInsightActions(actions);
     expect(err).toContain(`${MAX_INSIGHT_ACTIONS}`);
-    expect(err).toContain('4');
+    expect(err).toContain("4");
   });
 
-  test('validateInsightActions rejects non-array', () => {
-    expect(validateInsightActions('not-an-array')).toContain('must be an array');
-    expect(validateInsightActions(null)).toContain('must be an array');
+  test("validateInsightActions rejects non-array", () => {
+    expect(validateInsightActions("not-an-array")).toContain(
+      "must be an array"
+    );
+    expect(validateInsightActions(null)).toContain("must be an array");
   });
 
-  test('validateInsightActions rejects action with empty label', () => {
-    const actions = [{ label: '', rationale: 'Something.' }];
-    expect(validateInsightActions(actions)).toContain('non-empty label');
+  test("validateInsightActions rejects action with empty label", () => {
+    const actions = [{ label: "", rationale: "Something." }];
+    expect(validateInsightActions(actions)).toContain("non-empty label");
   });
 
-  test('validateInsightActions rejects action with empty rationale', () => {
-    const actions = [{ label: 'Do it', rationale: '' }];
-    expect(validateInsightActions(actions)).toContain('non-empty rationale');
+  test("validateInsightActions rejects action with empty rationale", () => {
+    const actions = [{ label: "Do it", rationale: "" }];
+    expect(validateInsightActions(actions)).toContain("non-empty rationale");
   });
 
-  test('validateInsightActions rejects action that is not an object', () => {
-    const actions = ['not-an-object'];
-    expect(validateInsightActions(actions)).toContain('non-null object');
+  test("validateInsightActions rejects action that is not an object", () => {
+    const actions = ["not-an-object"];
+    expect(validateInsightActions(actions)).toContain("non-null object");
   });
 });
 
@@ -264,42 +286,45 @@ describe('insight contract — action count enforcement', () => {
 // 3. Shared Contract — Evidence Packet Validation
 // ============================================================================
 
-describe('insight contract — evidence packet validation', () => {
-  test('validateEvidencePacket accepts a valid packet', () => {
+describe("insight contract — evidence packet validation", () => {
+  test("validateEvidencePacket accepts a valid packet", () => {
     const packet = makeEvidencePacket();
     expect(validateEvidencePacket(packet)).toBeNull();
   });
 
-  test('validateEvidencePacket rejects unknown condition code', () => {
-    const packet = { ...makeEvidencePacket(), conditionCode: 'unknown_code' };
-    expect(validateEvidencePacket(packet)).toContain('Invalid condition code');
+  test("validateEvidencePacket rejects unknown condition code", () => {
+    const packet = { ...makeEvidencePacket(), conditionCode: "unknown_code" };
+    expect(validateEvidencePacket(packet)).toContain("Invalid condition code");
   });
 
-  test('validateEvidencePacket rejects non-object', () => {
-    expect(validateEvidencePacket(null)).toContain('non-null object');
-    expect(validateEvidencePacket('string')).toContain('non-null object');
+  test("validateEvidencePacket rejects non-object", () => {
+    expect(validateEvidencePacket(null)).toContain("non-null object");
+    expect(validateEvidencePacket("string")).toContain("non-null object");
   });
 
-  test('validateEvidencePacket rejects non-array items', () => {
-    const packet = { ...makeEvidencePacket(), items: 'not-an-array' };
-    expect(validateEvidencePacket(packet)).toContain('must be an array');
+  test("validateEvidencePacket rejects non-array items", () => {
+    const packet = { ...makeEvidencePacket(), items: "not-an-array" };
+    expect(validateEvidencePacket(packet)).toContain("must be an array");
   });
 
-  test('validateEvidencePacket rejects item with non-finite currentValue', () => {
+  test("validateEvidencePacket rejects item with non-finite currentValue", () => {
     const packet = makeEvidencePacket();
-    packet.items[0] = { ...packet.items[0]!, currentValue: NaN };
-    expect(validateEvidencePacket(packet)).toContain('finite currentValue');
+    packet.items[0] = { ...packet.items[0]!, currentValue: Number.NaN };
+    expect(validateEvidencePacket(packet)).toContain("finite currentValue");
   });
 
-  test('validateEvidencePacket rejects item with invalid direction', () => {
+  test("validateEvidencePacket rejects item with invalid direction", () => {
     const packet = makeEvidencePacket();
-    (packet.items[0] as unknown as Record<string, unknown>).direction = 'sideways';
-    expect(validateEvidencePacket(packet)).toContain('direction');
+    (packet.items[0] as unknown as Record<string, unknown>).direction =
+      "sideways";
+    expect(validateEvidencePacket(packet)).toContain("direction");
   });
 
-  test('validateEvidencePacket rejects empty snapshotComputedAt', () => {
-    const packet = { ...makeEvidencePacket(), snapshotComputedAt: '' };
-    expect(validateEvidencePacket(packet)).toContain('non-empty snapshotComputedAt');
+  test("validateEvidencePacket rejects empty snapshotComputedAt", () => {
+    const packet = { ...makeEvidencePacket(), snapshotComputedAt: "" };
+    expect(validateEvidencePacket(packet)).toContain(
+      "non-empty snapshotComputedAt"
+    );
   });
 });
 
@@ -307,42 +332,50 @@ describe('insight contract — evidence packet validation', () => {
 // 4. Shared Contract — Explanation Validation
 // ============================================================================
 
-describe('insight contract — explanation validation', () => {
-  test('validateInsightExplanation accepts a valid explanation', () => {
+describe("insight contract — explanation validation", () => {
+  test("validateInsightExplanation accepts a valid explanation", () => {
     const explanation = makeExplanation();
     expect(validateInsightExplanation(explanation)).toBeNull();
   });
 
-  test('validateInsightExplanation rejects non-object', () => {
-    expect(validateInsightExplanation(null)).toContain('non-null object');
+  test("validateInsightExplanation rejects non-object", () => {
+    expect(validateInsightExplanation(null)).toContain("non-null object");
   });
 
-  test('validateInsightExplanation rejects empty observation', () => {
-    const explanation = { ...makeExplanation(), observation: '' };
-    expect(validateInsightExplanation(explanation)).toContain('non-empty observation');
+  test("validateInsightExplanation rejects empty observation", () => {
+    const explanation = { ...makeExplanation(), observation: "" };
+    expect(validateInsightExplanation(explanation)).toContain(
+      "non-empty observation"
+    );
   });
 
-  test('validateInsightExplanation rejects empty hypothesis', () => {
-    const explanation = { ...makeExplanation(), hypothesis: '' };
-    expect(validateInsightExplanation(explanation)).toContain('non-empty hypothesis');
+  test("validateInsightExplanation rejects empty hypothesis", () => {
+    const explanation = { ...makeExplanation(), hypothesis: "" };
+    expect(validateInsightExplanation(explanation)).toContain(
+      "non-empty hypothesis"
+    );
   });
 
-  test('validateInsightExplanation rejects empty model', () => {
-    const explanation = { ...makeExplanation(), model: '' };
-    expect(validateInsightExplanation(explanation)).toContain('non-empty model');
+  test("validateInsightExplanation rejects empty model", () => {
+    const explanation = { ...makeExplanation(), model: "" };
+    expect(validateInsightExplanation(explanation)).toContain(
+      "non-empty model"
+    );
   });
 
-  test('validateInsightExplanation rejects negative latencyMs', () => {
+  test("validateInsightExplanation rejects negative latencyMs", () => {
     const explanation = { ...makeExplanation(), latencyMs: -1 };
-    expect(validateInsightExplanation(explanation)).toContain('non-negative');
+    expect(validateInsightExplanation(explanation)).toContain("non-negative");
   });
 
-  test('validateInsightExplanation rejects NaN latencyMs', () => {
-    const explanation = { ...makeExplanation(), latencyMs: NaN };
-    expect(validateInsightExplanation(explanation)).toContain('non-negative finite');
+  test("validateInsightExplanation rejects NaN latencyMs", () => {
+    const explanation = { ...makeExplanation(), latencyMs: Number.NaN };
+    expect(validateInsightExplanation(explanation)).toContain(
+      "non-negative finite"
+    );
   });
 
-  test('validateInsightExplanation cascades action validation', () => {
+  test("validateInsightExplanation cascades action validation", () => {
     const explanation = makeExplanation({ actions: [] });
     const err = validateInsightExplanation(explanation);
     expect(err).toContain(`${MIN_INSIGHT_ACTIONS}`);
@@ -353,21 +386,21 @@ describe('insight contract — explanation validation', () => {
 // 5. Shared Contract — Direction Computation
 // ============================================================================
 
-describe('insight contract — direction computation', () => {
+describe("insight contract — direction computation", () => {
   test('computeDirection returns "down" when current < previous', () => {
-    expect(computeDirection(10, 20)).toBe('down');
+    expect(computeDirection(10, 20)).toBe("down");
   });
 
   test('computeDirection returns "up" when current > previous', () => {
-    expect(computeDirection(20, 10)).toBe('up');
+    expect(computeDirection(20, 10)).toBe("up");
   });
 
   test('computeDirection returns "flat" when current === previous', () => {
-    expect(computeDirection(10, 10)).toBe('flat');
+    expect(computeDirection(10, 10)).toBe("flat");
   });
 
   test('computeDirection returns "flat" when previous is null', () => {
-    expect(computeDirection(10, null)).toBe('flat');
+    expect(computeDirection(10, null)).toBe("flat");
   });
 });
 
@@ -375,34 +408,34 @@ describe('insight contract — direction computation', () => {
 // 6. Migration & Bootstrap — Insight Table
 // ============================================================================
 
-describe('migration and bootstrap — insight table', () => {
-  test('startup_insight table exists after bootstrap', async () => {
+describe("migration and bootstrap — insight table", () => {
+  test("startup_insight table exists after bootstrap", async () => {
     const result = (await app.runtime.db.pool.query(
       `SELECT table_name FROM information_schema.tables
-       WHERE table_schema = 'public' AND table_name = 'startup_insight'`,
+       WHERE table_schema = 'public' AND table_name = 'startup_insight'`
     )) as { rows?: Array<{ table_name: string }> };
 
     const tableNames = new Set((result.rows ?? []).map((r) => r.table_name));
-    expect(tableNames.has('startup_insight')).toBe(true);
+    expect(tableNames.has("startup_insight")).toBe(true);
   });
 
-  test('health endpoint reports startup-insight table readiness', async () => {
-    const res = await send('/api/health');
+  test("health endpoint reports startup-insight table readiness", async () => {
+    const res = await send("/api/health");
     const body = await parseJson(res);
 
     expect(res.status).toBe(200);
     expect(body.startupInsight).toEqual({ tablesReady: true });
 
     const database = body.database as { tables: string[] };
-    expect(database.tables).toContain('startup_insight');
+    expect(database.tables).toContain("startup_insight");
   });
 
-  test('checkInsightTableExists reports table ready', async () => {
+  test("checkInsightTableExists reports table ready", async () => {
     const ready = await insightRepo.checkInsightTableExists();
     expect(ready).toBe(true);
   });
 
-  test('unique constraint on startup_id prevents duplicate insight rows', async () => {
+  test("unique constraint on startup_id prevents duplicate insight rows", async () => {
     const { startupId } = await seedStartup();
 
     // Write first insight
@@ -414,15 +447,15 @@ describe('migration and bootstrap — insight table', () => {
     try {
       await app.runtime.db.pool.query(
         `INSERT INTO startup_insight (id, startup_id, condition_code, evidence, generation_status, generated_at, updated_at)
-         VALUES ('${secondId}', '${startupId}', 'mrr_declining', '{}', 'success', NOW(), NOW())`,
+         VALUES ('${secondId}', '${startupId}', 'mrr_declining', '{}', 'success', NOW(), NOW())`
       );
       expect(true).toBe(false); // Should not reach here
     } catch (error) {
       const pgCode =
-        typeof (error as Record<string, unknown>).code === 'string'
+        typeof (error as Record<string, unknown>).code === "string"
           ? (error as Record<string, unknown>).code
           : undefined;
-      expect(pgCode).toBe('23505');
+      expect(pgCode).toBe("23505");
     }
   });
 });
@@ -431,8 +464,8 @@ describe('migration and bootstrap — insight table', () => {
 // 7. Insight Persistence — Write / Read / Replace
 // ============================================================================
 
-describe('insight persistence — write / read / replace', () => {
-  test('first insight for a startup can be written and read back', async () => {
+describe("insight persistence — write / read / replace", () => {
+  test("first insight for a startup can be written and read back", async () => {
     const { startupId } = await seedStartup();
     const input = makeInsightInput(startupId);
 
@@ -440,50 +473,50 @@ describe('insight persistence — write / read / replace', () => {
 
     const row = await insightRepo.findInsight(startupId);
     expect(row).toBeDefined();
-    expect(row!.startupId).toBe(startupId);
-    expect(row!.conditionCode).toBe('mrr_declining');
-    expect(row!.generationStatus).toBe('success');
-    expect(row!.lastError).toBeNull();
-    expect(row!.model).toBe('claude-sonnet-4-20250514');
-    expect(row!.explainerLatencyMs).toBe(1200);
-    expect(row!.evidence).toBeTruthy();
-    expect(row!.explanation).toBeTruthy();
+    expect(row?.startupId).toBe(startupId);
+    expect(row?.conditionCode).toBe("mrr_declining");
+    expect(row?.generationStatus).toBe("success");
+    expect(row?.lastError).toBeNull();
+    expect(row?.model).toBe("claude-sonnet-4-20250514");
+    expect(row?.explainerLatencyMs).toBe(1200);
+    expect(row?.evidence).toBeTruthy();
+    expect(row?.explanation).toBeTruthy();
   });
 
-  test('replacing an existing insight atomically swaps all data', async () => {
+  test("replacing an existing insight atomically swaps all data", async () => {
     const { startupId } = await seedStartup();
 
     // Write initial insight
     const first = makeInsightInput(startupId, {
-      conditionCode: 'mrr_declining',
+      conditionCode: "mrr_declining",
     });
     await insightRepo.replaceInsight(first);
 
     // Replace with a churn_spike insight
     const second = makeInsightInput(startupId, {
-      conditionCode: 'churn_spike',
-      evidence: makeEvidencePacket({ conditionCode: 'churn_spike' }),
+      conditionCode: "churn_spike",
+      evidence: makeEvidencePacket({ conditionCode: "churn_spike" }),
     });
     await insightRepo.replaceInsight(second);
 
     const row = await insightRepo.findInsight(startupId);
     expect(row).toBeDefined();
-    expect(row!.id).toBe(second.insightId);
-    expect(row!.id).not.toBe(first.insightId);
-    expect(row!.conditionCode).toBe('churn_spike');
+    expect(row?.id).toBe(second.insightId);
+    expect(row?.id).not.toBe(first.insightId);
+    expect(row?.conditionCode).toBe("churn_spike");
   });
 
-  test('reading a startup with no insight returns undefined', async () => {
+  test("reading a startup with no insight returns undefined", async () => {
     const { startupId } = await seedStartup();
     const row = await insightRepo.findInsight(startupId);
     expect(row).toBeUndefined();
   });
 
-  test('insight with null explanation is valid (skipped generation)', async () => {
+  test("insight with null explanation is valid (skipped generation)", async () => {
     const { startupId } = await seedStartup();
     const input = makeInsightInput(startupId, {
       explanation: null,
-      generationStatus: 'skipped_blocked',
+      generationStatus: "skipped_blocked",
       model: null,
       explainerLatencyMs: null,
       lastError: null,
@@ -493,18 +526,18 @@ describe('insight persistence — write / read / replace', () => {
 
     const row = await insightRepo.findInsight(startupId);
     expect(row).toBeDefined();
-    expect(row!.explanation).toBeNull();
-    expect(row!.generationStatus).toBe('skipped_blocked');
-    expect(row!.model).toBeNull();
-    expect(row!.explainerLatencyMs).toBeNull();
+    expect(row?.explanation).toBeNull();
+    expect(row?.generationStatus).toBe("skipped_blocked");
+    expect(row?.model).toBeNull();
+    expect(row?.explainerLatencyMs).toBeNull();
   });
 
-  test('insight with lastError preserves error message', async () => {
+  test("insight with lastError preserves error message", async () => {
     const { startupId } = await seedStartup();
     const input = makeInsightInput(startupId, {
       explanation: null,
-      generationStatus: 'failed_explainer',
-      lastError: 'Anthropic API returned 500',
+      generationStatus: "failed_explainer",
+      lastError: "Anthropic API returned 500",
       model: null,
       explainerLatencyMs: null,
     });
@@ -512,8 +545,8 @@ describe('insight persistence — write / read / replace', () => {
     await insightRepo.replaceInsight(input);
 
     const row = await insightRepo.findInsight(startupId);
-    expect(row!.lastError).toBe('Anthropic API returned 500');
-    expect(row!.generationStatus).toBe('failed_explainer');
+    expect(row?.lastError).toBe("Anthropic API returned 500");
+    expect(row?.generationStatus).toBe("failed_explainer");
   });
 });
 
@@ -521,13 +554,13 @@ describe('insight persistence — write / read / replace', () => {
 // 8. Insight Persistence — Preserve-Last-Good Semantics
 // ============================================================================
 
-describe('insight persistence — preserve-last-good semantics', () => {
-  test('updateInsightDiagnostics updates status and error without changing evidence/explanation', async () => {
+describe("insight persistence — preserve-last-good semantics", () => {
+  test("updateInsightDiagnostics updates status and error without changing evidence/explanation", async () => {
     const { startupId } = await seedStartup();
 
     // Write a good insight
     const input = makeInsightInput(startupId, {
-      generationStatus: 'success',
+      generationStatus: "success",
       lastError: null,
     });
     await insightRepo.replaceInsight(input);
@@ -535,8 +568,8 @@ describe('insight persistence — preserve-last-good semantics', () => {
     // Simulate a failed re-generation: only update diagnostics
     const updated = await insightRepo.updateInsightDiagnostics({
       startupId,
-      generationStatus: 'failed_explainer',
-      lastError: 'Explainer timed out after 30s',
+      generationStatus: "failed_explainer",
+      lastError: "Explainer timed out after 30s",
       updatedAt: new Date(),
     });
     expect(updated).toBe(true);
@@ -544,25 +577,25 @@ describe('insight persistence — preserve-last-good semantics', () => {
     // Verify the evidence and explanation are preserved
     const row = await insightRepo.findInsight(startupId);
     expect(row).toBeDefined();
-    expect(row!.conditionCode).toBe('mrr_declining'); // Unchanged
-    expect(row!.explanation).toBeTruthy(); // Preserved
-    expect(row!.generationStatus).toBe('failed_explainer'); // Updated
-    expect(row!.lastError).toBe('Explainer timed out after 30s'); // Updated
+    expect(row?.conditionCode).toBe("mrr_declining"); // Unchanged
+    expect(row?.explanation).toBeTruthy(); // Preserved
+    expect(row?.generationStatus).toBe("failed_explainer"); // Updated
+    expect(row?.lastError).toBe("Explainer timed out after 30s"); // Updated
   });
 
-  test('updateInsightDiagnostics returns false when no insight exists', async () => {
+  test("updateInsightDiagnostics returns false when no insight exists", async () => {
     const { startupId } = await seedStartup();
 
     const updated = await insightRepo.updateInsightDiagnostics({
       startupId,
-      generationStatus: 'failed_explainer',
-      lastError: 'No insight to update',
+      generationStatus: "failed_explainer",
+      lastError: "No insight to update",
       updatedAt: new Date(),
     });
     expect(updated).toBe(false);
   });
 
-  test('good insight survives a failed diagnostics update on a different startup', async () => {
+  test("good insight survives a failed diagnostics update on a different startup", async () => {
     const { startupId: startupA } = await seedStartup();
     const { startupId: startupB } = await seedStartup();
 
@@ -572,8 +605,8 @@ describe('insight persistence — preserve-last-good semantics', () => {
     // Update diagnostics for startup B (which has no insight)
     const updated = await insightRepo.updateInsightDiagnostics({
       startupId: startupB,
-      generationStatus: 'failed_explainer',
-      lastError: 'Error on B',
+      generationStatus: "failed_explainer",
+      lastError: "Error on B",
       updatedAt: new Date(),
     });
     expect(updated).toBe(false);
@@ -581,7 +614,7 @@ describe('insight persistence — preserve-last-good semantics', () => {
     // Startup A's insight is untouched
     const rowA = await insightRepo.findInsight(startupA);
     expect(rowA).toBeDefined();
-    expect(rowA!.generationStatus).toBe('success');
+    expect(rowA?.generationStatus).toBe("success");
   });
 });
 
@@ -589,45 +622,48 @@ describe('insight persistence — preserve-last-good semantics', () => {
 // 9. Negative Tests — Malformed Inputs
 // ============================================================================
 
-describe('negative tests — malformed insight inputs', () => {
-  test('isInsightConditionCode rejects camelCase, uppercase, and typos', () => {
-    expect(isInsightConditionCode('mrrDeclining')).toBe(false);
-    expect(isInsightConditionCode('MRR_DECLINING')).toBe(false);
-    expect(isInsightConditionCode('mrr-declining')).toBe(false);
-    expect(isInsightConditionCode('churn_spke')).toBe(false);
+describe("negative tests — malformed insight inputs", () => {
+  test("isInsightConditionCode rejects camelCase, uppercase, and typos", () => {
+    expect(isInsightConditionCode("mrrDeclining")).toBe(false);
+    expect(isInsightConditionCode("MRR_DECLINING")).toBe(false);
+    expect(isInsightConditionCode("mrr-declining")).toBe(false);
+    expect(isInsightConditionCode("churn_spke")).toBe(false);
   });
 
-  test('validateEvidencePacket rejects item with non-string metricKey', () => {
+  test("validateEvidencePacket rejects item with non-string metricKey", () => {
     const packet = makeEvidencePacket();
     (packet.items[0] as unknown as Record<string, unknown>).metricKey = 42;
-    expect(validateEvidencePacket(packet)).toContain('non-empty metricKey');
+    expect(validateEvidencePacket(packet)).toContain("non-empty metricKey");
   });
 
-  test('validateEvidencePacket rejects item with empty label', () => {
+  test("validateEvidencePacket rejects item with empty label", () => {
     const packet = makeEvidencePacket();
-    packet.items[0] = { ...packet.items[0]!, label: '' };
-    expect(validateEvidencePacket(packet)).toContain('non-empty label');
+    packet.items[0] = { ...packet.items[0]!, label: "" };
+    expect(validateEvidencePacket(packet)).toContain("non-empty label");
   });
 
-  test('validateEvidencePacket rejects item with invalid previousValue', () => {
+  test("validateEvidencePacket rejects item with invalid previousValue", () => {
     const packet = makeEvidencePacket();
-    (packet.items[0] as unknown as Record<string, unknown>).previousValue = 'not-a-number';
-    expect(validateEvidencePacket(packet)).toContain('finite number or null');
+    (packet.items[0] as unknown as Record<string, unknown>).previousValue =
+      "not-a-number";
+    expect(validateEvidencePacket(packet)).toContain("finite number or null");
   });
 
-  test('validateInsightExplanation rejects missing actions array', () => {
+  test("validateInsightExplanation rejects missing actions array", () => {
     const explanation = { ...makeExplanation() } as Record<string, unknown>;
-    delete explanation.actions;
-    expect(validateInsightExplanation(explanation)).toContain('must be an array');
+    explanation.actions = undefined;
+    expect(validateInsightExplanation(explanation)).toContain(
+      "must be an array"
+    );
   });
 
-  test('validateInsightActions rejects action with whitespace-only label', () => {
-    const actions = [{ label: '   ', rationale: 'Something.' }];
-    expect(validateInsightActions(actions)).toContain('non-empty label');
+  test("validateInsightActions rejects action with whitespace-only label", () => {
+    const actions = [{ label: "   ", rationale: "Something." }];
+    expect(validateInsightActions(actions)).toContain("non-empty label");
   });
 
-  test('validateInsightActions rejects action with whitespace-only rationale', () => {
-    const actions = [{ label: 'Do it', rationale: '   ' }];
-    expect(validateInsightActions(actions)).toContain('non-empty rationale');
+  test("validateInsightActions rejects action with whitespace-only rationale", () => {
+    const actions = [{ label: "Do it", rationale: "   " }];
+    expect(validateInsightActions(actions)).toContain("non-empty rationale");
   });
 });

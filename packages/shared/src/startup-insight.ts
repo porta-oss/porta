@@ -15,25 +15,27 @@
 // ---------------------------------------------------------------------------
 
 export const INSIGHT_CONDITION_CODES = [
-  'mrr_declining',
-  'churn_spike',
-  'trial_conversion_drop',
-  'funnel_bottleneck',
-  'no_condition_detected',
+  "mrr_declining",
+  "churn_spike",
+  "trial_conversion_drop",
+  "funnel_bottleneck",
+  "no_condition_detected",
 ] as const;
 export type InsightConditionCode = (typeof INSIGHT_CONDITION_CODES)[number];
 
-export function isInsightConditionCode(value: string): value is InsightConditionCode {
+export function isInsightConditionCode(
+  value: string
+): value is InsightConditionCode {
   return INSIGHT_CONDITION_CODES.includes(value as InsightConditionCode);
 }
 
 /** Human-readable labels for each condition code. */
 export const INSIGHT_CONDITION_LABELS: Record<InsightConditionCode, string> = {
-  mrr_declining: 'MRR Declining',
-  churn_spike: 'Churn Spike',
-  trial_conversion_drop: 'Trial Conversion Drop',
-  funnel_bottleneck: 'Funnel Bottleneck',
-  no_condition_detected: 'No Condition Detected',
+  mrr_declining: "MRR Declining",
+  churn_spike: "Churn Spike",
+  trial_conversion_drop: "Trial Conversion Drop",
+  funnel_bottleneck: "Funnel Bottleneck",
+  no_condition_detected: "No Condition Detected",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -41,16 +43,19 @@ export const INSIGHT_CONDITION_LABELS: Record<InsightConditionCode, string> = {
 // ---------------------------------------------------------------------------
 
 export const INSIGHT_GENERATION_STATUSES = [
-  'success',
-  'skipped_blocked',
-  'skipped_stale',
-  'skipped_no_condition',
-  'failed_explainer',
-  'failed_persistence',
+  "success",
+  "skipped_blocked",
+  "skipped_stale",
+  "skipped_no_condition",
+  "failed_explainer",
+  "failed_persistence",
 ] as const;
-export type InsightGenerationStatus = (typeof INSIGHT_GENERATION_STATUSES)[number];
+export type InsightGenerationStatus =
+  (typeof INSIGHT_GENERATION_STATUSES)[number];
 
-export function isInsightGenerationStatus(value: string): value is InsightGenerationStatus {
+export function isInsightGenerationStatus(
+  value: string
+): value is InsightGenerationStatus {
   return INSIGHT_GENERATION_STATUSES.includes(value as InsightGenerationStatus);
 }
 
@@ -60,16 +65,16 @@ export function isInsightGenerationStatus(value: string): value is InsightGenera
 
 /** A single evidence item referencing a specific metric or data point. */
 export interface EvidenceItem {
-  /** Which metric or signal produced this evidence. */
-  metricKey: string;
-  /** Human-readable label for the metric. */
-  label: string;
   /** Current value. */
   currentValue: number;
+  /** Direction of change. */
+  direction: "up" | "down" | "flat";
+  /** Human-readable label for the metric. */
+  label: string;
+  /** Which metric or signal produced this evidence. */
+  metricKey: string;
   /** Previous value for comparison, null if unavailable. */
   previousValue: number | null;
-  /** Direction of change. */
-  direction: 'up' | 'down' | 'flat';
 }
 
 /** The complete evidence packet attached to an insight. */
@@ -96,16 +101,16 @@ export interface InsightAction {
 
 /** The AI-authored explanation attached to an insight. */
 export interface InsightExplanation {
-  /** Labeled observation: what the data shows. */
-  observation: string;
-  /** Labeled hypothesis: why this might be happening. */
-  hypothesis: string;
   /** 1–3 concrete actions for the founder. */
   actions: InsightAction[];
-  /** Which model produced the explanation (e.g. "claude-sonnet-4-20250514"). */
-  model: string;
+  /** Labeled hypothesis: why this might be happening. */
+  hypothesis: string;
   /** Latency in milliseconds for the explainer call. */
   latencyMs: number;
+  /** Which model produced the explanation (e.g. "claude-sonnet-4-20250514"). */
+  model: string;
+  /** Labeled observation: what the data shows. */
+  observation: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,19 +119,19 @@ export interface InsightExplanation {
 
 /** The full insight payload returned by the API and consumed by the UI. */
 export interface LatestInsightPayload {
-  startupId: string;
   /** Current condition code. */
   conditionCode: InsightConditionCode;
   /** Deterministic evidence packet. */
   evidence: EvidencePacket;
   /** AI-authored explanation, null if generation was skipped or failed. */
   explanation: InsightExplanation | null;
-  /** Status of the last generation attempt. */
-  generationStatus: InsightGenerationStatus;
   /** Timestamp when this insight was generated. */
   generatedAt: string;
+  /** Status of the last generation attempt. */
+  generationStatus: InsightGenerationStatus;
   /** Last error message from a failed generation attempt, null on success. */
   lastError: string | null;
+  startupId: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -144,25 +149,28 @@ export const MAX_INSIGHT_ACTIONS = 3;
  */
 export function validateInsightActions(actions: unknown): string | null {
   if (!Array.isArray(actions)) {
-    return 'Insight actions must be an array.';
+    return "Insight actions must be an array.";
   }
 
-  if (actions.length < MIN_INSIGHT_ACTIONS || actions.length > MAX_INSIGHT_ACTIONS) {
+  if (
+    actions.length < MIN_INSIGHT_ACTIONS ||
+    actions.length > MAX_INSIGHT_ACTIONS
+  ) {
     return `Insight must have ${MIN_INSIGHT_ACTIONS}–${MAX_INSIGHT_ACTIONS} actions, got ${actions.length}.`;
   }
 
   for (let i = 0; i < actions.length; i++) {
     const action = actions[i] as unknown;
-    if (typeof action !== 'object' || action === null) {
+    if (typeof action !== "object" || action === null) {
       return `Action at index ${i} must be a non-null object.`;
     }
 
     const a = action as Record<string, unknown>;
-    if (typeof a.label !== 'string' || a.label.trim().length === 0) {
+    if (typeof a.label !== "string" || a.label.trim().length === 0) {
       return `Action at index ${i} must have a non-empty label.`;
     }
 
-    if (typeof a.rationale !== 'string' || a.rationale.trim().length === 0) {
+    if (typeof a.rationale !== "string" || a.rationale.trim().length === 0) {
       return `Action at index ${i} must have a non-empty rationale.`;
     }
   }
@@ -175,50 +183,66 @@ export function validateInsightActions(actions: unknown): string | null {
  * Returns an error string or null if valid.
  */
 export function validateEvidencePacket(packet: unknown): string | null {
-  if (typeof packet !== 'object' || packet === null) {
-    return 'Evidence packet must be a non-null object.';
+  if (typeof packet !== "object" || packet === null) {
+    return "Evidence packet must be a non-null object.";
   }
 
   const p = packet as Record<string, unknown>;
 
-  if (typeof p.conditionCode !== 'string' || !isInsightConditionCode(p.conditionCode)) {
-    return `Invalid condition code: ${String(p.conditionCode)}. Expected one of: ${INSIGHT_CONDITION_CODES.join(', ')}`;
+  if (
+    typeof p.conditionCode !== "string" ||
+    !isInsightConditionCode(p.conditionCode)
+  ) {
+    return `Invalid condition code: ${String(p.conditionCode)}. Expected one of: ${INSIGHT_CONDITION_CODES.join(", ")}`;
   }
 
   if (!Array.isArray(p.items)) {
-    return 'Evidence packet items must be an array.';
+    return "Evidence packet items must be an array.";
   }
 
   for (let i = 0; i < p.items.length; i++) {
     const item = p.items[i] as unknown;
-    if (typeof item !== 'object' || item === null) {
+    if (typeof item !== "object" || item === null) {
       return `Evidence item at index ${i} must be a non-null object.`;
     }
 
     const it = item as Record<string, unknown>;
-    if (typeof it.metricKey !== 'string' || it.metricKey.trim().length === 0) {
+    if (typeof it.metricKey !== "string" || it.metricKey.trim().length === 0) {
       return `Evidence item at index ${i} must have a non-empty metricKey.`;
     }
-    if (typeof it.label !== 'string' || it.label.trim().length === 0) {
+    if (typeof it.label !== "string" || it.label.trim().length === 0) {
       return `Evidence item at index ${i} must have a non-empty label.`;
     }
-    if (typeof it.currentValue !== 'number' || !Number.isFinite(it.currentValue)) {
+    if (
+      typeof it.currentValue !== "number" ||
+      !Number.isFinite(it.currentValue)
+    ) {
       return `Evidence item at index ${i} must have a finite currentValue.`;
     }
-    if (it.previousValue !== null && (typeof it.previousValue !== 'number' || !Number.isFinite(it.previousValue))) {
+    if (
+      it.previousValue !== null &&
+      (typeof it.previousValue !== "number" ||
+        !Number.isFinite(it.previousValue))
+    ) {
       return `Evidence item at index ${i} previousValue must be a finite number or null.`;
     }
-    if (typeof it.direction !== 'string' || !['up', 'down', 'flat'].includes(it.direction)) {
+    if (
+      typeof it.direction !== "string" ||
+      !["up", "down", "flat"].includes(it.direction)
+    ) {
       return `Evidence item at index ${i} direction must be "up", "down", or "flat".`;
     }
   }
 
-  if (typeof p.snapshotComputedAt !== 'string' || p.snapshotComputedAt.trim().length === 0) {
-    return 'Evidence packet must have a non-empty snapshotComputedAt.';
+  if (
+    typeof p.snapshotComputedAt !== "string" ||
+    p.snapshotComputedAt.trim().length === 0
+  ) {
+    return "Evidence packet must have a non-empty snapshotComputedAt.";
   }
 
-  if (p.syncJobId !== null && typeof p.syncJobId !== 'string') {
-    return 'Evidence packet syncJobId must be a string or null.';
+  if (p.syncJobId !== null && typeof p.syncJobId !== "string") {
+    return "Evidence packet syncJobId must be a string or null.";
   }
 
   return null;
@@ -228,19 +252,21 @@ export function validateEvidencePacket(packet: unknown): string | null {
  * Validate a full InsightExplanation shape.
  * Returns an error string or null if valid.
  */
-export function validateInsightExplanation(explanation: unknown): string | null {
-  if (typeof explanation !== 'object' || explanation === null) {
-    return 'Insight explanation must be a non-null object.';
+export function validateInsightExplanation(
+  explanation: unknown
+): string | null {
+  if (typeof explanation !== "object" || explanation === null) {
+    return "Insight explanation must be a non-null object.";
   }
 
   const e = explanation as Record<string, unknown>;
 
-  if (typeof e.observation !== 'string' || e.observation.trim().length === 0) {
-    return 'Insight explanation must have a non-empty observation.';
+  if (typeof e.observation !== "string" || e.observation.trim().length === 0) {
+    return "Insight explanation must have a non-empty observation.";
   }
 
-  if (typeof e.hypothesis !== 'string' || e.hypothesis.trim().length === 0) {
-    return 'Insight explanation must have a non-empty hypothesis.';
+  if (typeof e.hypothesis !== "string" || e.hypothesis.trim().length === 0) {
+    return "Insight explanation must have a non-empty hypothesis.";
   }
 
   const actionsErr = validateInsightActions(e.actions);
@@ -248,12 +274,16 @@ export function validateInsightExplanation(explanation: unknown): string | null 
     return actionsErr;
   }
 
-  if (typeof e.model !== 'string' || e.model.trim().length === 0) {
-    return 'Insight explanation must have a non-empty model identifier.';
+  if (typeof e.model !== "string" || e.model.trim().length === 0) {
+    return "Insight explanation must have a non-empty model identifier.";
   }
 
-  if (typeof e.latencyMs !== 'number' || !Number.isFinite(e.latencyMs) || e.latencyMs < 0) {
-    return 'Insight explanation latencyMs must be a non-negative finite number.';
+  if (
+    typeof e.latencyMs !== "number" ||
+    !Number.isFinite(e.latencyMs) ||
+    e.latencyMs < 0
+  ) {
+    return "Insight explanation latencyMs must be a non-negative finite number.";
   }
 
   return null;
@@ -268,10 +298,16 @@ export function validateInsightExplanation(explanation: unknown): string | null 
  */
 export function computeDirection(
   current: number,
-  previous: number | null,
-): 'up' | 'down' | 'flat' {
-  if (previous === null) return 'flat';
-  if (current > previous) return 'up';
-  if (current < previous) return 'down';
-  return 'flat';
+  previous: number | null
+): "up" | "down" | "flat" {
+  if (previous === null) {
+    return "flat";
+  }
+  if (current > previous) {
+    return "up";
+  }
+  if (current < previous) {
+    return "down";
+  }
+  return "flat";
 }

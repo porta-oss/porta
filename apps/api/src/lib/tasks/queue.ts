@@ -4,10 +4,10 @@
 //
 // Follows the same pattern as apps/api/src/lib/connectors/queue.ts.
 
-import { Queue } from 'bullmq';
+import { Queue } from "bullmq";
 
 /** Canonical queue name — must match apps/worker/src/queues.ts. */
-export const TASK_SYNC_QUEUE = 'task-sync' as const;
+export const TASK_SYNC_QUEUE = "task-sync" as const;
 
 /** Reference-only payload — never contains secrets or raw issue content. */
 export interface TaskSyncJobPayload {
@@ -19,7 +19,7 @@ export interface TaskSyncJobPayload {
 const DEFAULT_JOB_OPTIONS = {
   attempts: 3,
   backoff: {
-    type: 'exponential' as const,
+    type: "exponential" as const,
     delay: 2000,
   },
   removeOnComplete: { count: 200 },
@@ -31,15 +31,15 @@ export interface TaskSyncEnqueueRequest {
 }
 
 export interface TaskSyncEnqueueResult {
-  success: boolean;
-  jobId?: string;
   error?: string;
+  jobId?: string;
+  success: boolean;
 }
 
 export interface TaskSyncQueueProducer {
-  enqueue(request: TaskSyncEnqueueRequest): Promise<TaskSyncEnqueueResult>;
   /** Graceful shutdown — closes the underlying Redis connection. */
   close?(): Promise<void>;
+  enqueue(request: TaskSyncEnqueueRequest): Promise<TaskSyncEnqueueResult>;
 }
 
 /**
@@ -60,7 +60,9 @@ function parseRedisConnection(redisUrl: string) {
  * Production queue producer backed by a real BullMQ Queue.
  * Sends reference-only payloads (task ID only) with retry/backoff.
  */
-export function createTaskSyncQueueProducer(redisUrl: string): TaskSyncQueueProducer {
+export function createTaskSyncQueueProducer(
+  redisUrl: string
+): TaskSyncQueueProducer {
   const connection = parseRedisConnection(redisUrl);
   const queue = new Queue<TaskSyncJobPayload>(TASK_SYNC_QUEUE, {
     connection,
@@ -68,11 +70,13 @@ export function createTaskSyncQueueProducer(redisUrl: string): TaskSyncQueueProd
   });
 
   return {
-    async enqueue(request: TaskSyncEnqueueRequest): Promise<TaskSyncEnqueueResult> {
+    async enqueue(
+      request: TaskSyncEnqueueRequest
+    ): Promise<TaskSyncEnqueueResult> {
       if (!request.taskId) {
         return {
           success: false,
-          error: 'Task sync enqueue failed: missing taskId.',
+          error: "Task sync enqueue failed: missing taskId.",
         };
       }
 
@@ -81,11 +85,11 @@ export function createTaskSyncQueueProducer(redisUrl: string): TaskSyncQueueProd
       };
 
       try {
-        const job = await queue.add('task-sync', payload, {
+        const job = await queue.add("task-sync", payload, {
           jobId: `task-sync-${request.taskId}`,
         });
 
-        console.info('[task-queue] task sync job enqueued', {
+        console.info("[task-queue] task sync job enqueued", {
           taskId: request.taskId,
           bullmqJobId: job.id,
         });
@@ -96,7 +100,7 @@ export function createTaskSyncQueueProducer(redisUrl: string): TaskSyncQueueProd
         };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.error('[task-queue] task sync enqueue failed', {
+        console.error("[task-queue] task sync enqueue failed", {
           taskId: request.taskId,
           error: message,
         });
@@ -117,22 +121,27 @@ export function createTaskSyncQueueProducer(redisUrl: string): TaskSyncQueueProd
  * Stub queue producer for tests — records all enqueue attempts.
  */
 export function createStubTaskSyncQueueProducer(
-  result: TaskSyncEnqueueResult = { success: true, jobId: 'stub-task-sync-job' },
+  result: TaskSyncEnqueueResult = { success: true, jobId: "stub-task-sync-job" }
 ): TaskSyncQueueProducer & { calls: TaskSyncEnqueueRequest[] } {
   const calls: TaskSyncEnqueueRequest[] = [];
   return {
     calls,
-    async enqueue(request: TaskSyncEnqueueRequest): Promise<TaskSyncEnqueueResult> {
+    async enqueue(
+      request: TaskSyncEnqueueRequest
+    ): Promise<TaskSyncEnqueueResult> {
       calls.push(request);
 
       if (!request.taskId) {
         return {
           success: false,
-          error: 'Task sync enqueue failed: missing taskId.',
+          error: "Task sync enqueue failed: missing taskId.",
         };
       }
 
-      return { ...result, jobId: result.jobId ?? `task-sync-${request.taskId}` };
+      return {
+        ...result,
+        jobId: result.jobId ?? `task-sync-${request.taskId}`,
+      };
     },
   };
 }
@@ -141,12 +150,14 @@ export function createStubTaskSyncQueueProducer(
  * Failing queue producer stub for error-path tests.
  */
 export function createFailingTaskSyncQueueProducer(
-  error = 'Task sync queue connection refused',
+  error = "Task sync queue connection refused"
 ): TaskSyncQueueProducer & { calls: TaskSyncEnqueueRequest[] } {
   const calls: TaskSyncEnqueueRequest[] = [];
   return {
     calls,
-    async enqueue(request: TaskSyncEnqueueRequest): Promise<TaskSyncEnqueueResult> {
+    async enqueue(
+      request: TaskSyncEnqueueRequest
+    ): Promise<TaskSyncEnqueueResult> {
       calls.push(request);
       return { success: false, error };
     },

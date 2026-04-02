@@ -1,17 +1,17 @@
-import { createRouter, type RouterHistory } from '@tanstack/react-router';
+import { createRouter, type RouterHistory } from "@tanstack/react-router";
 
-import { authController, type AuthController } from './lib/auth-client';
-import { authenticatedRoute } from './routes/_authenticated';
-import { dashboardRoute } from './routes/_authenticated/dashboard';
-import { onboardingRoute } from './routes/_authenticated/onboarding';
-import { signInRoute } from './routes/auth/sign-in';
-import { rootRoute } from './routes/__root';
-import { indexRoute } from './routes/index';
+import { type AuthController, authController } from "./lib/auth-client";
+import { rootRoute } from "./routes/__root";
+import { authenticatedRoute } from "./routes/_authenticated";
+import { dashboardRoute } from "./routes/_authenticated/dashboard";
+import { onboardingRoute } from "./routes/_authenticated/onboarding";
+import { signInRoute } from "./routes/auth/sign-in";
+import { indexRoute } from "./routes/index";
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
   signInRoute,
-  authenticatedRoute.addChildren([dashboardRoute, onboardingRoute])
+  authenticatedRoute.addChildren([dashboardRoute, onboardingRoute]),
 ]);
 
 export function createAppRouter(
@@ -22,11 +22,11 @@ export function createAppRouter(
     routeTree,
     history: options?.history,
     context: {
-      auth
+      auth,
     },
     defaultPendingMs: 0,
     defaultPendingMinMs: 0,
-    defaultPreload: 'intent'
+    defaultPreload: "intent",
   });
 }
 
@@ -34,7 +34,7 @@ export const router = createAppRouter();
 
 export type AppRouter = ReturnType<typeof createAppRouter>;
 
-declare module '@tanstack/react-router' {
+declare module "@tanstack/react-router" {
   interface Register {
     router: AppRouter;
   }

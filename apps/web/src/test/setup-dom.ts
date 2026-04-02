@@ -1,7 +1,7 @@
-import { JSDOM } from 'jsdom';
+import { JSDOM } from "jsdom";
 
-const dom = new JSDOM('<!doctype html><html><body></body></html>', {
-  url: 'http://localhost/'
+const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+  url: "http://localhost/",
 });
 
 const { window } = dom;
@@ -25,11 +25,14 @@ Object.assign(globalThis, {
   KeyboardEvent: window.KeyboardEvent,
   FormData: window.FormData,
   getComputedStyle: window.getComputedStyle.bind(window),
-  requestAnimationFrame: (callback: FrameRequestCallback) => window.setTimeout(() => callback(Date.now()), 0),
+  requestAnimationFrame: (callback: FrameRequestCallback) =>
+    window.setTimeout(() => callback(Date.now()), 0),
   cancelAnimationFrame: (handle: number) => window.clearTimeout(handle),
-  scrollTo: () => undefined
+  scrollTo: () => undefined,
 });
 
 window.scrollTo = () => undefined;
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;

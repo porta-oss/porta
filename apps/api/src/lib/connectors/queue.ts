@@ -2,17 +2,21 @@
 // The queue name and default job options match the worker consumer in
 // apps/worker/src/queues.ts so that jobs flow end-to-end.
 
-import { Queue } from 'bullmq';
-import type { ConnectorProvider, SyncTrigger, SyncJobPayload } from '@shared/connectors';
+import type {
+  ConnectorProvider,
+  SyncJobPayload,
+  SyncTrigger,
+} from "@shared/connectors";
+import { Queue } from "bullmq";
 
 /** Canonical queue name — must match apps/worker/src/queues.ts. */
-const CONNECTOR_SYNC_QUEUE = 'connector-sync';
+const CONNECTOR_SYNC_QUEUE = "connector-sync";
 
 /** Default retry policy — mirrored from the worker for consistency. */
 const DEFAULT_JOB_OPTIONS = {
   attempts: 3,
   backoff: {
-    type: 'exponential' as const,
+    type: "exponential" as const,
     delay: 1000,
   },
   removeOnComplete: { count: 200 },
@@ -21,22 +25,22 @@ const DEFAULT_JOB_OPTIONS = {
 
 export interface SyncEnqueueRequest {
   connectorId: string;
-  startupId: string;
   provider: ConnectorProvider;
-  trigger: SyncTrigger;
+  startupId: string;
   syncJobId: string;
+  trigger: SyncTrigger;
 }
 
 export interface SyncEnqueueResult {
-  success: boolean;
-  jobId?: string;
   error?: string;
+  jobId?: string;
+  success: boolean;
 }
 
 export interface SyncQueueProducer {
-  enqueue(request: SyncEnqueueRequest): Promise<SyncEnqueueResult>;
   /** Graceful shutdown — closes the underlying Redis connection. */
   close?(): Promise<void>;
+  enqueue(request: SyncEnqueueRequest): Promise<SyncEnqueueResult>;
 }
 
 /**
@@ -68,10 +72,11 @@ export function createSyncQueueProducer(redisUrl: string): SyncQueueProducer {
   return {
     async enqueue(request: SyncEnqueueRequest): Promise<SyncEnqueueResult> {
       // Validate payload shape before accepting
-      if (!request.connectorId || !request.startupId || !request.syncJobId) {
+      if (!(request.connectorId && request.startupId && request.syncJobId)) {
         return {
           success: false,
-          error: 'Queue enqueue failed: malformed payload — missing required reference IDs.',
+          error:
+            "Queue enqueue failed: malformed payload — missing required reference IDs.",
         };
       }
 
@@ -84,11 +89,11 @@ export function createSyncQueueProducer(redisUrl: string): SyncQueueProducer {
       };
 
       try {
-        const job = await queue.add('connector-sync', payload, {
+        const job = await queue.add("connector-sync", payload, {
           jobId: request.syncJobId,
         });
 
-        console.info('[queue] sync job enqueued', {
+        console.info("[queue] sync job enqueued", {
           syncJobId: payload.syncJobId,
           connectorId: payload.connectorId,
           provider: payload.provider,
@@ -102,7 +107,7 @@ export function createSyncQueueProducer(redisUrl: string): SyncQueueProducer {
         };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.error('[queue] sync job enqueue failed', {
+        console.error("[queue] sync job enqueue failed", {
           syncJobId: payload.syncJobId,
           connectorId: payload.connectorId,
           error: message,
@@ -124,7 +129,7 @@ export function createSyncQueueProducer(redisUrl: string): SyncQueueProducer {
  * Stub queue producer for tests — records all enqueue attempts.
  */
 export function createStubQueueProducer(
-  result: SyncEnqueueResult = { success: true, jobId: 'stub-job-id' },
+  result: SyncEnqueueResult = { success: true, jobId: "stub-job-id" }
 ): SyncQueueProducer & { calls: SyncEnqueueRequest[] } {
   const calls: SyncEnqueueRequest[] = [];
   return {
@@ -132,10 +137,11 @@ export function createStubQueueProducer(
     async enqueue(request: SyncEnqueueRequest): Promise<SyncEnqueueResult> {
       calls.push(request);
 
-      if (!request.connectorId || !request.startupId || !request.syncJobId) {
+      if (!(request.connectorId && request.startupId && request.syncJobId)) {
         return {
           success: false,
-          error: 'Queue enqueue failed: malformed payload — missing required reference IDs.',
+          error:
+            "Queue enqueue failed: malformed payload — missing required reference IDs.",
         };
       }
 
@@ -148,7 +154,7 @@ export function createStubQueueProducer(
  * Failing queue producer stub for error-path tests.
  */
 export function createFailingQueueProducer(
-  error = 'Queue connection refused',
+  error = "Queue connection refused"
 ): SyncQueueProducer & { calls: SyncEnqueueRequest[] } {
   const calls: SyncEnqueueRequest[] = [];
   return {

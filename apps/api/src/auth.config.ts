@@ -1,6 +1,6 @@
-import { createAuthRuntime } from './auth';
-import { createApiDatabase } from './db/index';
-import { readApiEnv } from './lib/env';
+import { createAuthRuntime } from "./auth";
+import { createApiDatabase } from "./db/index";
+import { readApiEnv } from "./lib/env";
 
 const env = readApiEnv(process.env, { strict: true });
 const db = createApiDatabase(env);

@@ -1,46 +1,52 @@
-import { randomUUID } from 'node:crypto';
-
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { eq } from 'drizzle-orm';
-
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "bun:test";
+import { randomUUID } from "node:crypto";
 import {
   CONNECTOR_PROVIDERS,
   isConnectorProvider,
   isSyncTrigger,
-  type ConnectorProvider
-} from '@shared/connectors';
+} from "@shared/connectors";
 import {
   decryptConnectorConfig,
+  type EncryptedBlob,
   encryptConnectorConfig,
   parseEncryptionKey,
-  type EncryptedBlob
-} from '@shared/crypto';
+} from "@shared/crypto";
+import { eq } from "drizzle-orm";
 
-import { createApiApp, type ApiApp } from '../src/app';
-import { connector, syncJob } from '../src/db/schema/connector';
+import { type ApiApp, createApiApp } from "../src/app";
+import { connector, syncJob } from "../src/db/schema/connector";
 
 // ---------------------------------------------------------------------------
 // Test environment
 // ---------------------------------------------------------------------------
 
-const VALID_HEX_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+const VALID_HEX_KEY =
+  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 const TEST_ENV = {
-  NODE_ENV: 'test',
-  API_PORT: '3000',
-  API_URL: 'http://localhost:3000',
-  WEB_URL: 'http://localhost:5173',
-  DATABASE_URL: 'postgres://postgres:postgres@127.0.0.1:5432/founder_control_plane',
-  REDIS_URL: 'redis://127.0.0.1:6379',
-  BETTER_AUTH_URL: 'http://localhost:3000',
-  BETTER_AUTH_SECRET: '0123456789abcdef0123456789abcdef',
-  GOOGLE_CLIENT_ID: 'google-client-id',
-  GOOGLE_CLIENT_SECRET: 'google-client-secret',
-  MAGIC_LINK_SENDER_EMAIL: 'dev@founder-control-plane.local',
+  NODE_ENV: "test",
+  API_PORT: "3000",
+  API_URL: "http://localhost:3000",
+  WEB_URL: "http://localhost:5173",
+  DATABASE_URL:
+    "postgres://postgres:postgres@127.0.0.1:5432/founder_control_plane",
+  REDIS_URL: "redis://127.0.0.1:6379",
+  BETTER_AUTH_URL: "http://localhost:3000",
+  BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
+  GOOGLE_CLIENT_ID: "google-client-id",
+  GOOGLE_CLIENT_SECRET: "google-client-secret",
+  MAGIC_LINK_SENDER_EMAIL: "dev@founder-control-plane.local",
   CONNECTOR_ENCRYPTION_KEY: VALID_HEX_KEY,
-  AUTH_CONTEXT_TIMEOUT_MS: '2000',
-  DATABASE_CONNECT_TIMEOUT_MS: '5000',
-  DATABASE_POOL_MAX: '5'
+  AUTH_CONTEXT_TIMEOUT_MS: "2000",
+  DATABASE_CONNECT_TIMEOUT_MS: "5000",
+  DATABASE_POOL_MAX: "5",
 } as const;
 
 let app: ApiApp;
@@ -66,21 +72,32 @@ async function send(path: string) {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  return typeof value === "object" && value !== null;
 }
 
 function extractPgCode(error: unknown): string | undefined {
-  if (isRecord(error) && typeof error.code === 'string') return error.code;
-  if (isRecord(error) && isRecord(error.cause) && typeof error.cause.code === 'string') return error.cause.code;
+  if (isRecord(error) && typeof error.code === "string") {
+    return error.code;
+  }
+  if (
+    isRecord(error) &&
+    isRecord(error.cause) &&
+    typeof error.cause.code === "string"
+  ) {
+    return error.cause.code;
+  }
   return undefined;
 }
 
 /** Insert a workspace + startup directly so we can test connector tables. */
-async function seedStartup(): Promise<{ workspaceId: string; startupId: string }> {
+async function seedStartup(): Promise<{
+  workspaceId: string;
+  startupId: string;
+}> {
   const workspaceId = randomUUID();
   const startupId = randomUUID();
   const userId = randomUUID();
-  const now = new Date();
+  const _now = new Date();
 
   await app.runtime.db.pool.query(
     `INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at)
@@ -110,34 +127,34 @@ async function seedStartup(): Promise<{ workspaceId: string; startupId: string }
 // 1. Migration & Bootstrap
 // ============================================================================
 
-describe('migration and bootstrap', () => {
-  test('connector and sync_job tables exist after bootstrap', async () => {
+describe("migration and bootstrap", () => {
+  test("connector and sync_job tables exist after bootstrap", async () => {
     const result = (await app.runtime.db.pool.query(
       `SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'public' AND table_name IN ('connector', 'sync_job')`
     )) as { rows?: Array<{ table_name: string }> };
 
     const tableNames = new Set((result.rows ?? []).map((r) => r.table_name));
-    expect(tableNames.has('connector')).toBe(true);
-    expect(tableNames.has('sync_job')).toBe(true);
+    expect(tableNames.has("connector")).toBe(true);
+    expect(tableNames.has("sync_job")).toBe(true);
   });
 
-  test('health endpoint reports connector tables and encryption key readiness', async () => {
-    const res = await send('/api/health');
+  test("health endpoint reports connector tables and encryption key readiness", async () => {
+    const res = await send("/api/health");
     const body = await parseJson(res);
 
     expect(res.status).toBe(200);
     expect(body.connectors).toEqual({
       encryptionKeyConfigured: true,
-      tablesReady: true
+      tablesReady: true,
     });
 
     const database = body.database as { tables: string[] };
-    expect(database.tables).toContain('connector');
-    expect(database.tables).toContain('sync_job');
+    expect(database.tables).toContain("connector");
+    expect(database.tables).toContain("sync_job");
   });
 
-  test('rejects partial connector schema (simulated check)', async () => {
+  test("rejects partial connector schema (simulated check)", async () => {
     // We can't easily simulate partial state in an active DB, so we verify
     // that the bootstrap function would throw on partial table counts.
     // The ensureExpectedSchemaState logic checks for size !== CONNECTOR_TABLE_NAMES.length.
@@ -151,34 +168,47 @@ describe('migration and bootstrap', () => {
 // 2. Environment / Encryption Key Validation
 // ============================================================================
 
-describe('CONNECTOR_ENCRYPTION_KEY validation', () => {
-  test('rejects missing key in strict mode', () => {
-    const { readApiEnv } = require('../src/lib/env');
-    expect(() =>
-      readApiEnv({ ...TEST_ENV, CONNECTOR_ENCRYPTION_KEY: undefined }, { strict: true })
-    ).toThrow('CONNECTOR_ENCRYPTION_KEY is required in strict mode');
-  });
-
-  test('rejects wrong-length key', () => {
-    const { readApiEnv } = require('../src/lib/env');
-    expect(() =>
-      readApiEnv({ ...TEST_ENV, CONNECTOR_ENCRYPTION_KEY: 'abcdef' }, { strict: true })
-    ).toThrow('exactly 64 hex characters');
-  });
-
-  test('rejects non-hex key', () => {
-    const { readApiEnv } = require('../src/lib/env');
+describe("CONNECTOR_ENCRYPTION_KEY validation", () => {
+  test("rejects missing key in strict mode", () => {
+    const { readApiEnv } = require("../src/lib/env");
     expect(() =>
       readApiEnv(
-        { ...TEST_ENV, CONNECTOR_ENCRYPTION_KEY: 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz' },
+        { ...TEST_ENV, CONNECTOR_ENCRYPTION_KEY: undefined },
         { strict: true }
       )
-    ).toThrow('non-hex characters');
+    ).toThrow("CONNECTOR_ENCRYPTION_KEY is required in strict mode");
   });
 
-  test('accepts valid 64-char hex key', () => {
-    const { readApiEnv } = require('../src/lib/env');
-    const env = readApiEnv({ ...TEST_ENV, CONNECTOR_ENCRYPTION_KEY: VALID_HEX_KEY }, { strict: true });
+  test("rejects wrong-length key", () => {
+    const { readApiEnv } = require("../src/lib/env");
+    expect(() =>
+      readApiEnv(
+        { ...TEST_ENV, CONNECTOR_ENCRYPTION_KEY: "abcdef" },
+        { strict: true }
+      )
+    ).toThrow("exactly 64 hex characters");
+  });
+
+  test("rejects non-hex key", () => {
+    const { readApiEnv } = require("../src/lib/env");
+    expect(() =>
+      readApiEnv(
+        {
+          ...TEST_ENV,
+          CONNECTOR_ENCRYPTION_KEY:
+            "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+        },
+        { strict: true }
+      )
+    ).toThrow("non-hex characters");
+  });
+
+  test("accepts valid 64-char hex key", () => {
+    const { readApiEnv } = require("../src/lib/env");
+    const env = readApiEnv(
+      { ...TEST_ENV, CONNECTOR_ENCRYPTION_KEY: VALID_HEX_KEY },
+      { strict: true }
+    );
     expect(env.connectorEncryptionKey).toBe(VALID_HEX_KEY);
   });
 });
@@ -187,26 +217,33 @@ describe('CONNECTOR_ENCRYPTION_KEY validation', () => {
 // 3. AES-256-GCM Encrypt / Decrypt
 // ============================================================================
 
-describe('AES-256-GCM crypto helpers', () => {
+describe("AES-256-GCM crypto helpers", () => {
   const key = parseEncryptionKey(VALID_HEX_KEY);
 
-  test('parseEncryptionKey returns 32-byte buffer from valid hex', () => {
+  test("parseEncryptionKey returns 32-byte buffer from valid hex", () => {
     expect(key.length).toBe(32);
     expect(Buffer.isBuffer(key)).toBe(true);
   });
 
-  test('parseEncryptionKey rejects wrong length', () => {
-    expect(() => parseEncryptionKey('abcd')).toThrow('exactly 64 hex characters');
+  test("parseEncryptionKey rejects wrong length", () => {
+    expect(() => parseEncryptionKey("abcd")).toThrow(
+      "exactly 64 hex characters"
+    );
   });
 
-  test('parseEncryptionKey rejects non-hex', () => {
+  test("parseEncryptionKey rejects non-hex", () => {
     expect(() =>
-      parseEncryptionKey('zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz')
-    ).toThrow('non-hex characters');
+      parseEncryptionKey(
+        "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+      )
+    ).toThrow("non-hex characters");
   });
 
-  test('roundtrip encrypt → decrypt preserves plaintext', () => {
-    const plaintext = JSON.stringify({ apiKey: 'phc_test_secret_123', projectId: '42' });
+  test("roundtrip encrypt → decrypt preserves plaintext", () => {
+    const plaintext = JSON.stringify({
+      apiKey: "phc_test_secret_123",
+      projectId: "42",
+    });
     const blob = encryptConnectorConfig(plaintext, key);
 
     expect(blob.ciphertext).toBeTruthy();
@@ -218,8 +255,8 @@ describe('AES-256-GCM crypto helpers', () => {
     expect(decrypted).toBe(plaintext);
   });
 
-  test('each encryption produces different ciphertext (random IV)', () => {
-    const plaintext = 'same-secret';
+  test("each encryption produces different ciphertext (random IV)", () => {
+    const plaintext = "same-secret";
     const blob1 = encryptConnectorConfig(plaintext, key);
     const blob2 = encryptConnectorConfig(plaintext, key);
 
@@ -227,63 +264,70 @@ describe('AES-256-GCM crypto helpers', () => {
     expect(blob1.ciphertext).not.toBe(blob2.ciphertext);
   });
 
-  test('tampered ciphertext is rejected', () => {
-    const blob = encryptConnectorConfig('sensitive-data', key);
+  test("tampered ciphertext is rejected", () => {
+    const blob = encryptConnectorConfig("sensitive-data", key);
     const tamperedBlob: EncryptedBlob = {
       ...blob,
-      ciphertext: blob.ciphertext.replace(/^./, blob.ciphertext[0] === 'a' ? 'b' : 'a')
+      ciphertext: blob.ciphertext.replace(
+        /^./,
+        blob.ciphertext[0] === "a" ? "b" : "a"
+      ),
     };
 
     expect(() => decryptConnectorConfig(tamperedBlob, key)).toThrow(
-      'authentication tag mismatch or corrupted ciphertext'
+      "authentication tag mismatch or corrupted ciphertext"
     );
   });
 
-  test('tampered auth tag is rejected', () => {
-    const blob = encryptConnectorConfig('sensitive-data', key);
+  test("tampered auth tag is rejected", () => {
+    const blob = encryptConnectorConfig("sensitive-data", key);
     const tamperedBlob: EncryptedBlob = {
       ...blob,
-      authTag: '00'.repeat(16)
+      authTag: "00".repeat(16),
     };
 
     expect(() => decryptConnectorConfig(tamperedBlob, key)).toThrow(
-      'authentication tag mismatch or corrupted ciphertext'
+      "authentication tag mismatch or corrupted ciphertext"
     );
   });
 
-  test('tampered IV is rejected', () => {
-    const blob = encryptConnectorConfig('sensitive-data', key);
+  test("tampered IV is rejected", () => {
+    const blob = encryptConnectorConfig("sensitive-data", key);
     const tamperedBlob: EncryptedBlob = {
       ...blob,
-      iv: '00'.repeat(12)
+      iv: "00".repeat(12),
     };
 
     expect(() => decryptConnectorConfig(tamperedBlob, key)).toThrow(
-      'authentication tag mismatch or corrupted ciphertext'
+      "authentication tag mismatch or corrupted ciphertext"
     );
   });
 
-  test('wrong key is rejected', () => {
-    const otherKey = parseEncryptionKey('ff'.repeat(32));
-    const blob = encryptConnectorConfig('sensitive-data', key);
+  test("wrong key is rejected", () => {
+    const otherKey = parseEncryptionKey("ff".repeat(32));
+    const blob = encryptConnectorConfig("sensitive-data", key);
 
     expect(() => decryptConnectorConfig(blob, otherKey)).toThrow(
-      'authentication tag mismatch or corrupted ciphertext'
+      "authentication tag mismatch or corrupted ciphertext"
     );
   });
 
-  test('malformed IV length is rejected', () => {
-    const blob = encryptConnectorConfig('sensitive-data', key);
-    const badBlob: EncryptedBlob = { ...blob, iv: 'aabb' };
+  test("malformed IV length is rejected", () => {
+    const blob = encryptConnectorConfig("sensitive-data", key);
+    const badBlob: EncryptedBlob = { ...blob, iv: "aabb" };
 
-    expect(() => decryptConnectorConfig(badBlob, key)).toThrow('IV must be 12 bytes');
+    expect(() => decryptConnectorConfig(badBlob, key)).toThrow(
+      "IV must be 12 bytes"
+    );
   });
 
-  test('malformed auth tag length is rejected', () => {
-    const blob = encryptConnectorConfig('sensitive-data', key);
-    const badBlob: EncryptedBlob = { ...blob, authTag: 'aabb' };
+  test("malformed auth tag length is rejected", () => {
+    const blob = encryptConnectorConfig("sensitive-data", key);
+    const badBlob: EncryptedBlob = { ...blob, authTag: "aabb" };
 
-    expect(() => decryptConnectorConfig(badBlob, key)).toThrow('auth tag must be 16 bytes');
+    expect(() => decryptConnectorConfig(badBlob, key)).toThrow(
+      "auth tag must be 16 bytes"
+    );
   });
 });
 
@@ -291,23 +335,23 @@ describe('AES-256-GCM crypto helpers', () => {
 // 4. Shared Connector Contracts
 // ============================================================================
 
-describe('shared connector contracts', () => {
-  test('isConnectorProvider validates known providers', () => {
-    expect(isConnectorProvider('posthog')).toBe(true);
-    expect(isConnectorProvider('stripe')).toBe(true);
-    expect(isConnectorProvider('unknown')).toBe(false);
-    expect(isConnectorProvider('')).toBe(false);
+describe("shared connector contracts", () => {
+  test("isConnectorProvider validates known providers", () => {
+    expect(isConnectorProvider("posthog")).toBe(true);
+    expect(isConnectorProvider("stripe")).toBe(true);
+    expect(isConnectorProvider("unknown")).toBe(false);
+    expect(isConnectorProvider("")).toBe(false);
   });
 
-  test('isSyncTrigger validates known triggers', () => {
-    expect(isSyncTrigger('initial')).toBe(true);
-    expect(isSyncTrigger('manual')).toBe(true);
-    expect(isSyncTrigger('scheduled')).toBe(true);
-    expect(isSyncTrigger('cron')).toBe(false);
+  test("isSyncTrigger validates known triggers", () => {
+    expect(isSyncTrigger("initial")).toBe(true);
+    expect(isSyncTrigger("manual")).toBe(true);
+    expect(isSyncTrigger("scheduled")).toBe(true);
+    expect(isSyncTrigger("cron")).toBe(false);
   });
 
-  test('CONNECTOR_PROVIDERS matches expected set', () => {
-    expect(CONNECTOR_PROVIDERS).toEqual(['posthog', 'stripe', 'postgres']);
+  test("CONNECTOR_PROVIDERS matches expected set", () => {
+    expect(CONNECTOR_PROVIDERS).toEqual(["posthog", "stripe", "postgres"]);
   });
 });
 
@@ -315,7 +359,7 @@ describe('shared connector contracts', () => {
 // 5. Connector Table Constraints (DB-level)
 // ============================================================================
 
-describe('connector table constraints', () => {
+describe("connector table constraints", () => {
   let startupId: string;
   const key = parseEncryptionKey(VALID_HEX_KEY);
 
@@ -326,48 +370,60 @@ describe('connector table constraints', () => {
 
   beforeEach(async () => {
     // Clean connector/sync_job rows between tests (cascade will remove sync_jobs too)
-    await app.runtime.db.pool.query(`DELETE FROM "connector" WHERE startup_id = '${startupId}'`);
+    await app.runtime.db.pool.query(
+      `DELETE FROM "connector" WHERE startup_id = '${startupId}'`
+    );
   });
 
-  test('can insert a connector with encrypted config', async () => {
+  test("can insert a connector with encrypted config", async () => {
     const connectorId = randomUUID();
-    const blob = encryptConnectorConfig(JSON.stringify({ apiKey: 'test' }), key);
+    const blob = encryptConnectorConfig(
+      JSON.stringify({ apiKey: "test" }),
+      key
+    );
 
     await app.runtime.db.db.insert(connector).values({
       id: connectorId,
       startupId,
-      provider: 'posthog',
-      status: 'pending',
+      provider: "posthog",
+      status: "pending",
       encryptedConfig: blob.ciphertext,
       encryptionIv: blob.iv,
-      encryptionAuthTag: blob.authTag
+      encryptionAuthTag: blob.authTag,
     });
 
-    const rows = await app.runtime.db.db.select().from(connector).where(eq(connector.id, connectorId));
+    const rows = await app.runtime.db.db
+      .select()
+      .from(connector)
+      .where(eq(connector.id, connectorId));
     expect(rows).toHaveLength(1);
     const row = rows[0]!;
-    expect(row.provider).toBe('posthog');
+    expect(row.provider).toBe("posthog");
     expect(row.encryptedConfig).toBe(blob.ciphertext);
 
     // Roundtrip: decrypt from DB should yield original
     const decrypted = decryptConnectorConfig(
-      { ciphertext: row.encryptedConfig, iv: row.encryptionIv, authTag: row.encryptionAuthTag },
+      {
+        ciphertext: row.encryptedConfig,
+        iv: row.encryptionIv,
+        authTag: row.encryptionAuthTag,
+      },
       key
     );
-    expect(JSON.parse(decrypted)).toEqual({ apiKey: 'test' });
+    expect(JSON.parse(decrypted)).toEqual({ apiKey: "test" });
   });
 
-  test('enforces unique provider per startup', async () => {
-    const blob = encryptConnectorConfig('{}', key);
+  test("enforces unique provider per startup", async () => {
+    const blob = encryptConnectorConfig("{}", key);
 
     await app.runtime.db.db.insert(connector).values({
       id: randomUUID(),
       startupId,
-      provider: 'stripe',
-      status: 'pending',
+      provider: "stripe",
+      status: "pending",
       encryptedConfig: blob.ciphertext,
       encryptionIv: blob.iv,
-      encryptionAuthTag: blob.authTag
+      encryptionAuthTag: blob.authTag,
     });
 
     // Second insert with same startup + provider should fail
@@ -375,120 +431,131 @@ describe('connector table constraints', () => {
       await app.runtime.db.db.insert(connector).values({
         id: randomUUID(),
         startupId,
-        provider: 'stripe',
-        status: 'pending',
+        provider: "stripe",
+        status: "pending",
         encryptedConfig: blob.ciphertext,
         encryptionIv: blob.iv,
-        encryptionAuthTag: blob.authTag
+        encryptionAuthTag: blob.authTag,
       });
       // If we get here, the constraint didn't fire
       expect(true).toBe(false);
     } catch (error: unknown) {
       // PG unique violation error code is 23505
-      expect(extractPgCode(error)).toBe('23505');
+      expect(extractPgCode(error)).toBe("23505");
     }
   });
 
-  test('rejects unsupported provider via CHECK constraint', async () => {
-    const blob = encryptConnectorConfig('{}', key);
+  test("rejects unsupported provider via CHECK constraint", async () => {
+    const blob = encryptConnectorConfig("{}", key);
 
     try {
       await app.runtime.db.db.insert(connector).values({
         id: randomUUID(),
         startupId,
-        provider: 'unknown_provider',
-        status: 'pending',
+        provider: "unknown_provider",
+        status: "pending",
         encryptedConfig: blob.ciphertext,
         encryptionIv: blob.iv,
-        encryptionAuthTag: blob.authTag
+        encryptionAuthTag: blob.authTag,
       });
       expect(true).toBe(false);
     } catch (error: unknown) {
       // PG check violation error code is 23514
-      expect(extractPgCode(error)).toBe('23514');
+      expect(extractPgCode(error)).toBe("23514");
     }
   });
 
-  test('null sync timestamps on freshly created connector', async () => {
+  test("null sync timestamps on freshly created connector", async () => {
     const connectorId = randomUUID();
-    const blob = encryptConnectorConfig('{}', key);
+    const blob = encryptConnectorConfig("{}", key);
 
     await app.runtime.db.db.insert(connector).values({
       id: connectorId,
       startupId,
-      provider: 'posthog',
-      status: 'pending',
+      provider: "posthog",
+      status: "pending",
       encryptedConfig: blob.ciphertext,
       encryptionIv: blob.iv,
-      encryptionAuthTag: blob.authTag
+      encryptionAuthTag: blob.authTag,
     });
 
-    const rows = await app.runtime.db.db.select().from(connector).where(eq(connector.id, connectorId));
+    const rows = await app.runtime.db.db
+      .select()
+      .from(connector)
+      .where(eq(connector.id, connectorId));
     const row = rows[0]!;
     expect(row.lastSyncAt).toBeNull();
     expect(row.lastSyncDurationMs).toBeNull();
     expect(row.lastSyncError).toBeNull();
   });
 
-  test('can insert and read sync_job rows', async () => {
+  test("can insert and read sync_job rows", async () => {
     const connectorId = randomUUID();
     const syncJobId = randomUUID();
-    const blob = encryptConnectorConfig('{}', key);
+    const blob = encryptConnectorConfig("{}", key);
 
     await app.runtime.db.db.insert(connector).values({
       id: connectorId,
       startupId,
-      provider: 'posthog',
-      status: 'pending',
+      provider: "posthog",
+      status: "pending",
       encryptedConfig: blob.ciphertext,
       encryptionIv: blob.iv,
-      encryptionAuthTag: blob.authTag
+      encryptionAuthTag: blob.authTag,
     });
 
     await app.runtime.db.db.insert(syncJob).values({
       id: syncJobId,
       connectorId,
-      status: 'queued',
-      trigger: 'initial',
-      attempt: 1
+      status: "queued",
+      trigger: "initial",
+      attempt: 1,
     });
 
-    const rows = await app.runtime.db.db.select().from(syncJob).where(eq(syncJob.connectorId, connectorId));
+    const rows = await app.runtime.db.db
+      .select()
+      .from(syncJob)
+      .where(eq(syncJob.connectorId, connectorId));
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.status).toBe('queued');
-    expect(rows[0]!.trigger).toBe('initial');
-    expect(rows[0]!.startedAt).toBeNull();
-    expect(rows[0]!.completedAt).toBeNull();
+    expect(rows[0]?.status).toBe("queued");
+    expect(rows[0]?.trigger).toBe("initial");
+    expect(rows[0]?.startedAt).toBeNull();
+    expect(rows[0]?.completedAt).toBeNull();
   });
 
-  test('cascade deletes sync_jobs when connector is deleted', async () => {
+  test("cascade deletes sync_jobs when connector is deleted", async () => {
     const connectorId = randomUUID();
     const syncJobId = randomUUID();
-    const blob = encryptConnectorConfig('{}', key);
+    const blob = encryptConnectorConfig("{}", key);
 
     await app.runtime.db.db.insert(connector).values({
       id: connectorId,
       startupId,
-      provider: 'stripe',
-      status: 'connected',
+      provider: "stripe",
+      status: "connected",
       encryptedConfig: blob.ciphertext,
       encryptionIv: blob.iv,
-      encryptionAuthTag: blob.authTag
+      encryptionAuthTag: blob.authTag,
     });
 
     await app.runtime.db.db.insert(syncJob).values({
       id: syncJobId,
       connectorId,
-      status: 'completed',
-      trigger: 'manual',
-      attempt: 1
+      status: "completed",
+      trigger: "manual",
+      attempt: 1,
     });
 
     // Delete the connector
-    await app.runtime.db.db.delete(connector).where(eq(connector.id, connectorId));
+    await app.runtime.db.db
+      .delete(connector)
+      .where(eq(connector.id, connectorId));
 
     // sync_job should be gone too
-    const orphanedJobs = await app.runtime.db.db.select().from(syncJob).where(eq(syncJob.id, syncJobId));
+    const orphanedJobs = await app.runtime.db.db
+      .select()
+      .from(syncJob)
+      .where(eq(syncJob.id, syncJobId));
     expect(orphanedJobs).toHaveLength(0);
   });
 });

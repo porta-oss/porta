@@ -2,7 +2,7 @@
 // Validates a Stripe secret key by calling the Stripe balance endpoint.
 // All errors are redacted — the raw key never appears in error messages or logs.
 
-import type { ProviderValidationResult } from './posthog';
+import type { ProviderValidationResult } from "./posthog";
 
 export interface StripeConfig {
   secretKey: string;
@@ -13,7 +13,7 @@ export interface StripeValidator {
 }
 
 const DEFAULT_TIMEOUT_MS = 8000;
-const STRIPE_API_BASE = 'https://api.stripe.com';
+const STRIPE_API_BASE = "https://api.stripe.com";
 const STRIPE_KEY_PATTERN = /^(sk_test_|sk_live_|rk_test_|rk_live_)/;
 
 function isValidStripeKeyFormat(key: string): boolean {
@@ -23,7 +23,9 @@ function isValidStripeKeyFormat(key: string): boolean {
 /**
  * Production Stripe validator that calls the real Stripe balance endpoint.
  */
-export function createStripeValidator(options?: { timeoutMs?: number }): StripeValidator {
+export function createStripeValidator(options?: {
+  timeoutMs?: number;
+}): StripeValidator {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   return {
@@ -31,13 +33,14 @@ export function createStripeValidator(options?: { timeoutMs?: number }): StripeV
       const key = config.secretKey.trim();
 
       if (!key) {
-        return { valid: false, error: 'Stripe secret key is required.' };
+        return { valid: false, error: "Stripe secret key is required." };
       }
 
       if (!isValidStripeKeyFormat(key)) {
         return {
           valid: false,
-          error: 'Stripe key format is invalid. Keys must start with sk_test_, sk_live_, rk_test_, or rk_live_.'
+          error:
+            "Stripe key format is invalid. Keys must start with sk_test_, sk_live_, rk_test_, or rk_live_.",
         };
       }
 
@@ -46,12 +49,12 @@ export function createStripeValidator(options?: { timeoutMs?: number }): StripeV
         const timer = setTimeout(() => controller.abort(), timeoutMs);
 
         const response = await fetch(`${STRIPE_API_BASE}/v1/balance`, {
-          method: 'GET',
+          method: "GET",
           headers: {
             Authorization: `Bearer ${key}`,
-            Accept: 'application/json'
+            Accept: "application/json",
           },
-          signal: controller.signal
+          signal: controller.signal,
         });
 
         clearTimeout(timer);
@@ -63,50 +66,51 @@ export function createStripeValidator(options?: { timeoutMs?: number }): StripeV
         if (response.status === 401) {
           return {
             valid: false,
-            error: 'Stripe secret key is invalid or has been revoked.'
+            error: "Stripe secret key is invalid or has been revoked.",
           };
         }
 
         if (response.status === 403) {
           return {
             valid: false,
-            error: 'Stripe key lacks the required permissions.'
+            error: "Stripe key lacks the required permissions.",
           };
         }
 
         if (response.status >= 500) {
           return {
             valid: false,
-            error: 'Stripe API returned a server error. Try again shortly.',
-            retryable: true
+            error: "Stripe API returned a server error. Try again shortly.",
+            retryable: true,
           };
         }
 
         return {
           valid: false,
-          error: `Stripe validation failed with status ${response.status}.`
+          error: `Stripe validation failed with status ${response.status}.`,
         };
       } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') {
+        if (err instanceof DOMException && err.name === "AbortError") {
           return {
             valid: false,
-            error: 'Stripe validation timed out. Try again.',
-            retryable: true
+            error: "Stripe validation timed out. Try again.",
+            retryable: true,
           };
         }
 
-        console.warn('[stripe] validation request failed', {
-          provider: 'stripe',
-          error: err instanceof Error ? err.message : String(err)
+        console.warn("[stripe] validation request failed", {
+          provider: "stripe",
+          error: err instanceof Error ? err.message : String(err),
         });
 
         return {
           valid: false,
-          error: 'Stripe validation request failed. Check network connectivity.',
-          retryable: true
+          error:
+            "Stripe validation request failed. Check network connectivity.",
+          retryable: true,
         };
       }
-    }
+    },
   };
 }
 
@@ -124,17 +128,18 @@ export function createStubStripeValidator(
 
       const key = config.secretKey.trim();
       if (!key) {
-        return { valid: false, error: 'Stripe secret key is required.' };
+        return { valid: false, error: "Stripe secret key is required." };
       }
       if (!isValidStripeKeyFormat(key)) {
         return {
           valid: false,
-          error: 'Stripe key format is invalid. Keys must start with sk_test_, sk_live_, rk_test_, or rk_live_.'
+          error:
+            "Stripe key format is invalid. Keys must start with sk_test_, sk_live_, rk_test_, or rk_live_.",
         };
       }
 
       return result;
-    }
+    },
   };
 }
 
@@ -142,7 +147,7 @@ export function createStubStripeValidator(
  * Deterministic demo credentials accepted during founder-proof mode.
  * Key format validation is still enforced — only the live HTTP call is skipped.
  */
-const STRIPE_DEMO_SECRET_KEY = 'sk_test_founder_proof_demo_key';
+const STRIPE_DEMO_SECRET_KEY = "sk_test_founder_proof_demo_key";
 
 export function createFounderProofStripeValidator(): StripeValidator {
   return {
@@ -150,13 +155,14 @@ export function createFounderProofStripeValidator(): StripeValidator {
       const key = config.secretKey.trim();
 
       if (!key) {
-        return { valid: false, error: 'Stripe secret key is required.' };
+        return { valid: false, error: "Stripe secret key is required." };
       }
 
       if (!isValidStripeKeyFormat(key)) {
         return {
           valid: false,
-          error: 'Stripe key format is invalid. Keys must start with sk_test_, sk_live_, rk_test_, or rk_live_.'
+          error:
+            "Stripe key format is invalid. Keys must start with sk_test_, sk_live_, rk_test_, or rk_live_.",
         };
       }
 
@@ -167,9 +173,10 @@ export function createFounderProofStripeValidator(): StripeValidator {
 
       return {
         valid: false,
-        error: 'Founder-proof mode requires the deterministic demo secret key. Use the documented proof value.'
+        error:
+          "Founder-proof mode requires the deterministic demo secret key. Use the documented proof value.",
       };
-    }
+    },
   };
 }
 

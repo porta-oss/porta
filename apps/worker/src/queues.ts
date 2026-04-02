@@ -1,22 +1,22 @@
 // BullMQ queue and connection definitions for the connector-sync worker.
 // Queue name and job payload shape must match the producer in apps/api/src/lib/connectors/queue.ts.
 
-import { Queue, Worker } from 'bullmq';
-import type { ConnectionOptions, WorkerOptions } from 'bullmq';
-import type { SyncJobPayload } from '@shared/connectors';
-import type { TaskSyncJobPayload } from './processors/task-sync';
+import type { SyncJobPayload } from "@shared/connectors";
+import type { ConnectionOptions, WorkerOptions } from "bullmq";
+import { Queue, Worker } from "bullmq";
+import type { TaskSyncJobPayload } from "./processors/task-sync";
 
 /** Canonical queue name — must match across producer and consumer. */
-export const CONNECTOR_SYNC_QUEUE = 'connector-sync' as const;
+export const CONNECTOR_SYNC_QUEUE = "connector-sync" as const;
 
 /** Task sync queue name — must match apps/api/src/lib/tasks/queue.ts. */
-export const TASK_SYNC_QUEUE = 'task-sync' as const;
+export const TASK_SYNC_QUEUE = "task-sync" as const;
 
 /** Default retry policy: 3 attempts with exponential backoff (1s, 4s, 9s). */
 export const DEFAULT_JOB_OPTIONS = {
   attempts: 3,
   backoff: {
-    type: 'exponential' as const,
+    type: "exponential" as const,
     delay: 1000,
   },
   removeOnComplete: { count: 200 },
@@ -53,20 +53,16 @@ export function createSyncQueue(redisUrl: string): Queue<SyncJobPayload> {
  */
 export function createSyncWorker(
   redisUrl: string,
-  processor: (job: import('bullmq').Job<SyncJobPayload>) => Promise<void>,
-  options?: Partial<Pick<WorkerOptions, 'concurrency' | 'lockDuration'>>,
+  processor: (job: import("bullmq").Job<SyncJobPayload>) => Promise<void>,
+  options?: Partial<Pick<WorkerOptions, "concurrency" | "lockDuration">>
 ): Worker<SyncJobPayload> {
   const connection = parseRedisConnection(redisUrl);
-  return new Worker<SyncJobPayload>(
-    CONNECTOR_SYNC_QUEUE,
-    processor,
-    {
-      connection,
-      concurrency: options?.concurrency ?? 3,
-      lockDuration: options?.lockDuration ?? 60_000,
-      autorun: true,
-    },
-  );
+  return new Worker<SyncJobPayload>(CONNECTOR_SYNC_QUEUE, processor, {
+    connection,
+    concurrency: options?.concurrency ?? 3,
+    lockDuration: options?.lockDuration ?? 60_000,
+    autorun: true,
+  });
 }
 
 /**
@@ -74,18 +70,14 @@ export function createSyncWorker(
  */
 export function createTaskSyncWorker(
   redisUrl: string,
-  processor: (job: import('bullmq').Job<TaskSyncJobPayload>) => Promise<void>,
-  options?: Partial<Pick<WorkerOptions, 'concurrency' | 'lockDuration'>>,
+  processor: (job: import("bullmq").Job<TaskSyncJobPayload>) => Promise<void>,
+  options?: Partial<Pick<WorkerOptions, "concurrency" | "lockDuration">>
 ): Worker<TaskSyncJobPayload> {
   const connection = parseRedisConnection(redisUrl);
-  return new Worker<TaskSyncJobPayload>(
-    TASK_SYNC_QUEUE,
-    processor,
-    {
-      connection,
-      concurrency: options?.concurrency ?? 2,
-      lockDuration: options?.lockDuration ?? 60_000,
-      autorun: true,
-    },
-  );
+  return new Worker<TaskSyncJobPayload>(TASK_SYNC_QUEUE, processor, {
+    connection,
+    concurrency: options?.concurrency ?? 2,
+    lockDuration: options?.lockDuration ?? 60_000,
+    autorun: true,
+  });
 }

@@ -1,29 +1,29 @@
-import { betterAuth } from 'better-auth';
-import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { magicLink } from 'better-auth/plugins/magic-link';
-import { organization } from 'better-auth/plugins/organization';
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { magicLink } from "better-auth/plugins/magic-link";
+import { organization } from "better-auth/plugins/organization";
 
-import type { ApiDatabase } from './db/index';
-import * as authSchema from './db/schema/auth';
-import type { ApiEnv } from './lib/env';
-import { summarizeAuthProviders } from './lib/env';
+import type { ApiDatabase } from "./db/index";
+import * as authSchema from "./db/schema/auth";
+import type { ApiEnv } from "./lib/env";
+import { summarizeAuthProviders } from "./lib/env";
 
 export interface MagicLinkDelivery {
-  email: string;
-  url: string;
-  token: string;
   createdAt: string;
+  email: string;
+  token: string;
+  url: string;
 }
 
 export interface ApiAuthRuntime {
   auth: ReturnType<typeof betterAuth>;
   bootstrap: {
-    basePath: '/api/auth';
+    basePath: "/api/auth";
     providers: ReturnType<typeof summarizeAuthProviders>;
-    magicLinkTransport: 'dev-inbox';
+    magicLinkTransport: "dev-inbox";
   };
-  listMagicLinks: (email?: string) => MagicLinkDelivery[];
   getLatestMagicLink: (email?: string) => MagicLinkDelivery | undefined;
+  listMagicLinks: (email?: string) => MagicLinkDelivery[];
   resetMagicLinks: () => void;
 }
 
@@ -31,35 +31,38 @@ export function createWorkspaceSlug(name: string) {
   return name
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
     .slice(0, 63);
 }
 
-export function createAuthRuntime(env: ApiEnv, database: ApiDatabase): ApiAuthRuntime {
+export function createAuthRuntime(
+  env: ApiEnv,
+  database: ApiDatabase
+): ApiAuthRuntime {
   const magicLinkInbox: MagicLinkDelivery[] = [];
   const providers = summarizeAuthProviders(env);
 
   const auth = betterAuth({
-    appName: 'Founder Control Plane',
+    appName: "Founder Control Plane",
     baseURL: env.betterAuthUrl,
-    basePath: '/api/auth',
+    basePath: "/api/auth",
     secret: env.betterAuthSecret,
     trustedOrigins: [env.webUrl, env.apiUrl],
     advanced: {
-      useSecureCookies: env.nodeEnv === 'production'
+      useSecureCookies: env.nodeEnv === "production",
     },
     database: drizzleAdapter(database.db, {
-      provider: 'pg',
+      provider: "pg",
       transaction: true,
-      schema: authSchema
+      schema: authSchema,
     }),
     socialProviders: providers.google.configured
       ? {
           google: {
             clientId: env.googleClientId!,
-            clientSecret: env.googleClientSecret!
-          }
+            clientSecret: env.googleClientSecret!,
+          },
         }
       : undefined,
     plugins: [
@@ -67,19 +70,19 @@ export function createAuthRuntime(env: ApiEnv, database: ApiDatabase): ApiAuthRu
         schema: {
           session: {
             fields: {
-              activeOrganizationId: 'active_workspace_id'
-            }
+              activeOrganizationId: "active_workspace_id",
+            },
           },
           organization: {
-            modelName: 'workspace'
+            modelName: "workspace",
           },
           member: {
-            modelName: 'member'
+            modelName: "member",
           },
           invitation: {
-            modelName: 'invitation'
-          }
-        }
+            modelName: "invitation",
+          },
+        },
       }),
       magicLink({
         expiresIn: 60 * 10,
@@ -89,26 +92,26 @@ export function createAuthRuntime(env: ApiEnv, database: ApiDatabase): ApiAuthRu
             email,
             token,
             url,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
           };
 
           magicLinkInbox.push(delivery);
-          console.info('[auth] magic-link queued', {
+          console.info("[auth] magic-link queued", {
             email,
-            transport: 'dev-inbox',
-            sender: env.magicLinkSenderEmail
+            transport: "dev-inbox",
+            sender: env.magicLinkSenderEmail,
           });
-        }
-      })
-    ]
+        },
+      }),
+    ],
   });
 
   return {
     auth: auth as unknown as ReturnType<typeof betterAuth>,
     bootstrap: {
-      basePath: '/api/auth',
+      basePath: "/api/auth",
       providers,
-      magicLinkTransport: 'dev-inbox'
+      magicLinkTransport: "dev-inbox",
     },
     listMagicLinks(email) {
       if (!email) {
@@ -118,11 +121,13 @@ export function createAuthRuntime(env: ApiEnv, database: ApiDatabase): ApiAuthRu
       return magicLinkInbox.filter((entry) => entry.email === email);
     },
     getLatestMagicLink(email) {
-      const messages = email ? magicLinkInbox.filter((entry) => entry.email === email) : magicLinkInbox;
+      const messages = email
+        ? magicLinkInbox.filter((entry) => entry.email === email)
+        : magicLinkInbox;
       return messages.at(-1);
     },
     resetMagicLinks() {
       magicLinkInbox.length = 0;
-    }
+    },
   };
 }

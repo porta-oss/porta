@@ -1,13 +1,13 @@
-import { createRoute, redirect } from '@tanstack/react-router';
+import { createRoute, redirect } from "@tanstack/react-router";
 
-import { rootRoute } from './__root';
+import { rootRoute } from "./__root";
 
 export const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/',
+  path: "/",
   beforeLoad: () => {
     throw redirect({
-      to: '/auth/sign-in'
+      to: "/auth/sign-in",
     });
-  }
+  },
 });

@@ -11,7 +11,7 @@
 // North-star metric
 // ---------------------------------------------------------------------------
 
-export const NORTH_STAR_METRICS = ['mrr'] as const;
+export const NORTH_STAR_METRICS = ["mrr"] as const;
 export type NorthStarMetric = (typeof NORTH_STAR_METRICS)[number];
 
 export function isNorthStarMetric(value: string): value is NorthStarMetric {
@@ -23,11 +23,11 @@ export function isNorthStarMetric(value: string): value is NorthStarMetric {
 // ---------------------------------------------------------------------------
 
 export const SUPPORTING_METRICS = [
-  'active_users',
-  'customer_count',
-  'churn_rate',
-  'arpu',
-  'trial_conversion_rate',
+  "active_users",
+  "customer_count",
+  "churn_rate",
+  "arpu",
+  "trial_conversion_rate",
 ] as const;
 export type SupportingMetric = (typeof SUPPORTING_METRICS)[number];
 
@@ -37,20 +37,23 @@ export function isSupportingMetric(value: string): value is SupportingMetric {
 
 /** Labels for display in the UI — maps each key to a human-readable name. */
 export const SUPPORTING_METRIC_LABELS: Record<SupportingMetric, string> = {
-  active_users: 'Active Users',
-  customer_count: 'Customers',
-  churn_rate: 'Churn Rate',
-  arpu: 'ARPU',
-  trial_conversion_rate: 'Trial Conversion',
+  active_users: "Active Users",
+  customer_count: "Customers",
+  churn_rate: "Churn Rate",
+  arpu: "ARPU",
+  trial_conversion_rate: "Trial Conversion",
 } as const;
 
 /** Unit type for each supporting metric. */
-export const SUPPORTING_METRIC_UNITS: Record<SupportingMetric, 'count' | 'currency' | 'percent'> = {
-  active_users: 'count',
-  customer_count: 'count',
-  churn_rate: 'percent',
-  arpu: 'currency',
-  trial_conversion_rate: 'percent',
+export const SUPPORTING_METRIC_UNITS: Record<
+  SupportingMetric,
+  "count" | "currency" | "percent"
+> = {
+  active_users: "count",
+  customer_count: "count",
+  churn_rate: "percent",
+  arpu: "currency",
+  trial_conversion_rate: "percent",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -58,10 +61,10 @@ export const SUPPORTING_METRIC_UNITS: Record<SupportingMetric, 'count' | 'curren
 // ---------------------------------------------------------------------------
 
 export const FUNNEL_STAGES = [
-  'visitor',
-  'signup',
-  'activation',
-  'paying_customer',
+  "visitor",
+  "signup",
+  "activation",
+  "paying_customer",
 ] as const;
 export type FunnelStage = (typeof FUNNEL_STAGES)[number];
 
@@ -71,10 +74,10 @@ export function isFunnelStage(value: string): value is FunnelStage {
 
 /** Default labels for each funnel stage. */
 export const FUNNEL_STAGE_LABELS: Record<FunnelStage, string> = {
-  visitor: 'Visitors',
-  signup: 'Sign-ups',
-  activation: 'Activated',
-  paying_customer: 'Paying Customers',
+  visitor: "Visitors",
+  signup: "Sign-ups",
+  activation: "Activated",
+  paying_customer: "Paying Customers",
 } as const;
 
 /** Expected position (0-indexed) for each funnel stage. */
@@ -89,7 +92,13 @@ export const FUNNEL_STAGE_POSITIONS: Record<FunnelStage, number> = {
 // Health state
 // ---------------------------------------------------------------------------
 
-export const HEALTH_STATES = ['blocked', 'syncing', 'ready', 'stale', 'error'] as const;
+export const HEALTH_STATES = [
+  "blocked",
+  "syncing",
+  "ready",
+  "stale",
+  "error",
+] as const;
 export type HealthState = (typeof HEALTH_STATES)[number];
 
 export function isHealthState(value: string): value is HealthState {
@@ -102,8 +111,8 @@ export function isHealthState(value: string): value is HealthState {
 
 /** One metric value with optional delta from previous snapshot. */
 export interface MetricValue {
-  value: number;
   previous: number | null;
+  value: number;
 }
 
 /**
@@ -117,10 +126,10 @@ export type SupportingMetricsSnapshot = {
 
 /** A single funnel stage row for the startup health page. */
 export interface FunnelStageRow {
-  stage: FunnelStage;
   label: string;
-  value: number;
   position: number;
+  stage: FunnelStage;
+  value: number;
 }
 
 /**
@@ -128,15 +137,15 @@ export interface FunnelStageRow {
  * Never contains connector credentials, raw PostHog events, or Stripe customer data.
  */
 export interface HealthSnapshotSummary {
-  startupId: string;
-  healthState: HealthState;
   blockedReason: string | null;
-  northStarKey: NorthStarMetric;
-  northStarValue: number;
-  northStarPreviousValue: number | null;
-  supportingMetrics: SupportingMetricsSnapshot;
-  funnel: FunnelStageRow[];
   computedAt: string;
+  funnel: FunnelStageRow[];
+  healthState: HealthState;
+  northStarKey: NorthStarMetric;
+  northStarPreviousValue: number | null;
+  northStarValue: number;
+  startupId: string;
+  supportingMetrics: SupportingMetricsSnapshot;
   syncJobId: string | null;
 }
 
@@ -175,8 +184,8 @@ export function emptyFunnelStages(): FunnelStageRow[] {
  * Returns an error string or null if valid.
  */
 export function validateSupportingMetrics(metrics: unknown): string | null {
-  if (typeof metrics !== 'object' || metrics === null) {
-    return 'Supporting metrics must be a non-null object.';
+  if (typeof metrics !== "object" || metrics === null) {
+    return "Supporting metrics must be a non-null object.";
   }
 
   const obj = metrics as Record<string, unknown>;
@@ -197,16 +206,19 @@ export function validateSupportingMetrics(metrics: unknown): string | null {
 
   for (const key of expectedKeys) {
     const entry = obj[key];
-    if (typeof entry !== 'object' || entry === null) {
+    if (typeof entry !== "object" || entry === null) {
       return `Supporting metric "${key}" must be a non-null object with { value, previous }.`;
     }
 
     const mv = entry as Record<string, unknown>;
-    if (typeof mv.value !== 'number' || !Number.isFinite(mv.value)) {
+    if (typeof mv.value !== "number" || !Number.isFinite(mv.value)) {
       return `Supporting metric "${key}.value" must be a finite number.`;
     }
 
-    if (mv.previous !== null && (typeof mv.previous !== 'number' || !Number.isFinite(mv.previous))) {
+    if (
+      mv.previous !== null &&
+      (typeof mv.previous !== "number" || !Number.isFinite(mv.previous))
+    ) {
       return `Supporting metric "${key}.previous" must be a finite number or null.`;
     }
   }
@@ -220,21 +232,21 @@ export function validateSupportingMetrics(metrics: unknown): string | null {
  */
 export function validateFunnelStages(stages: unknown): string | null {
   if (!Array.isArray(stages)) {
-    return 'Funnel stages must be an array.';
+    return "Funnel stages must be an array.";
   }
 
   const expectedStages = new Set<string>(FUNNEL_STAGES);
   const seenStages = new Set<string>();
 
   for (const row of stages) {
-    if (typeof row !== 'object' || row === null) {
-      return 'Each funnel stage must be a non-null object.';
+    if (typeof row !== "object" || row === null) {
+      return "Each funnel stage must be a non-null object.";
     }
 
     const r = row as Record<string, unknown>;
 
-    if (typeof r.stage !== 'string' || !isFunnelStage(r.stage)) {
-      return `Invalid funnel stage: ${String(r.stage)}. Expected one of: ${FUNNEL_STAGES.join(', ')}`;
+    if (typeof r.stage !== "string" || !isFunnelStage(r.stage)) {
+      return `Invalid funnel stage: ${String(r.stage)}. Expected one of: ${FUNNEL_STAGES.join(", ")}`;
     }
 
     if (seenStages.has(r.stage)) {
@@ -242,15 +254,15 @@ export function validateFunnelStages(stages: unknown): string | null {
     }
     seenStages.add(r.stage);
 
-    if (typeof r.label !== 'string' || r.label.length === 0) {
+    if (typeof r.label !== "string" || r.label.length === 0) {
       return `Funnel stage "${r.stage}" must have a non-empty label.`;
     }
 
-    if (typeof r.value !== 'number' || !Number.isFinite(r.value)) {
+    if (typeof r.value !== "number" || !Number.isFinite(r.value)) {
       return `Funnel stage "${r.stage}.value" must be a finite number.`;
     }
 
-    if (typeof r.position !== 'number' || !Number.isInteger(r.position)) {
+    if (typeof r.position !== "number" || !Number.isInteger(r.position)) {
       return `Funnel stage "${r.stage}.position" must be an integer.`;
     }
   }

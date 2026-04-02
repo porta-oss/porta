@@ -1,45 +1,52 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID } from "node:crypto";
 
-import { cors } from '@elysiajs/cors';
-import { asc, eq } from 'drizzle-orm';
-import { Elysia, t } from 'elysia';
+import { cors } from "@elysiajs/cors";
+import { CONNECTOR_PROVIDERS } from "@shared/connectors";
+import type { StartupDraft } from "@shared/types";
+import { asc, eq } from "drizzle-orm";
+import { Elysia, t } from "elysia";
 
-import type { StartupDraft } from '@shared/types';
-
-import { createAuthRuntime, createWorkspaceSlug, type ApiAuthRuntime } from './auth';
-import { createApiDatabase, type ApiDatabase } from './db/index';
-import { startup as startupTable } from './db/schema/startup';
-import { type ApiEnv, readApiEnv } from './lib/env';
+import {
+  type ApiAuthRuntime,
+  createAuthRuntime,
+  createWorkspaceSlug,
+} from "./auth";
+import { type ApiDatabase, createApiDatabase } from "./db/index";
+import { startup as startupTable } from "./db/schema/startup";
+import type { PostgresValidator } from "./lib/connectors/postgres";
+import { createPostgresValidator } from "./lib/connectors/postgres";
+import type { PostHogValidator } from "./lib/connectors/posthog";
+import {
+  createFounderProofPostHogValidator,
+  createPostHogValidator,
+} from "./lib/connectors/posthog";
+import type { SyncQueueProducer } from "./lib/connectors/queue";
+import { createSyncQueueProducer } from "./lib/connectors/queue";
+import type { StripeValidator } from "./lib/connectors/stripe";
+import {
+  createFounderProofStripeValidator,
+  createStripeValidator,
+} from "./lib/connectors/stripe";
+import { type ApiEnv, readApiEnv } from "./lib/env";
+import { loadStartupHealth } from "./lib/startup-health";
+import { loadLatestInsight } from "./lib/startup-insight";
+import type { TaskSyncQueueProducer } from "./lib/tasks/queue";
+import { createTaskSyncQueueProducer } from "./lib/tasks/queue";
+import {
+  type ConnectorRuntime,
+  handleCreateConnector,
+  handleDeleteConnector,
+  handleGetConnectorStatus,
+  handleListConnectors,
+  handleTriggerSync,
+} from "./routes/connector";
+import { handleCreateTask, handleListTasks } from "./routes/internal-task";
 import {
   createStartupRouteContract,
   sanitizeStartupDraft,
   serializeStartupRecord,
-  validateStartupDraft
-} from './routes/startup';
-import {
-  handleListConnectors,
-  handleCreateConnector,
-  handleDeleteConnector,
-  handleTriggerSync,
-  handleGetConnectorStatus,
-  type ConnectorRuntime
-} from './routes/connector';
-import { createPostHogValidator, createFounderProofPostHogValidator } from './lib/connectors/posthog';
-import type { PostHogValidator } from './lib/connectors/posthog';
-import { createStripeValidator, createFounderProofStripeValidator } from './lib/connectors/stripe';
-import type { StripeValidator } from './lib/connectors/stripe';
-import { createPostgresValidator } from './lib/connectors/postgres';
-import type { PostgresValidator } from './lib/connectors/postgres';
-import { createSyncQueueProducer } from './lib/connectors/queue';
-import type { SyncQueueProducer } from './lib/connectors/queue';
-import { createTaskSyncQueueProducer } from './lib/tasks/queue';
-import type { TaskSyncQueueProducer } from './lib/tasks/queue';
-import { loadStartupHealth } from './lib/startup-health';
-import { loadLatestInsight } from './lib/startup-insight';
-import {
-  handleCreateTask,
-  handleListTasks,
-} from './routes/internal-task';
+  validateStartupDraft,
+} from "./routes/startup";
 
 interface AuthenticatedSession {
   session: {
@@ -59,44 +66,42 @@ interface AuthenticatedSession {
 
 type RequestAuthContext =
   | {
-      status: 'authenticated';
-      session: AuthenticatedSession['session'];
-      user: AuthenticatedSession['user'];
+      status: "authenticated";
+      session: AuthenticatedSession["session"];
+      user: AuthenticatedSession["user"];
       activeWorkspaceId: string | null;
     }
   | {
-      status: 'unauthenticated';
-      reason: 'missing-session' | 'invalid-session' | 'malformed-session';
+      status: "unauthenticated";
+      reason: "missing-session" | "invalid-session" | "malformed-session";
     }
   | {
-      status: 'error';
-      code: 'AUTH_CONTEXT_TIMEOUT';
+      status: "error";
+      code: "AUTH_CONTEXT_TIMEOUT";
       message: string;
     };
 
 interface WorkspaceRecord {
+  createdAt?: Date | string;
   id: string;
-  name: string;
-  slug: string;
   logo?: string | null;
   metadata?: unknown;
-  createdAt?: Date | string;
+  name: string;
+  slug: string;
 }
 
 interface ApiRuntime {
-  env: ApiEnv;
-  db: ApiDatabase;
   auth: ApiAuthRuntime;
-  posthogValidator: PostHogValidator;
-  stripeValidator: StripeValidator;
+  db: ApiDatabase;
+  env: ApiEnv;
   postgresValidator: PostgresValidator;
+  posthogValidator: PostHogValidator;
   queueProducer: SyncQueueProducer;
+  stripeValidator: StripeValidator;
   taskSyncQueueProducer: TaskSyncQueueProducer;
 }
 
 interface WorkspaceAuthApi {
-  getSession: (input: { headers: Headers }) => Promise<unknown>;
-  listOrganizations: (input: { headers: Headers }) => Promise<unknown>;
   createOrganization: (input: {
     headers: Headers;
     body: {
@@ -105,6 +110,15 @@ interface WorkspaceAuthApi {
       keepCurrentActiveOrganization: boolean;
     };
   }) => Promise<unknown>;
+  getActiveMember: (input: { headers: Headers }) => Promise<unknown>;
+  getFullOrganization: (input: {
+    headers: Headers;
+    query: {
+      organizationId: string;
+    };
+  }) => Promise<unknown>;
+  getSession: (input: { headers: Headers }) => Promise<unknown>;
+  listOrganizations: (input: { headers: Headers }) => Promise<unknown>;
   setActiveOrganization: (input: {
     headers: Headers;
     body: {
@@ -112,13 +126,6 @@ interface WorkspaceAuthApi {
       organizationSlug?: string;
     };
   }) => Promise<unknown>;
-  getFullOrganization: (input: {
-    headers: Headers;
-    query: {
-      organizationId: string;
-    };
-  }) => Promise<unknown>;
-  getActiveMember: (input: { headers: Headers }) => Promise<unknown>;
 }
 
 export type ApiApp = Elysia & { runtime: ApiRuntime };
@@ -126,24 +133,33 @@ export type ApiApp = Elysia & { runtime: ApiRuntime };
 class RequestTimeoutError extends Error {
   constructor(label: string, timeoutMs: number) {
     super(`${label} timed out after ${timeoutMs}ms.`);
-    this.name = 'RequestTimeoutError';
+    this.name = "RequestTimeoutError";
   }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  return typeof value === "object" && value !== null;
 }
 
 function isAuthenticatedSession(value: unknown): value is AuthenticatedSession {
-  if (!isRecord(value) || !isRecord(value.session) || !isRecord(value.user)) {
+  if (!(isRecord(value) && isRecord(value.session) && isRecord(value.user))) {
     return false;
   }
 
-  return typeof value.session.id === 'string' && typeof value.session.userId === 'string' && typeof value.user.id === 'string';
+  return (
+    typeof value.session.id === "string" &&
+    typeof value.session.userId === "string" &&
+    typeof value.user.id === "string"
+  );
 }
 
 function normalizeWorkspace(value: unknown): WorkspaceRecord | null {
-  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.name !== 'string' || typeof value.slug !== 'string') {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.name !== "string" ||
+    typeof value.slug !== "string"
+  ) {
     return null;
   }
 
@@ -151,9 +167,15 @@ function normalizeWorkspace(value: unknown): WorkspaceRecord | null {
     id: value.id,
     name: value.name,
     slug: value.slug,
-    logo: typeof value.logo === 'string' || value.logo === null ? value.logo : undefined,
+    logo:
+      typeof value.logo === "string" || value.logo === null
+        ? value.logo
+        : undefined,
     metadata: value.metadata,
-    createdAt: value.createdAt instanceof Date || typeof value.createdAt === 'string' ? value.createdAt : undefined
+    createdAt:
+      value.createdAt instanceof Date || typeof value.createdAt === "string"
+        ? value.createdAt
+        : undefined,
   };
 }
 
@@ -161,11 +183,18 @@ function getAuthApi(runtime: ApiRuntime): WorkspaceAuthApi {
   return runtime.auth.auth.api as unknown as WorkspaceAuthApi;
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string) {
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string
+) {
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
 
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(() => reject(new RequestTimeoutError(label, timeoutMs)), timeoutMs);
+    timeoutHandle = setTimeout(
+      () => reject(new RequestTimeoutError(label, timeoutMs)),
+      timeoutMs
+    );
   });
 
   try {
@@ -177,103 +206,116 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: str
   }
 }
 
-async function resolveRequestAuth(runtime: ApiRuntime, request: Request): Promise<RequestAuthContext> {
+async function resolveRequestAuth(
+  runtime: ApiRuntime,
+  request: Request
+): Promise<RequestAuthContext> {
   try {
     const authApi = getAuthApi(runtime);
     const session = await withTimeout(
       authApi.getSession({ headers: request.headers }),
       runtime.env.authContextTimeoutMs,
-      'Session context'
+      "Session context"
     );
 
     if (!session) {
       return {
-        status: 'unauthenticated',
-        reason: 'missing-session'
+        status: "unauthenticated",
+        reason: "missing-session",
       };
     }
 
     if (!isAuthenticatedSession(session)) {
       return {
-        status: 'unauthenticated',
-        reason: 'malformed-session'
+        status: "unauthenticated",
+        reason: "malformed-session",
       };
     }
 
     const activeWorkspaceId =
-      isRecord(session.session) && typeof session.session.activeOrganizationId === 'string'
+      isRecord(session.session) &&
+      typeof session.session.activeOrganizationId === "string"
         ? session.session.activeOrganizationId
         : null;
 
     return {
-      status: 'authenticated',
+      status: "authenticated",
       session: session.session,
       user: session.user,
-      activeWorkspaceId
+      activeWorkspaceId,
     };
   } catch (error) {
     if (error instanceof RequestTimeoutError) {
       return {
-        status: 'error',
-        code: 'AUTH_CONTEXT_TIMEOUT',
-        message: error.message
+        status: "error",
+        code: "AUTH_CONTEXT_TIMEOUT",
+        message: error.message,
       };
     }
 
     return {
-      status: 'unauthenticated',
-      reason: 'invalid-session'
+      status: "unauthenticated",
+      reason: "invalid-session",
     };
   }
 }
 
-function rejectProtectedRequest(authContext: RequestAuthContext, set: { status?: number | string }, path: string) {
-  if (authContext.status === 'authenticated') {
+function rejectProtectedRequest(
+  authContext: RequestAuthContext,
+  set: { status?: number | string },
+  path: string
+) {
+  if (authContext.status === "authenticated") {
     return authContext;
   }
 
-  if (authContext.status === 'error') {
+  if (authContext.status === "error") {
     set.status = 503;
-    console.warn('[auth] protected request failed', {
+    console.warn("[auth] protected request failed", {
       path,
-      code: authContext.code
+      code: authContext.code,
     });
 
     return {
       error: {
         code: authContext.code,
-        message: authContext.message
-      }
+        message: authContext.message,
+      },
     };
   }
 
   set.status = 401;
-  console.warn('[auth] protected request rejected', {
+  console.warn("[auth] protected request rejected", {
     path,
-    reason: authContext.reason
+    reason: authContext.reason,
   });
 
   return {
     error: {
-      code: 'AUTH_REQUIRED',
-      message: 'Authentication is required for this route.'
-    }
+      code: "AUTH_REQUIRED",
+      message: "Authentication is required for this route.",
+    },
   };
 }
 
-async function listWorkspaceRecords(runtime: ApiRuntime, request: Request): Promise<WorkspaceRecord[]> {
+async function listWorkspaceRecords(
+  runtime: ApiRuntime,
+  request: Request
+): Promise<WorkspaceRecord[]> {
   const authApi = getAuthApi(runtime);
   const workspaces = await withTimeout(
     authApi.listOrganizations({ headers: request.headers }),
     runtime.env.authContextTimeoutMs,
-    'Workspace lookup'
+    "Workspace lookup"
   );
 
   if (!Array.isArray(workspaces)) {
     return [];
   }
 
-  return workspaces.map(normalizeWorkspace).filter((workspace): workspace is WorkspaceRecord => workspace !== null);
+  return workspaces
+    .map(normalizeWorkspace)
+    .filter((workspace): workspace is WorkspaceRecord => workspace !== null);
 }
 
 async function resolveActiveWorkspace(
@@ -284,7 +326,7 @@ async function resolveActiveWorkspace(
   path: string
 ): Promise<
   | {
-      auth: Extract<RequestAuthContext, { status: 'authenticated' }>;
+      auth: Extract<RequestAuthContext, { status: "authenticated" }>;
       workspace: WorkspaceRecord;
     }
   | {
@@ -296,47 +338,51 @@ async function resolveActiveWorkspace(
 > {
   const denied = rejectProtectedRequest(authContext, set, path);
 
-  if ('error' in denied) {
+  if ("error" in denied) {
     return denied;
   }
 
   if (!denied.activeWorkspaceId) {
     set.status = 409;
-    console.warn('[startup] workspace context missing', {
+    console.warn("[startup] workspace context missing", {
       path,
-      userId: denied.user.id
+      userId: denied.user.id,
     });
 
     return {
       error: {
-        code: 'ACTIVE_WORKSPACE_REQUIRED',
-        message: 'Create or select a workspace before continuing startup onboarding.'
-      }
+        code: "ACTIVE_WORKSPACE_REQUIRED",
+        message:
+          "Create or select a workspace before continuing startup onboarding.",
+      },
     };
   }
 
   const workspaces = await listWorkspaceRecords(runtime, request);
-  const activeWorkspace = workspaces.find((workspace) => workspace.id === denied.activeWorkspaceId);
+  const activeWorkspace = workspaces.find(
+    (workspace) => workspace.id === denied.activeWorkspaceId
+  );
 
   if (!activeWorkspace) {
     set.status = 403;
-    console.warn('[startup] workspace scope invalid', {
+    console.warn("[startup] workspace scope invalid", {
       path,
       userId: denied.user.id,
-      activeWorkspaceId: denied.activeWorkspaceId
+      activeWorkspaceId: denied.activeWorkspaceId,
     });
 
     return {
       error: {
-        code: 'WORKSPACE_SCOPE_INVALID',
-        message: 'The active workspace is unavailable for this session. Return to workspace setup and choose a valid workspace.'
-      }
+        code: "WORKSPACE_SCOPE_INVALID",
+        message:
+          "The active workspace is unavailable for this session. Return to workspace setup and choose a valid workspace.",
+      },
     };
   }
 
   return {
     auth: denied,
-    workspace: activeWorkspace
+    workspace: activeWorkspace,
   };
 }
 
@@ -345,11 +391,11 @@ function toDate(value: Date | string) {
 }
 
 function getPgErrorCode(error: unknown): string | undefined {
-  if (isRecord(error) && typeof error.code === 'string') {
+  if (isRecord(error) && typeof error.code === "string") {
     return error.code;
   }
 
-  if (isRecord(error) && 'cause' in error) {
+  if (isRecord(error) && "cause" in error) {
     return getPgErrorCode(error.cause);
   }
 
@@ -357,22 +403,29 @@ function getPgErrorCode(error: unknown): string | undefined {
 }
 
 function getPgErrorDetail(error: unknown): string | undefined {
-  if (isRecord(error) && typeof error.detail === 'string') {
+  if (isRecord(error) && typeof error.detail === "string") {
     return error.detail;
   }
 
-  if (isRecord(error) && 'cause' in error) {
+  if (isRecord(error) && "cause" in error) {
     return getPgErrorDetail(error.cause);
   }
 
   return undefined;
 }
 
-async function listStartupsByWorkspace(runtime: ApiRuntime, workspaceId: string) {
+async function listStartupsByWorkspace(
+  runtime: ApiRuntime,
+  workspaceId: string
+) {
   return withTimeout(
-    runtime.db.db.select().from(startupTable).where(eq(startupTable.workspaceId, workspaceId)).orderBy(asc(startupTable.createdAt)),
+    runtime.db.db
+      .select()
+      .from(startupTable)
+      .where(eq(startupTable.workspaceId, workspaceId))
+      .orderBy(asc(startupTable.createdAt)),
     runtime.env.authContextTimeoutMs,
-    'Startup list query'
+    "Startup list query"
   );
 }
 
@@ -398,80 +451,136 @@ export async function createApiApp(
   }
 
   const auth = options?.auth ?? createAuthRuntime(env, db);
-  const posthogValidator = options?.posthogValidator ?? (env.founderProofMode ? createFounderProofPostHogValidator() : createPostHogValidator());
-  const stripeValidator = options?.stripeValidator ?? (env.founderProofMode ? createFounderProofStripeValidator() : createStripeValidator());
-  const postgresValidator = options?.postgresValidator ?? createPostgresValidator();
-  const queueProducer = options?.queueProducer ?? createSyncQueueProducer(env.redisUrl);
-  const taskSyncQueueProducer = options?.taskSyncQueueProducer ?? createTaskSyncQueueProducer(env.redisUrl);
+  const posthogValidator =
+    options?.posthogValidator ??
+    (env.founderProofMode
+      ? createFounderProofPostHogValidator()
+      : createPostHogValidator());
+  const stripeValidator =
+    options?.stripeValidator ??
+    (env.founderProofMode
+      ? createFounderProofStripeValidator()
+      : createStripeValidator());
+  const postgresValidator =
+    options?.postgresValidator ?? createPostgresValidator();
+  const queueProducer =
+    options?.queueProducer ?? createSyncQueueProducer(env.redisUrl);
+  const taskSyncQueueProducer =
+    options?.taskSyncQueueProducer ?? createTaskSyncQueueProducer(env.redisUrl);
   const startupRoutes = createStartupRouteContract();
-  const runtime: ApiRuntime = { env, db, auth, posthogValidator, stripeValidator, postgresValidator, queueProducer, taskSyncQueueProducer };
+  const runtime: ApiRuntime = {
+    env,
+    db,
+    auth,
+    posthogValidator,
+    stripeValidator,
+    postgresValidator,
+    queueProducer,
+    taskSyncQueueProducer,
+  };
 
-  console.info('[auth] bootstrap ready', {
+  console.info("[auth] bootstrap ready", {
     mountPath: auth.bootstrap.basePath,
     googleConfigured: auth.bootstrap.providers.google.configured,
-    magicLinkTransport: auth.bootstrap.magicLinkTransport
+    magicLinkTransport: auth.bootstrap.magicLinkTransport,
+    connectorProviders: CONNECTOR_PROVIDERS,
   });
 
   if (env.founderProofMode) {
-    console.info('[founder-proof] mode enabled — connector validation uses deterministic demo credentials', {
-      posthogValidator: 'founder-proof',
-      stripeValidator: 'founder-proof'
-    });
+    console.info(
+      "[founder-proof] mode enabled — connector validation uses deterministic demo credentials",
+      {
+        posthogValidator: "founder-proof",
+        stripeValidator: "founder-proof",
+      }
+    );
   }
 
-  const app = new Elysia({ prefix: '/api' })
+  const app = new Elysia({ prefix: "/api" })
     .use(
       cors({
         origin: [env.webUrl],
         credentials: true,
-        methods: ['GET', 'POST', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Cookie']
+        methods: ["GET", "POST", "OPTIONS"],
+        allowedHeaders: ["Content-Type", "Cookie"],
       })
     )
     .derive(async ({ request }) => ({
-      authContext: await resolveRequestAuth(runtime, request)
+      authContext: await resolveRequestAuth(runtime, request),
     }))
-    .get('/health', () => ({
-      status: 'ok' as const,
-      service: 'api',
-      founderProofMode: env.founderProofMode,
-      startupRoutes,
-      auth: {
-        mounted: true,
-        mountPath: auth.bootstrap.basePath,
-        providers: auth.bootstrap.providers,
-        magicLinkTransport: auth.bootstrap.magicLinkTransport,
-        observability: {
-          sessionEndpoint: '/api/auth/session',
-          activeWorkspaceEndpoint: '/api/workspaces/active',
-          devMagicLinkEndpoint: env.nodeEnv === 'production' ? null : '/api/dev/magic-links/latest'
-        }
-      },
-      database: {
-        configured: true,
-        poolMax: env.databasePoolMax,
-        tables: ['user', 'session', 'account', 'verification', 'workspace', 'member', 'invitation', 'startup', 'connector', 'sync_job', 'health_snapshot', 'health_funnel_stage', 'startup_insight', 'internal_task', 'custom_metric']
-      },
-      connectors: {
-        encryptionKeyConfigured: env.connectorEncryptionKey.length === 64,
-        validationMode: env.founderProofMode ? 'founder-proof' as const : 'live' as const,
-        tablesReady: true
-      },
-      startupHealth: {
-        tablesReady: true
-      },
-      startupInsight: {
-        tablesReady: true
-      },
-      internalTask: {
-        tablesReady: true
-      }
-    }))
-    .get('/auth/session', ({ authContext }) => {
-      if (authContext.status !== 'authenticated') {
+    .get("/health", () => {
+      const schemaDiagnostics = db.getSchemaDiagnostics();
+
+      return {
+        status: "ok" as const,
+        service: "api",
+        founderProofMode: env.founderProofMode,
+        startupRoutes,
+        auth: {
+          mounted: true,
+          mountPath: auth.bootstrap.basePath,
+          providers: auth.bootstrap.providers,
+          magicLinkTransport: auth.bootstrap.magicLinkTransport,
+          observability: {
+            sessionEndpoint: "/api/auth/session",
+            activeWorkspaceEndpoint: "/api/workspaces/active",
+            devMagicLinkEndpoint:
+              env.nodeEnv === "production"
+                ? null
+                : "/api/dev/magic-links/latest",
+          },
+        },
+        database: {
+          configured: true,
+          poolMax: env.databasePoolMax,
+          tables: [
+            "user",
+            "session",
+            "account",
+            "verification",
+            "workspace",
+            "member",
+            "invitation",
+            "startup",
+            "connector",
+            "sync_job",
+            "health_snapshot",
+            "health_funnel_stage",
+            "startup_insight",
+            "internal_task",
+            "custom_metric",
+          ],
+          schema: schemaDiagnostics,
+        },
+        connectors: {
+          supportedProviders: CONNECTOR_PROVIDERS,
+          encryptionKeyConfigured: env.connectorEncryptionKey.length === 64,
+          validationMode: env.founderProofMode
+            ? ("founder-proof" as const)
+            : ("live" as const),
+          tablesReady:
+            schemaDiagnostics.tables.connector &&
+            schemaDiagnostics.tables.sync_job,
+        },
+        startupHealth: {
+          tablesReady: schemaDiagnostics.tables.health_snapshot ?? false,
+        },
+        startupInsight: {
+          tablesReady: schemaDiagnostics.tables.startup_insight ?? false,
+        },
+        internalTask: {
+          tablesReady: schemaDiagnostics.tables.internal_task ?? false,
+        },
+      };
+    })
+    .get("/auth/session", ({ authContext }) => {
+      if (authContext.status !== "authenticated") {
         return {
           authenticated: false,
-          reason: authContext.status === 'error' ? authContext.code : authContext.reason
+          reason:
+            authContext.status === "error"
+              ? authContext.code
+              : authContext.reason,
         };
       }
 
@@ -480,25 +589,26 @@ export async function createApiApp(
         user: {
           id: authContext.user.id,
           email: authContext.user.email,
-          name: authContext.user.name
+          name: authContext.user.name,
         },
         session: {
           id: authContext.session.id,
           expiresAt: authContext.session.expiresAt,
-          activeWorkspaceId: authContext.activeWorkspaceId
-        }
+          activeWorkspaceId: authContext.activeWorkspaceId,
+        },
       };
     })
     .get(
-      '/dev/magic-links/latest',
+      "/dev/magic-links/latest",
       ({ query, set }) => {
-        if (env.nodeEnv === 'production') {
+        if (env.nodeEnv === "production") {
           set.status = 404;
           return {
             error: {
-              code: 'DEV_ENDPOINT_DISABLED',
-              message: 'Magic-link inbox inspection is disabled outside local development and tests.'
-            }
+              code: "DEV_ENDPOINT_DISABLED",
+              message:
+                "Magic-link inbox inspection is disabled outside local development and tests.",
+            },
           };
         }
 
@@ -509,43 +619,49 @@ export async function createApiApp(
           set.status = 404;
           return {
             error: {
-              code: 'MAGIC_LINK_NOT_FOUND',
-              message: 'No queued magic link matches the requested email.'
-            }
+              code: "MAGIC_LINK_NOT_FOUND",
+              message: "No queued magic link matches the requested email.",
+            },
           };
         }
 
         return {
           delivery,
           count: auth.listMagicLinks(email).length,
-          transport: auth.bootstrap.magicLinkTransport
+          transport: auth.bootstrap.magicLinkTransport,
         };
       },
       {
         query: t.Object({
-          email: t.Optional(t.String())
-        })
+          email: t.Optional(t.String()),
+        }),
       }
     )
     .post(
-      '/workspaces',
+      "/workspaces",
       async ({ authContext, body, request, set }) => {
-        const denied = rejectProtectedRequest(authContext, set, '/api/workspaces');
+        const denied = rejectProtectedRequest(
+          authContext,
+          set,
+          "/api/workspaces"
+        );
 
-        if ('error' in denied) {
+        if ("error" in denied) {
           return denied;
         }
 
         const name = body.name.trim();
-        const slug = (body.slug?.trim() || createWorkspaceSlug(name)).toLowerCase();
+        const slug = (
+          body.slug?.trim() || createWorkspaceSlug(name)
+        ).toLowerCase();
 
         if (!name) {
           set.status = 400;
           return {
             error: {
-              code: 'WORKSPACE_NAME_REQUIRED',
-              message: 'Workspace name cannot be blank.'
-            }
+              code: "WORKSPACE_NAME_REQUIRED",
+              message: "Workspace name cannot be blank.",
+            },
           };
         }
 
@@ -553,9 +669,10 @@ export async function createApiApp(
           set.status = 400;
           return {
             error: {
-              code: 'WORKSPACE_SLUG_INVALID',
-              message: 'Workspace slug could not be derived from the provided name.'
-            }
+              code: "WORKSPACE_SLUG_INVALID",
+              message:
+                "Workspace slug could not be derived from the provided name.",
+            },
           };
         }
 
@@ -564,9 +681,9 @@ export async function createApiApp(
           set.status = 409;
           return {
             error: {
-              code: 'WORKSPACE_ALREADY_EXISTS',
-              message: `A workspace with slug "${slug}" already exists for this user.`
-            }
+              code: "WORKSPACE_ALREADY_EXISTS",
+              message: `A workspace with slug "${slug}" already exists for this user.`,
+            },
           };
         }
 
@@ -578,11 +695,11 @@ export async function createApiApp(
               body: {
                 name,
                 slug,
-                keepCurrentActiveOrganization: false
-              }
+                keepCurrentActiveOrganization: false,
+              },
             }),
             runtime.env.authContextTimeoutMs,
-            'Workspace creation'
+            "Workspace creation"
           )
         );
 
@@ -590,9 +707,9 @@ export async function createApiApp(
           set.status = 502;
           return {
             error: {
-              code: 'WORKSPACE_CREATE_MALFORMED',
-              message: 'Workspace creation returned an unexpected payload.'
-            }
+              code: "WORKSPACE_CREATE_MALFORMED",
+              message: "Workspace creation returned an unexpected payload.",
+            },
           };
         }
 
@@ -601,49 +718,57 @@ export async function createApiApp(
             headers: request.headers,
             body: {
               organizationId: createdWorkspace.id,
-              organizationSlug: createdWorkspace.slug
-            }
+              organizationSlug: createdWorkspace.slug,
+            },
           }),
           runtime.env.authContextTimeoutMs,
-          'Workspace activation'
+          "Workspace activation"
         );
 
         set.status = 201;
         return {
           workspace: createdWorkspace,
-          activeWorkspaceId: createdWorkspace.id
+          activeWorkspaceId: createdWorkspace.id,
         };
       },
       {
         body: t.Object({
           name: t.String(),
-          slug: t.Optional(t.String())
-        })
+          slug: t.Optional(t.String()),
+        }),
       }
     )
-    .get('/workspaces', async ({ authContext, request, set }) => {
-      const denied = rejectProtectedRequest(authContext, set, '/api/workspaces');
+    .get("/workspaces", async ({ authContext, request, set }) => {
+      const denied = rejectProtectedRequest(
+        authContext,
+        set,
+        "/api/workspaces"
+      );
 
-      if ('error' in denied) {
+      if ("error" in denied) {
         return denied;
       }
 
       return {
         workspaces: await listWorkspaceRecords(runtime, request),
-        activeWorkspaceId: denied.activeWorkspaceId
+        activeWorkspaceId: denied.activeWorkspaceId,
       };
     })
-    .get('/workspaces/active', async ({ authContext, request, set }) => {
-      const denied = rejectProtectedRequest(authContext, set, '/api/workspaces/active');
+    .get("/workspaces/active", async ({ authContext, request, set }) => {
+      const denied = rejectProtectedRequest(
+        authContext,
+        set,
+        "/api/workspaces/active"
+      );
 
-      if ('error' in denied) {
+      if ("error" in denied) {
         return denied;
       }
 
       if (!denied.activeWorkspaceId) {
         return {
           workspace: null,
-          member: null
+          member: null,
         };
       }
 
@@ -653,49 +778,56 @@ export async function createApiApp(
           authApi.getFullOrganization({
             headers: request.headers,
             query: {
-              organizationId: denied.activeWorkspaceId
-            }
+              organizationId: denied.activeWorkspaceId,
+            },
           }),
           runtime.env.authContextTimeoutMs,
-          'Active workspace lookup'
+          "Active workspace lookup"
         )
       );
 
       const member = await withTimeout(
         authApi.getActiveMember({ headers: request.headers }),
         runtime.env.authContextTimeoutMs,
-        'Active workspace membership lookup'
+        "Active workspace membership lookup"
       );
 
       return {
         workspace,
         member: isRecord(member)
           ? {
-              id: typeof member.id === 'string' ? member.id : null,
-              role: typeof member.role === 'string' ? member.role : null
+              id: typeof member.id === "string" ? member.id : null,
+              role: typeof member.role === "string" ? member.role : null,
             }
-          : null
+          : null,
       };
     })
     .post(
-      '/workspaces/active',
+      "/workspaces/active",
       async ({ authContext, body, request, set }) => {
-        const denied = rejectProtectedRequest(authContext, set, '/api/workspaces/active');
+        const denied = rejectProtectedRequest(
+          authContext,
+          set,
+          "/api/workspaces/active"
+        );
 
-        if ('error' in denied) {
+        if ("error" in denied) {
           return denied;
         }
 
         const workspaces = await listWorkspaceRecords(runtime, request);
-        const workspace = workspaces.find((entry) => entry.id === body.workspaceId);
+        const workspace = workspaces.find(
+          (entry) => entry.id === body.workspaceId
+        );
 
         if (!workspace) {
           set.status = 404;
           return {
             error: {
-              code: 'WORKSPACE_NOT_FOUND',
-              message: 'The requested workspace is not accessible to this user.'
-            }
+              code: "WORKSPACE_NOT_FOUND",
+              message:
+                "The requested workspace is not accessible to this user.",
+            },
           };
         }
 
@@ -705,32 +837,41 @@ export async function createApiApp(
             headers: request.headers,
             body: {
               organizationId: workspace.id,
-              organizationSlug: workspace.slug
-            }
+              organizationSlug: workspace.slug,
+            },
           }),
           runtime.env.authContextTimeoutMs,
-          'Active workspace switch'
+          "Active workspace switch"
         );
 
         return {
           activeWorkspaceId: workspace.id,
-          workspace
+          workspace,
         };
       },
       {
         body: t.Object({
-          workspaceId: t.String()
-        })
+          workspaceId: t.String(),
+        }),
       }
     )
-    .get('/startups', async ({ authContext, request, set }) => {
-      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/startups');
+    .get("/startups", async ({ authContext, request, set }) => {
+      const activeWorkspace = await resolveActiveWorkspace(
+        runtime,
+        request,
+        authContext,
+        set,
+        "/api/startups"
+      );
 
-      if ('error' in activeWorkspace) {
+      if ("error" in activeWorkspace) {
         return activeWorkspace;
       }
 
-      const startups = await listStartupsByWorkspace(runtime, activeWorkspace.workspace.id);
+      const startups = await listStartupsByWorkspace(
+        runtime,
+        activeWorkspace.workspace.id
+      );
 
       return {
         workspace: activeWorkspace.workspace,
@@ -738,17 +879,23 @@ export async function createApiApp(
           serializeStartupRecord({
             ...row,
             createdAt: toDate(row.createdAt),
-            updatedAt: toDate(row.updatedAt)
+            updatedAt: toDate(row.updatedAt),
           })
-        )
+        ),
       };
     })
     .post(
-      '/startups',
+      "/startups",
       async ({ authContext, body, request, set }) => {
-        const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/startups');
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups"
+        );
 
-        if ('error' in activeWorkspace) {
+        if ("error" in activeWorkspace) {
           return activeWorkspace;
         }
 
@@ -757,20 +904,20 @@ export async function createApiApp(
           type: body.type,
           stage: body.stage,
           timezone: body.timezone,
-          currency: body.currency
+          currency: body.currency,
         } as StartupDraft);
         const validationError = validateStartupDraft(draft);
 
         if (validationError) {
           set.status = 400;
-          console.warn('[startup] create validation failed', {
+          console.warn("[startup] create validation failed", {
             workspaceId: activeWorkspace.workspace.id,
             code: validationError.code,
-            field: validationError.field
+            field: validationError.field,
           });
 
           return {
-            error: validationError
+            error: validationError,
           };
         }
 
@@ -785,29 +932,32 @@ export async function createApiApp(
                 type: draft.type,
                 stage: draft.stage,
                 timezone: draft.timezone,
-                currency: draft.currency
+                currency: draft.currency,
               })
               .returning(),
             runtime.env.authContextTimeoutMs,
-            'Startup creation'
+            "Startup creation"
           );
           const createdRow = createdRows[0];
 
           if (!createdRow) {
             set.status = 502;
-            console.error('[startup] create malformed', {
-              workspaceId: activeWorkspace.workspace.id
+            console.error("[startup] create malformed", {
+              workspaceId: activeWorkspace.workspace.id,
             });
 
             return {
               error: {
-                code: 'STARTUP_CREATE_MALFORMED',
-                message: 'Startup creation returned an unexpected payload.'
-              }
+                code: "STARTUP_CREATE_MALFORMED",
+                message: "Startup creation returned an unexpected payload.",
+              },
             };
           }
 
-          const startups = await listStartupsByWorkspace(runtime, activeWorkspace.workspace.id);
+          const startups = await listStartupsByWorkspace(
+            runtime,
+            activeWorkspace.workspace.id
+          );
 
           set.status = 201;
           return {
@@ -815,75 +965,79 @@ export async function createApiApp(
             startup: serializeStartupRecord({
               ...createdRow,
               createdAt: toDate(createdRow.createdAt),
-              updatedAt: toDate(createdRow.updatedAt)
+              updatedAt: toDate(createdRow.updatedAt),
             }),
             startups: startups.map((row) =>
               serializeStartupRecord({
                 ...row,
                 createdAt: toDate(row.createdAt),
-                updatedAt: toDate(row.updatedAt)
+                updatedAt: toDate(row.updatedAt),
               })
-            )
+            ),
           };
         } catch (error) {
           if (error instanceof RequestTimeoutError) {
             set.status = 503;
-            console.warn('[startup] create timed out', {
-              workspaceId: activeWorkspace.workspace.id
+            console.warn("[startup] create timed out", {
+              workspaceId: activeWorkspace.workspace.id,
             });
 
             return {
               error: {
-                code: 'STARTUP_CREATE_TIMEOUT',
-                message: 'Startup creation timed out. Please retry without leaving the form.'
-              }
+                code: "STARTUP_CREATE_TIMEOUT",
+                message:
+                  "Startup creation timed out. Please retry without leaving the form.",
+              },
             };
           }
 
           const pgErrorCode = getPgErrorCode(error);
           const pgErrorDetail = getPgErrorDetail(error);
 
-          if (pgErrorCode === '23505') {
+          if (pgErrorCode === "23505") {
             set.status = 409;
-            console.warn('[startup] duplicate create prevented', {
+            console.warn("[startup] duplicate create prevented", {
               workspaceId: activeWorkspace.workspace.id,
-              detail: pgErrorDetail
+              detail: pgErrorDetail,
             });
 
             return {
               error: {
-                code: 'STARTUP_ALREADY_EXISTS',
-                message: 'A startup with this name already exists in the active workspace.'
-              }
+                code: "STARTUP_ALREADY_EXISTS",
+                message:
+                  "A startup with this name already exists in the active workspace.",
+              },
             };
           }
 
-          if (pgErrorCode === '23514') {
+          if (pgErrorCode === "23514") {
             set.status = 400;
-            console.warn('[startup] persistence validation failed', {
+            console.warn("[startup] persistence validation failed", {
               workspaceId: activeWorkspace.workspace.id,
-              detail: pgErrorDetail
+              detail: pgErrorDetail,
             });
 
             return {
               error: {
-                code: 'STARTUP_PERSISTENCE_INVALID',
-                message: 'Startup data failed database validation. Review the onboarding values and retry.'
-              }
+                code: "STARTUP_PERSISTENCE_INVALID",
+                message:
+                  "Startup data failed database validation. Review the onboarding values and retry.",
+              },
             };
           }
 
           set.status = 500;
-          console.error('[startup] create failed', {
+          console.error("[startup] create failed", {
             workspaceId: activeWorkspace.workspace.id,
-            error: error instanceof Error ? error.message : String(error)
+            error: error instanceof Error ? error.message : String(error),
           });
 
           return {
             error: {
-              code: 'STARTUP_CREATE_FAILED',
-              message: 'Startup creation failed. Please retry from the onboarding form.'
-            }
+              code: "STARTUP_CREATE_FAILED",
+              message:
+                "Startup creation failed. Please retry from the onboarding form.",
+            },
           };
         }
       },
@@ -893,313 +1047,432 @@ export async function createApiApp(
           type: t.String(),
           stage: t.String(),
           timezone: t.String(),
-          currency: t.String()
-        })
+          currency: t.String(),
+        }),
       }
     )
-    .get('/connectors', async ({ authContext, request, set, query }) => {
-      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/connectors');
-      if ('error' in activeWorkspace) return activeWorkspace;
-
-      const connectorRuntime: ConnectorRuntime = {
-        db: runtime.db,
-        env: runtime.env,
-        posthogValidator: runtime.posthogValidator,
-        stripeValidator: runtime.stripeValidator,
-        postgresValidator: runtime.postgresValidator,
-        queueProducer: runtime.queueProducer
-      };
-
-      return handleListConnectors(
-        connectorRuntime,
-        { workspace: activeWorkspace.workspace },
-        query.startupId,
-        set
-      );
-    }, {
-      query: t.Object({
-        startupId: t.Optional(t.String())
-      })
-    })
-    .post('/connectors', async ({ authContext, request, set, body }) => {
-      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/connectors');
-      if ('error' in activeWorkspace) return activeWorkspace;
-
-      const connectorRuntime: ConnectorRuntime = {
-        db: runtime.db,
-        env: runtime.env,
-        posthogValidator: runtime.posthogValidator,
-        stripeValidator: runtime.stripeValidator,
-        postgresValidator: runtime.postgresValidator,
-        queueProducer: runtime.queueProducer
-      };
-
-      return handleCreateConnector(
-        connectorRuntime,
-        { workspace: activeWorkspace.workspace },
-        body,
-        set
-      );
-    }, {
-      body: t.Object({
-        startupId: t.String(),
-        provider: t.String(),
-        config: t.Record(t.String(), t.String())
-      })
-    })
-    .delete('/connectors/:id', async ({ authContext, request, set, params }) => {
-      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/connectors/:id');
-      if ('error' in activeWorkspace) return activeWorkspace;
-
-      const connectorRuntime: ConnectorRuntime = {
-        db: runtime.db,
-        env: runtime.env,
-        posthogValidator: runtime.posthogValidator,
-        stripeValidator: runtime.stripeValidator,
-        postgresValidator: runtime.postgresValidator,
-        queueProducer: runtime.queueProducer
-      };
-
-      return handleDeleteConnector(
-        connectorRuntime,
-        { workspace: activeWorkspace.workspace },
-        params.id,
-        set
-      );
-    })
-    .post('/connectors/:id/sync', async ({ authContext, request, set, params }) => {
-      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/connectors/:id/sync');
-      if ('error' in activeWorkspace) return activeWorkspace;
-
-      const connectorRuntime: ConnectorRuntime = {
-        db: runtime.db,
-        env: runtime.env,
-        posthogValidator: runtime.posthogValidator,
-        stripeValidator: runtime.stripeValidator,
-        postgresValidator: runtime.postgresValidator,
-        queueProducer: runtime.queueProducer
-      };
-
-      return handleTriggerSync(
-        connectorRuntime,
-        { workspace: activeWorkspace.workspace },
-        params.id,
-        set
-      );
-    })
-    .get('/connectors/:id/status', async ({ authContext, request, set, params }) => {
-      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/connectors/:id/status');
-      if ('error' in activeWorkspace) return activeWorkspace;
-
-      const connectorRuntime: ConnectorRuntime = {
-        db: runtime.db,
-        env: runtime.env,
-        posthogValidator: runtime.posthogValidator,
-        stripeValidator: runtime.stripeValidator,
-        postgresValidator: runtime.postgresValidator,
-        queueProducer: runtime.queueProducer
-      };
-
-      return handleGetConnectorStatus(
-        connectorRuntime,
-        { workspace: activeWorkspace.workspace },
-        params.id,
-        set
-      );
-    })
-    .get('/startups/:startupId/health', async ({ authContext, request, set, params }) => {
-      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/startups/:startupId/health');
-      if ('error' in activeWorkspace) return activeWorkspace;
-
-      // Validate startup ownership
-      const startupRows = await withTimeout(
-        runtime.db.db.select({ id: startupTable.id }).from(startupTable).where(
-          eq(startupTable.id, params.startupId)
-        ),
-        runtime.env.authContextTimeoutMs,
-        'Startup lookup'
-      );
-      const startupRow = startupRows[0];
-
-      if (!startupRow) {
-        set.status = 404;
-        return {
-          error: {
-            code: 'STARTUP_NOT_FOUND',
-            message: 'Startup not found.'
-          }
-        };
-      }
-
-      // Verify startup belongs to active workspace
-      const ownershipRows = await withTimeout(
-        runtime.db.db.select({ id: startupTable.id }).from(startupTable).where(
-          eq(startupTable.workspaceId, activeWorkspace.workspace.id)
-        ),
-        runtime.env.authContextTimeoutMs,
-        'Startup ownership check'
-      );
-      const owned = ownershipRows.some((row) => row.id === params.startupId);
-
-      if (!owned) {
-        set.status = 403;
-        return {
-          error: {
-            code: 'STARTUP_SCOPE_INVALID',
-            message: 'The startup does not belong to the active workspace.'
-          }
-        };
-      }
-
-      try {
-        const payload = await withTimeout(
-          loadStartupHealth(runtime.db.db, params.startupId),
-          runtime.env.authContextTimeoutMs,
-          'Startup health read'
+    .get(
+      "/connectors",
+      async ({ authContext, request, set, query }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/connectors"
         );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
 
-        return payload;
-      } catch (error) {
-        console.error('[startup-health] read failed', {
-          startupId: params.startupId,
-          error: error instanceof Error ? error.message : String(error)
-        });
-
-        set.status = 500;
-        return {
-          error: {
-            code: 'HEALTH_READ_FAILED',
-            message: 'Failed to load startup health data. Please retry.'
-          }
+        const connectorRuntime: ConnectorRuntime = {
+          db: runtime.db,
+          env: runtime.env,
+          posthogValidator: runtime.posthogValidator,
+          stripeValidator: runtime.stripeValidator,
+          postgresValidator: runtime.postgresValidator,
+          queueProducer: runtime.queueProducer,
         };
-      }
-    })
-    .get('/startups/:startupId/insight', async ({ authContext, request, set, params }) => {
-      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/startups/:startupId/insight');
-      if ('error' in activeWorkspace) return activeWorkspace;
 
-      // Validate startup ownership
-      const startupRows = await withTimeout(
-        runtime.db.db.select({ id: startupTable.id }).from(startupTable).where(
-          eq(startupTable.id, params.startupId)
-        ),
-        runtime.env.authContextTimeoutMs,
-        'Startup lookup'
-      );
-      const startupRow = startupRows[0];
-
-      if (!startupRow) {
-        set.status = 404;
-        return {
-          error: {
-            code: 'STARTUP_NOT_FOUND',
-            message: 'Startup not found.'
-          }
-        };
-      }
-
-      // Verify startup belongs to active workspace
-      const ownershipRows = await withTimeout(
-        runtime.db.db.select({ id: startupTable.id }).from(startupTable).where(
-          eq(startupTable.workspaceId, activeWorkspace.workspace.id)
-        ),
-        runtime.env.authContextTimeoutMs,
-        'Startup ownership check'
-      );
-      const owned = ownershipRows.some((row) => row.id === params.startupId);
-
-      if (!owned) {
-        set.status = 403;
-        return {
-          error: {
-            code: 'STARTUP_SCOPE_INVALID',
-            message: 'The startup does not belong to the active workspace.'
-          }
-        };
-      }
-
-      try {
-        const payload = await withTimeout(
-          loadLatestInsight(runtime.db.db, params.startupId),
-          runtime.env.authContextTimeoutMs,
-          'Startup insight read'
+        return handleListConnectors(
+          connectorRuntime,
+          { workspace: activeWorkspace.workspace },
+          query.startupId,
+          set
         );
-
-        return payload;
-      } catch (error) {
-        console.error('[startup-insight] read failed', {
-          startupId: params.startupId,
-          error: error instanceof Error ? error.message : String(error)
-        });
-
-        set.status = 500;
-        return {
-          error: {
-            code: 'INSIGHT_READ_FAILED',
-            message: 'Failed to load startup insight data. Please retry.'
-          }
-        };
+      },
+      {
+        query: t.Object({
+          startupId: t.Optional(t.String()),
+        }),
       }
-    })
-    .post('/tasks', async ({ authContext, request, set, body }) => {
-      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/tasks');
-      if ('error' in activeWorkspace) return activeWorkspace;
+    )
+    .post(
+      "/connectors",
+      async ({ authContext, request, set, body }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/connectors"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
 
-      const result = await handleCreateTask(
-        runtime,
-        { workspace: activeWorkspace.workspace },
-        body as { startupId: string; actionIndex: number },
-        set
-      );
+        const connectorRuntime: ConnectorRuntime = {
+          db: runtime.db,
+          env: runtime.env,
+          posthogValidator: runtime.posthogValidator,
+          stripeValidator: runtime.stripeValidator,
+          postgresValidator: runtime.postgresValidator,
+          queueProducer: runtime.queueProducer,
+        };
 
-      // Enqueue task-sync job after successful creation, without blocking the response.
-      // Task creation must never roll back because of queue failure.
-      const resultObj = result as Record<string, unknown> | null;
-      if (resultObj && 'task' in resultObj && 'created' in resultObj && resultObj.created === true) {
-        const task = resultObj.task as { id: string };
+        return handleCreateConnector(
+          connectorRuntime,
+          { workspace: activeWorkspace.workspace },
+          body,
+          set
+        );
+      },
+      {
+        body: t.Object({
+          startupId: t.String(),
+          provider: t.String(),
+          config: t.Record(t.String(), t.String()),
+        }),
+      }
+    )
+    .delete(
+      "/connectors/:id",
+      async ({ authContext, request, set, params }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/connectors/:id"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        const connectorRuntime: ConnectorRuntime = {
+          db: runtime.db,
+          env: runtime.env,
+          posthogValidator: runtime.posthogValidator,
+          stripeValidator: runtime.stripeValidator,
+          postgresValidator: runtime.postgresValidator,
+          queueProducer: runtime.queueProducer,
+        };
+
+        return handleDeleteConnector(
+          connectorRuntime,
+          { workspace: activeWorkspace.workspace },
+          params.id,
+          set
+        );
+      }
+    )
+    .post(
+      "/connectors/:id/sync",
+      async ({ authContext, request, set, params }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/connectors/:id/sync"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        const connectorRuntime: ConnectorRuntime = {
+          db: runtime.db,
+          env: runtime.env,
+          posthogValidator: runtime.posthogValidator,
+          stripeValidator: runtime.stripeValidator,
+          postgresValidator: runtime.postgresValidator,
+          queueProducer: runtime.queueProducer,
+        };
+
+        return handleTriggerSync(
+          connectorRuntime,
+          { workspace: activeWorkspace.workspace },
+          params.id,
+          set
+        );
+      }
+    )
+    .get(
+      "/connectors/:id/status",
+      async ({ authContext, request, set, params }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/connectors/:id/status"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        const connectorRuntime: ConnectorRuntime = {
+          db: runtime.db,
+          env: runtime.env,
+          posthogValidator: runtime.posthogValidator,
+          stripeValidator: runtime.stripeValidator,
+          postgresValidator: runtime.postgresValidator,
+          queueProducer: runtime.queueProducer,
+        };
+
+        return handleGetConnectorStatus(
+          connectorRuntime,
+          { workspace: activeWorkspace.workspace },
+          params.id,
+          set
+        );
+      }
+    )
+    .get(
+      "/startups/:startupId/health",
+      async ({ authContext, request, set, params }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/health"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        // Validate startup ownership
+        const startupRows = await withTimeout(
+          runtime.db.db
+            .select({ id: startupTable.id })
+            .from(startupTable)
+            .where(eq(startupTable.id, params.startupId)),
+          runtime.env.authContextTimeoutMs,
+          "Startup lookup"
+        );
+        const startupRow = startupRows[0];
+
+        if (!startupRow) {
+          set.status = 404;
+          return {
+            error: {
+              code: "STARTUP_NOT_FOUND",
+              message: "Startup not found.",
+            },
+          };
+        }
+
+        // Verify startup belongs to active workspace
+        const ownershipRows = await withTimeout(
+          runtime.db.db
+            .select({ id: startupTable.id })
+            .from(startupTable)
+            .where(eq(startupTable.workspaceId, activeWorkspace.workspace.id)),
+          runtime.env.authContextTimeoutMs,
+          "Startup ownership check"
+        );
+        const owned = ownershipRows.some((row) => row.id === params.startupId);
+
+        if (!owned) {
+          set.status = 403;
+          return {
+            error: {
+              code: "STARTUP_SCOPE_INVALID",
+              message: "The startup does not belong to the active workspace.",
+            },
+          };
+        }
+
         try {
-          const enqueueResult = await runtime.taskSyncQueueProducer.enqueue({ taskId: task.id });
-          if (!enqueueResult.success) {
-            console.warn('[tasks] task sync enqueue failed — task preserved', {
-              taskId: task.id,
-              error: enqueueResult.error,
-            });
-            // Surface sync warning in response but keep the task
-            (resultObj as Record<string, unknown>).syncWarning = enqueueResult.error;
-          }
-        } catch (err) {
-          console.error('[tasks] task sync enqueue threw — task preserved', {
-            taskId: task.id,
-            error: err instanceof Error ? err.message : String(err),
+          const payload = await withTimeout(
+            loadStartupHealth(runtime.db.db, params.startupId),
+            runtime.env.authContextTimeoutMs,
+            "Startup health read"
+          );
+
+          return payload;
+        } catch (error) {
+          console.error("[startup-health] read failed", {
+            startupId: params.startupId,
+            error: error instanceof Error ? error.message : String(error),
           });
-          (resultObj as Record<string, unknown>).syncWarning = 'Task sync queue unavailable. The task is saved and will sync later.';
+
+          set.status = 500;
+          return {
+            error: {
+              code: "HEALTH_READ_FAILED",
+              message: "Failed to load startup health data. Please retry.",
+            },
+          };
         }
       }
+    )
+    .get(
+      "/startups/:startupId/insight",
+      async ({ authContext, request, set, params }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/insight"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
 
-      return result;
-    }, {
-      body: t.Object({
-        startupId: t.String(),
-        actionIndex: t.Number()
-      })
-    })
-    .get('/tasks', async ({ authContext, request, set, query }) => {
-      const activeWorkspace = await resolveActiveWorkspace(runtime, request, authContext, set, '/api/tasks');
-      if ('error' in activeWorkspace) return activeWorkspace;
+        // Validate startup ownership
+        const startupRows = await withTimeout(
+          runtime.db.db
+            .select({ id: startupTable.id })
+            .from(startupTable)
+            .where(eq(startupTable.id, params.startupId)),
+          runtime.env.authContextTimeoutMs,
+          "Startup lookup"
+        );
+        const startupRow = startupRows[0];
 
-      return handleListTasks(
-        runtime,
-        { workspace: activeWorkspace.workspace },
-        query.startupId ?? '',
-        set
-      );
-    }, {
-      query: t.Object({
-        startupId: t.Optional(t.String())
-      })
-    })
-    .all('/auth', ({ request }) => auth.auth.handler(request))
-    .all('/auth/*', ({ request }) => auth.auth.handler(request));
+        if (!startupRow) {
+          set.status = 404;
+          return {
+            error: {
+              code: "STARTUP_NOT_FOUND",
+              message: "Startup not found.",
+            },
+          };
+        }
+
+        // Verify startup belongs to active workspace
+        const ownershipRows = await withTimeout(
+          runtime.db.db
+            .select({ id: startupTable.id })
+            .from(startupTable)
+            .where(eq(startupTable.workspaceId, activeWorkspace.workspace.id)),
+          runtime.env.authContextTimeoutMs,
+          "Startup ownership check"
+        );
+        const owned = ownershipRows.some((row) => row.id === params.startupId);
+
+        if (!owned) {
+          set.status = 403;
+          return {
+            error: {
+              code: "STARTUP_SCOPE_INVALID",
+              message: "The startup does not belong to the active workspace.",
+            },
+          };
+        }
+
+        try {
+          const payload = await withTimeout(
+            loadLatestInsight(runtime.db.db, params.startupId),
+            runtime.env.authContextTimeoutMs,
+            "Startup insight read"
+          );
+
+          return payload;
+        } catch (error) {
+          console.error("[startup-insight] read failed", {
+            startupId: params.startupId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+
+          set.status = 500;
+          return {
+            error: {
+              code: "INSIGHT_READ_FAILED",
+              message: "Failed to load startup insight data. Please retry.",
+            },
+          };
+        }
+      }
+    )
+    .post(
+      "/tasks",
+      async ({ authContext, request, set, body }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/tasks"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        const result = await handleCreateTask(
+          runtime,
+          { workspace: activeWorkspace.workspace },
+          body as { startupId: string; actionIndex: number },
+          set
+        );
+
+        // Enqueue task-sync job after successful creation, without blocking the response.
+        // Task creation must never roll back because of queue failure.
+        const resultObj = result as Record<string, unknown> | null;
+        if (
+          resultObj &&
+          "task" in resultObj &&
+          "created" in resultObj &&
+          resultObj.created === true
+        ) {
+          const task = resultObj.task as { id: string };
+          try {
+            const enqueueResult = await runtime.taskSyncQueueProducer.enqueue({
+              taskId: task.id,
+            });
+            if (!enqueueResult.success) {
+              console.warn(
+                "[tasks] task sync enqueue failed — task preserved",
+                {
+                  taskId: task.id,
+                  error: enqueueResult.error,
+                }
+              );
+              // Surface sync warning in response but keep the task
+              (resultObj as Record<string, unknown>).syncWarning =
+                enqueueResult.error;
+            }
+          } catch (err) {
+            console.error("[tasks] task sync enqueue threw — task preserved", {
+              taskId: task.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            (resultObj as Record<string, unknown>).syncWarning =
+              "Task sync queue unavailable. The task is saved and will sync later.";
+          }
+        }
+
+        return result;
+      },
+      {
+        body: t.Object({
+          startupId: t.String(),
+          actionIndex: t.Number(),
+        }),
+      }
+    )
+    .get(
+      "/tasks",
+      async ({ authContext, request, set, query }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/tasks"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleListTasks(
+          runtime,
+          { workspace: activeWorkspace.workspace },
+          query.startupId ?? "",
+          set
+        );
+      },
+      {
+        query: t.Object({
+          startupId: t.Optional(t.String()),
+        }),
+      }
+    )
+    .all("/auth", ({ request }) => auth.auth.handler(request))
+    .all("/auth/*", ({ request }) => auth.auth.handler(request));
 
   return Object.assign(app, { runtime }) as unknown as ApiApp;
 }
