@@ -172,6 +172,10 @@ function setNativeInputValue(element: HTMLInputElement, value: string) {
   fireEvent.input(element, { target: { value } });
 }
 
+async function openOperationsTab(view: ReturnType<typeof render>) {
+  fireEvent.click(await view.findByRole("tab", { name: /Operations/i }));
+}
+
 function createApi(overrides: Partial<DashboardApi> = {}): DashboardApi {
   return {
     listWorkspaces:
@@ -251,6 +255,7 @@ describe("postgres custom metric on dashboard", () => {
 
     // Wait for the dashboard to load
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
+    await openOperationsTab(view);
 
     // Postgres setup form should be visible
     expect(view.getByTestId("postgres-custom-metric-setup")).toBeTruthy();
@@ -262,17 +267,14 @@ describe("postgres custom metric on dashboard", () => {
     ).toBeTruthy();
   });
 
-  test('shows the custom metric panel with "not configured" guidance when no metric exists', async () => {
+  test("hides the custom metric panel when no metric exists", async () => {
     const api = createApi();
     const view = render(
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
-
-    const panel = view.getByTestId("custom-metric-panel");
-    expect(panel).toBeTruthy();
-    expect(panel.textContent).toContain("No custom metric configured");
+    expect(view.queryByTestId("custom-metric-panel")).toBeNull();
   });
 
   test("renders the synced custom metric value with delta beneath the fixed health template", async () => {
@@ -305,8 +307,12 @@ describe("postgres custom metric on dashboard", () => {
     expect(delta.textContent).toContain("+9.0%");
 
     // Should still show the fixed health template
-    expect(view.getByLabelText("supporting metrics")).toBeTruthy();
-    expect(view.getByLabelText("funnel")).toBeTruthy();
+    expect(
+      view.getByRole("button", { name: "Supporting metrics" })
+    ).toBeTruthy();
+    expect(
+      view.getByRole("button", { name: "Acquisition funnel" })
+    ).toBeTruthy();
   });
 
   test("shows configured state card when postgres connector already exists", async () => {
@@ -326,11 +332,15 @@ describe("postgres custom metric on dashboard", () => {
     );
 
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
+    await openOperationsTab(view);
 
     // Should show the configured card, not the setup form
-    expect(view.getByTestId("postgres-custom-metric-configured")).toBeTruthy();
+    const configuredCard = view.getByTestId(
+      "postgres-custom-metric-configured"
+    );
+    expect(configuredCard).toBeTruthy();
     expect(view.queryByTestId("postgres-custom-metric-setup")).toBeNull();
-    expect(view.getByText("Daily Revenue")).toBeTruthy();
+    expect(configuredCard.textContent).toContain("Daily Revenue");
   });
 
   test("shows error state in custom metric panel when metric has error status", async () => {
@@ -398,6 +408,7 @@ describe("postgres custom metric on dashboard", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openOperationsTab(view);
     expect(
       await view.findByTestId("postgres-custom-metric-setup")
     ).toBeTruthy();
@@ -422,6 +433,7 @@ describe("postgres custom metric on dashboard", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openOperationsTab(view);
     expect(
       await view.findByTestId("postgres-custom-metric-setup")
     ).toBeTruthy();
@@ -459,6 +471,7 @@ describe("postgres custom metric on dashboard", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openOperationsTab(view);
     expect(
       await view.findByTestId("postgres-custom-metric-setup")
     ).toBeTruthy();
@@ -498,6 +511,7 @@ describe("postgres custom metric on dashboard", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openOperationsTab(view);
     expect(
       await view.findByTestId("postgres-custom-metric-setup")
     ).toBeTruthy();
@@ -538,6 +552,7 @@ describe("postgres custom metric on dashboard", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openOperationsTab(view);
     expect(
       await view.findByTestId("postgres-custom-metric-setup")
     ).toBeTruthy();
@@ -585,10 +600,7 @@ describe("postgres custom metric on dashboard", () => {
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
     expect(view.getByLabelText("supporting metrics")).toBeTruthy();
     expect(view.getByLabelText("funnel")).toBeTruthy();
-
-    // Custom metric panel should show "not configured" guidance
-    const panel = view.getByTestId("custom-metric-panel");
-    expect(panel.textContent).toContain("No custom metric configured");
+    expect(view.queryByTestId("custom-metric-panel")).toBeNull();
   });
 
   test("custom metric panel preserves last-good value when health refresh fails", async () => {
@@ -645,6 +657,7 @@ describe("postgres custom metric on dashboard", () => {
     );
 
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
+    await openOperationsTab(view);
 
     const panel = view.getByTestId("custom-metric-panel");
     expect(panel.textContent).toContain("No data has been synced yet");
@@ -674,12 +687,13 @@ describe("onboarding regression", () => {
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
     expect(view.getByLabelText("supporting metrics")).toBeTruthy();
     expect(view.getByLabelText("funnel")).toBeTruthy();
-    expect(view.getByLabelText("connector status")).toBeTruthy();
+    expect(view.queryByTestId("custom-metric-panel")).toBeNull();
 
-    // Postgres setup form should be shown (not the configured card)
+    await openOperationsTab(view);
+    expect(view.getByLabelText("connector status")).toBeTruthy();
     expect(view.getByTestId("postgres-custom-metric-setup")).toBeTruthy();
     // But PostHog/Stripe setup forms should NOT be shown (already connected)
-    expect(view.queryByRole("form", { name: "PostHog setup form" })).toBeNull();
-    expect(view.queryByRole("form", { name: "Stripe setup form" })).toBeNull();
+    expect(view.queryByLabelText("PostHog setup form")).toBeNull();
+    expect(view.queryByLabelText("Stripe setup form")).toBeNull();
   });
 });

@@ -43,20 +43,7 @@ export function CustomMetricPanel({
   healthError: _healthError = false,
 }: CustomMetricPanelProps) {
   if (!customMetric) {
-    return (
-      <Card
-        aria-label="custom metric"
-        className="bg-muted"
-        data-testid="custom-metric-panel"
-      >
-        <CardContent className="pt-5">
-          <p className="text-muted-foreground text-sm">
-            No custom metric configured. Add a Postgres-backed metric below to
-            track additional KPIs.
-          </p>
-        </CardContent>
-      </Card>
-    );
+    return null;
   }
 
   if (customMetric.status === "error") {

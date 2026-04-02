@@ -32,9 +32,15 @@ import { ConnectorSetupCard } from "../../components/connector-setup-card";
 import { ConnectorStatusPanel } from "../../components/connector-status-panel";
 import { CustomMetricPanel } from "../../components/custom-metric-panel";
 import { DisclosureSection } from "../../components/disclosure-section";
+import { FadeIn } from "../../components/fade-in";
 import { PortfolioStartupCard } from "../../components/portfolio-startup-card";
 import type { PostgresSetupFormValues } from "../../components/postgres-custom-metric-card";
 import { PostgresCustomMetricCard } from "../../components/postgres-custom-metric-card";
+import {
+  HealthHeroSkeleton,
+  InsightCardSkeleton,
+  PortfolioCardSkeleton,
+} from "../../components/skeleton-screens";
 import { StartupFunnelPanel } from "../../components/startup-funnel-panel";
 import { StartupHealthHero } from "../../components/startup-health-hero";
 import { StartupInsightCard } from "../../components/startup-insight-card";
@@ -134,6 +140,8 @@ export interface DashboardPageProps {
   api?: DashboardApi;
   authState: AuthSnapshot;
 }
+
+type DashboardDetailView = "health" | "operations";
 
 // ------------------------------------------------------------------
 // Internal types
@@ -817,6 +825,9 @@ export function DashboardPage({
   );
   const [_pgSetupError, setPgSetupError] = useState<string | null>(null);
   const [pgSetupSubmitting, setPgSetupSubmitting] = useState(false);
+  const [detailView, setDetailView] = useState<DashboardDetailView | null>(
+    null
+  );
 
   const activeWorkspace = useMemo(
     () =>
@@ -826,6 +837,15 @@ export function DashboardPage({
   );
 
   const primaryStartup = startups[0] ?? null;
+  const primaryStartupId = primaryStartup?.id ?? null;
+
+  useEffect(() => {
+    if (!primaryStartupId) {
+      setDetailView(null);
+      return;
+    }
+    setDetailView(null);
+  }, [primaryStartupId]);
 
   // Determine which providers already have a connector
   const posthogConnector =
@@ -1112,6 +1132,13 @@ export function DashboardPage({
   const activeConnectors = connectors.filter(
     (c) => c.status !== "disconnected"
   );
+  const resolvedCustomMetric =
+    customMetric ?? healthPayload?.customMetric ?? null;
+  const missingCoreConnectorCount =
+    Number(!posthogConnector) + Number(!stripeConnector);
+  const resolvedDetailView = detailView ?? "health";
+  const showConnectorStatusPanel =
+    connectorLoading || connectorError !== null || activeConnectors.length > 0;
 
   return (
     <AppShell
@@ -1125,247 +1152,353 @@ export function DashboardPage({
       startupError={startupError}
       startupStatus={startupStatus}
       startups={startups}
-      user={{
-        email: authState.session?.user.email ?? "founder@example.com",
-        name: authState.session?.user.name ?? null,
-      }}
       workspaceError={workspaceError}
       workspaces={workspaces}
     >
-      <div className="grid gap-4">
-        {/* ── Portfolio prioritization surface ── */}
-        <div className="mb-2">
-          <p className="text-muted-foreground text-xs uppercase tracking-wider">
-            Portfolio
-          </p>
-          <h2 className="mt-1">Startup prioritization</h2>
-        </div>
-
+      <div className="grid gap-6">
         {activeWorkspace && startups.length > 0 ? (
           <>
-            {/* Portfolio card — the primary founder-facing representation */}
-            {healthStatus === "ready" && healthPayload && primaryStartup ? (
-              <PortfolioStartupCard
-                viewModel={buildPortfolioCardViewModel(
-                  primaryStartup,
-                  healthPayload
-                )}
-              />
-            ) : null}
-            {healthStatus === "error" && primaryStartup ? (
-              <PortfolioStartupCard
-                viewModel={buildPortfolioErrorViewModel(
-                  primaryStartup,
-                  healthError ?? "Failed to load startup health data."
-                )}
-              />
-            ) : null}
-            {healthStatus === "loading" && primaryStartup ? (
-              <Card
-                aria-label="portfolio startup card"
-                data-testid="portfolio-startup-card"
-              >
-                <CardContent className="grid gap-3 pt-5">
-                  <p className="text-muted-foreground text-sm" role="status">
-                    Loading portfolio…
-                  </p>
-                </CardContent>
-              </Card>
-            ) : null}
+            <section
+              aria-labelledby="dashboard-triage-heading"
+              className="grid gap-4"
+            >
+              <div className="grid gap-1">
+                <p className="text-muted-foreground text-xs uppercase tracking-[0.18em]">
+                  Triage
+                </p>
+                <h1
+                  className="font-semibold text-lg tracking-tight"
+                  id="dashboard-triage-heading"
+                >
+                  What needs attention now
+                </h1>
+              </div>
 
-            {/* Health error banner — preserves connector panel and shell */}
-            {healthStatus === "error" ? (
-              <Card
-                aria-label="health error"
-                className="border-danger-border bg-danger-bg"
-              >
-                <CardContent className="grid gap-2 pt-5">
-                  <Alert variant="destructive">
-                    <AlertDescription>
-                      {healthError ?? "Failed to load startup health data."}
-                    </AlertDescription>
-                  </Alert>
-                  <Button
-                    onClick={() =>
-                      void refreshHealth(primaryStartup?.id ?? null)
-                    }
-                    type="button"
-                    variant="outline"
-                  >
-                    Retry health load
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : null}
+              {/* Portfolio card — the primary founder-facing representation */}
+              {healthStatus === "ready" && healthPayload && primaryStartup ? (
+                <FadeIn>
+                  <PortfolioStartupCard
+                    viewModel={buildPortfolioCardViewModel(
+                      primaryStartup,
+                      healthPayload
+                    )}
+                  />
+                </FadeIn>
+              ) : null}
+              {healthStatus === "error" && primaryStartup ? (
+                <PortfolioStartupCard
+                  viewModel={buildPortfolioErrorViewModel(
+                    primaryStartup,
+                    healthError ?? "Failed to load startup health data."
+                  )}
+                />
+              ) : null}
+              {healthStatus === "loading" && primaryStartup ? (
+                <div role="status">
+                  <span className="sr-only">Loading portfolio</span>
+                  <PortfolioCardSkeleton />
+                </div>
+              ) : null}
 
-            {/* ── Grounded Insight ── */}
-            {insightStatus === "ready" && insightPayload ? (
-              <StartupInsightCard
-                creatingActionIndex={creatingActionIndex}
-                diagnosticMessage={insightPayload.diagnosticMessage}
-                displayStatus={insightPayload.displayStatus}
-                insight={insightPayload.insight}
-                onCreateTask={handleCreateTaskFromAction}
-                onRetry={() => void refreshInsight(primaryStartup?.id ?? null)}
-                taskCreateError={taskCreateError}
-                tasks={tasks}
-              />
-            ) : null}
-            {insightStatus === "error" ? (
-              <Card
-                aria-label="insight error"
-                className="border-danger-border bg-danger-bg"
-              >
-                <CardContent className="grid gap-2 pt-5">
-                  <Alert variant="destructive">
-                    <AlertDescription>
-                      {insightError ?? "Failed to load insight data."}
-                    </AlertDescription>
-                  </Alert>
-                  <Button
-                    onClick={() =>
+              {/* Health error banner — preserves connector panel and shell */}
+              {healthStatus === "error" ? (
+                <Card
+                  aria-label="health error"
+                  className="border-danger-border bg-danger-bg"
+                >
+                  <CardContent className="grid gap-2 pt-5">
+                    <Alert variant="destructive">
+                      <AlertDescription>
+                        {healthError ?? "Failed to load startup health data."}
+                      </AlertDescription>
+                    </Alert>
+                    <Button
+                      onClick={() =>
+                        void refreshHealth(primaryStartup?.id ?? null)
+                      }
+                      type="button"
+                      variant="outline"
+                    >
+                      Retry health load
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {/* ── Grounded Insight ── */}
+              {insightStatus === "ready" && insightPayload ? (
+                <FadeIn>
+                  <StartupInsightCard
+                    creatingActionIndex={creatingActionIndex}
+                    diagnosticMessage={insightPayload.diagnosticMessage}
+                    displayStatus={insightPayload.displayStatus}
+                    insight={insightPayload.insight}
+                    onCreateTask={handleCreateTaskFromAction}
+                    onRetry={() =>
                       void refreshInsight(primaryStartup?.id ?? null)
                     }
-                    type="button"
-                    variant="outline"
-                  >
-                    Retry insight load
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : null}
-            {insightStatus === "loading" ? (
-              <p className="text-muted-foreground text-sm" role="status">
-                Loading insight…
-              </p>
-            ) : null}
+                    taskCreateError={taskCreateError}
+                    tasks={tasks}
+                  />
+                </FadeIn>
+              ) : null}
+              {insightStatus === "error" ? (
+                <Card
+                  aria-label="insight error"
+                  className="border-danger-border bg-danger-bg"
+                >
+                  <CardContent className="grid gap-2 pt-5">
+                    <Alert variant="destructive">
+                      <AlertDescription>
+                        {insightError ?? "Failed to load insight data."}
+                      </AlertDescription>
+                    </Alert>
+                    <Button
+                      onClick={() =>
+                        void refreshInsight(primaryStartup?.id ?? null)
+                      }
+                      type="button"
+                      variant="outline"
+                    >
+                      Retry insight load
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : null}
+              {insightStatus === "loading" ? (
+                <div role="status">
+                  <span className="sr-only">Loading insight</span>
+                  <InsightCardSkeleton />
+                </div>
+              ) : null}
 
-            {/* ── Tasks ── */}
-            <StartupTaskList
-              error={taskListError}
-              onRetry={() => void refreshTasks(primaryStartup?.id ?? null)}
-              status={taskListStatus}
-              tasks={tasks}
-            />
+              <StartupTaskList
+                error={taskListError}
+                onRetry={() => void refreshTasks(primaryStartup?.id ?? null)}
+                status={taskListStatus}
+                tasks={tasks}
+              />
+            </section>
 
-            {/* ── Health & connector drill-down ── */}
-            <div className="mt-6">
-              <p className="text-muted-foreground text-xs uppercase tracking-wider">
-                Health detail
-              </p>
-            </div>
-
-            {/* Health hero: show when we have health data or when blocked/syncing */}
-            {healthStatus === "ready" && healthPayload ? (
-              <>
-                <StartupHealthHero
-                  blockedReasons={healthPayload.blockedReasons}
-                  healthState={healthPayload.status}
-                  lastSnapshotAt={healthPayload.lastSnapshotAt}
-                  northStarKey={healthPayload.health?.northStarKey ?? "mrr"}
-                  northStarPreviousValue={
-                    healthPayload.health?.northStarPreviousValue ?? null
-                  }
-                  northStarValue={healthPayload.health?.northStarValue ?? 0}
-                />
-
-                {/* Supporting metrics grid — show even when stale with muted styling */}
-                {healthPayload.health ? (
-                  <>
-                    <DisclosureSection title="Supporting metrics">
-                      <StartupMetricsGrid
-                        metrics={healthPayload.health.supportingMetrics}
-                        muted={
-                          healthPayload.status === "stale" ||
-                          healthPayload.status === "blocked"
-                        }
-                      />
-                    </DisclosureSection>
-                    <DisclosureSection title="Acquisition funnel">
-                      <StartupFunnelPanel
-                        muted={
-                          healthPayload.status === "stale" ||
-                          healthPayload.status === "blocked"
-                        }
-                        stages={healthPayload.health.funnel}
-                      />
-                    </DisclosureSection>
-                  </>
-                ) : null}
-
-                {/* Stale state guidance */}
-                {healthPayload.status === "stale" ? (
-                  <p className="text-sm text-warning">
-                    Health data is stale. Resync your connectors below to
-                    refresh metrics.
+            <section
+              aria-labelledby="dashboard-detail-heading"
+              className="grid gap-4 border-border border-t pt-6"
+            >
+              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div className="grid gap-1">
+                  <p className="text-muted-foreground text-xs uppercase tracking-[0.18em]">
+                    Secondary view
                   </p>
-                ) : null}
+                  <div className="grid gap-1">
+                    <h2
+                      className="font-semibold text-lg tracking-tight"
+                      id="dashboard-detail-heading"
+                    >
+                      Health detail
+                    </h2>
+                    <p className="text-muted-foreground text-sm">
+                      Inspect the drill-down or manage connectors without
+                      crowding the triage flow.
+                    </p>
+                  </div>
+                </div>
 
-                {/* Optional custom metric — shown beneath the fixed health template */}
-                <CustomMetricPanel
-                  customMetric={customMetric ?? healthPayload.customMetric}
-                  healthError={false}
-                />
-              </>
-            ) : null}
+                <div
+                  aria-label="Dashboard detail views"
+                  className="inline-flex w-fit rounded-lg border border-border bg-muted p-1"
+                  role="tablist"
+                >
+                  <Button
+                    aria-controls="dashboard-health-panel"
+                    aria-selected={resolvedDetailView === "health"}
+                    id="dashboard-health-tab"
+                    onClick={() => setDetailView("health")}
+                    role="tab"
+                    size="sm"
+                    type="button"
+                    variant={
+                      resolvedDetailView === "health" ? "secondary" : "ghost"
+                    }
+                  >
+                    Health detail
+                  </Button>
+                  <Button
+                    aria-controls="dashboard-operations-panel"
+                    aria-selected={resolvedDetailView === "operations"}
+                    id="dashboard-operations-tab"
+                    onClick={() => setDetailView("operations")}
+                    role="tab"
+                    size="sm"
+                    type="button"
+                    variant={
+                      resolvedDetailView === "operations"
+                        ? "secondary"
+                        : "ghost"
+                    }
+                  >
+                    Operations
+                    {missingCoreConnectorCount > 0
+                      ? ` (${String(missingCoreConnectorCount)})`
+                      : ""}
+                  </Button>
+                </div>
+              </div>
 
-            {/* Custom metric panel when health errored but we have a previous custom metric */}
-            {healthStatus === "error" && customMetric ? (
-              <CustomMetricPanel
-                customMetric={customMetric}
-                healthError={true}
-              />
-            ) : null}
+              {resolvedDetailView === "health" ? (
+                <div
+                  aria-labelledby="dashboard-health-tab"
+                  className="grid gap-4"
+                  id="dashboard-health-panel"
+                  role="tabpanel"
+                >
+                  {healthStatus === "ready" && healthPayload ? (
+                    <FadeIn className="grid gap-4">
+                      <StartupHealthHero
+                        blockedReasons={healthPayload.blockedReasons}
+                        healthState={healthPayload.status}
+                        lastSnapshotAt={healthPayload.lastSnapshotAt}
+                        northStarKey={
+                          healthPayload.health?.northStarKey ?? "mrr"
+                        }
+                        northStarPreviousValue={
+                          healthPayload.health?.northStarPreviousValue ?? null
+                        }
+                        northStarValue={
+                          healthPayload.health?.northStarValue ?? 0
+                        }
+                      />
 
-            {/* Loading state */}
-            {healthStatus === "loading" ? (
-              <p className="text-muted-foreground text-sm" role="status">
-                Loading health data…
-              </p>
-            ) : null}
+                      {healthPayload.health ? (
+                        <>
+                          <DisclosureSection title="Supporting metrics">
+                            <StartupMetricsGrid
+                              metrics={healthPayload.health.supportingMetrics}
+                              muted={
+                                healthPayload.status === "stale" ||
+                                healthPayload.status === "blocked"
+                              }
+                            />
+                          </DisclosureSection>
+                          <DisclosureSection title="Acquisition funnel">
+                            <StartupFunnelPanel
+                              muted={
+                                healthPayload.status === "stale" ||
+                                healthPayload.status === "blocked"
+                              }
+                              stages={healthPayload.health.funnel}
+                            />
+                          </DisclosureSection>
+                        </>
+                      ) : null}
 
-            {/* Connector status panel */}
-            <ConnectorStatusPanel
-              connectors={activeConnectors}
-              error={connectorError}
-              loading={connectorLoading}
-              onDisconnect={handleDisconnect}
-              onRefresh={() =>
-                void refreshConnectors(primaryStartup?.id ?? null)
-              }
-              onResync={handleResync}
-            />
+                      {healthPayload.status === "stale" ? (
+                        <p className="text-sm text-warning">
+                          Health data is stale. Open Operations to refresh your
+                          connectors.
+                        </p>
+                      ) : null}
 
-            {/* Connect missing providers */}
-            {posthogConnector ? null : (
-              <ConnectorSetupCard
-                existing={null}
-                onConnect={handleConnectProvider}
-                provider="posthog"
-              />
-            )}
-            {stripeConnector ? null : (
-              <ConnectorSetupCard
-                existing={null}
-                onConnect={handleConnectProvider}
-                provider="stripe"
-              />
-            )}
+                      {resolvedCustomMetric ? (
+                        <CustomMetricPanel
+                          customMetric={resolvedCustomMetric}
+                          healthError={false}
+                        />
+                      ) : null}
+                    </FadeIn>
+                  ) : null}
 
-            {/* Optional Postgres custom metric setup — post-onboarding */}
-            {postgresConnector ? (
-              <PostgresCustomMetricCard
-                disabled={pgSetupSubmitting}
-                existing={customMetric}
-                onSetup={handlePostgresSetup}
-              />
-            ) : (
-              <PostgresCustomMetricCard
-                disabled={pgSetupSubmitting}
-                existing={null}
-                onSetup={handlePostgresSetup}
-              />
-            )}
+                  {healthStatus === "error" && resolvedCustomMetric ? (
+                    <CustomMetricPanel
+                      customMetric={resolvedCustomMetric}
+                      healthError={true}
+                    />
+                  ) : null}
+
+                  {healthStatus === "loading" ? (
+                    <div role="status">
+                      <span className="sr-only">Loading health data</span>
+                      <HealthHeroSkeleton />
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div
+                  aria-labelledby="dashboard-operations-tab"
+                  className="grid gap-4"
+                  id="dashboard-operations-panel"
+                  role="tabpanel"
+                >
+                  {showConnectorStatusPanel ? (
+                    <ConnectorStatusPanel
+                      connectors={activeConnectors}
+                      error={connectorError}
+                      loading={connectorLoading}
+                      onDisconnect={handleDisconnect}
+                      onRefresh={() =>
+                        void refreshConnectors(primaryStartup?.id ?? null)
+                      }
+                      onResync={handleResync}
+                    />
+                  ) : null}
+
+                  {posthogConnector && stripeConnector ? null : (
+                    <section className="grid gap-3">
+                      <div className="grid gap-1">
+                        <h3 className="font-semibold text-sm">
+                          Connect core sources
+                        </h3>
+                        <p className="text-muted-foreground text-sm">
+                          Only the sources that still need setup appear here.
+                        </p>
+                      </div>
+
+                      <div className="grid gap-4 xl:grid-cols-2">
+                        {posthogConnector ? null : (
+                          <ConnectorSetupCard
+                            existing={null}
+                            onConnect={handleConnectProvider}
+                            provider="posthog"
+                          />
+                        )}
+                        {stripeConnector ? null : (
+                          <ConnectorSetupCard
+                            existing={null}
+                            onConnect={handleConnectProvider}
+                            provider="stripe"
+                          />
+                        )}
+                      </div>
+                    </section>
+                  )}
+
+                  <section className="grid gap-3">
+                    <div className="grid gap-1">
+                      <h3 className="font-semibold text-sm">
+                        Optional Postgres metric
+                      </h3>
+                      <p className="text-muted-foreground text-sm">
+                        Add a Postgres-backed KPI only if you need a custom
+                        signal in the health view.
+                      </p>
+                    </div>
+
+                    {postgresConnector ? (
+                      <PostgresCustomMetricCard
+                        disabled={pgSetupSubmitting}
+                        existing={resolvedCustomMetric}
+                        onSetup={handlePostgresSetup}
+                      />
+                    ) : (
+                      <PostgresCustomMetricCard
+                        disabled={pgSetupSubmitting}
+                        existing={null}
+                        onSetup={handlePostgresSetup}
+                      />
+                    )}
+                  </section>
+                </div>
+              )}
+            </section>
           </>
         ) : null}
 

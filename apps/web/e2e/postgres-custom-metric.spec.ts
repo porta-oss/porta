@@ -32,6 +32,7 @@ test.describe("postgres custom metric dashboard flow", () => {
       .catch(() => false);
 
     if (hasStartups) {
+      await page.getByRole("tab", { name: /Operations/ }).click();
       await expect(setupForm).toBeVisible({ timeout: 5000 });
       await expect(
         page.getByRole("button", { name: "Add Postgres metric" })
@@ -55,6 +56,7 @@ test.describe("postgres custom metric dashboard flow", () => {
       return;
     }
 
+    await page.getByRole("tab", { name: /Operations/ }).click();
     const setupForm = page.getByTestId("postgres-custom-metric-setup");
     await expect(setupForm).toBeVisible({ timeout: 5000 });
 
@@ -68,7 +70,7 @@ test.describe("postgres custom metric dashboard flow", () => {
     );
   });
 
-  test("custom metric panel shows not-configured guidance when no metric exists", async ({
+  test("custom metric panel stays hidden when no metric exists", async ({
     page,
   }) => {
     await page.goto("/app");
@@ -91,9 +93,7 @@ test.describe("postgres custom metric dashboard flow", () => {
     const hasHealth = await healthHero.isVisible().catch(() => false);
 
     if (hasHealth) {
-      const panel = page.getByTestId("custom-metric-panel");
-      await expect(panel).toBeVisible({ timeout: 5000 });
-      await expect(panel).toContainText("No custom metric configured");
+      await expect(page.getByTestId("custom-metric-panel")).toHaveCount(0);
     }
   });
 

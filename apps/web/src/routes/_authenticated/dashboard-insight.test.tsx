@@ -415,7 +415,7 @@ describe("startup insight card", () => {
     // Both insight card and health hero should be visible
     expect(await view.findByTestId("startup-insight-card")).toBeTruthy();
     expect(view.getByLabelText("startup health hero")).toBeTruthy();
-    expect(view.getByLabelText("connector status")).toBeTruthy();
+    expect(view.getByRole("tab", { name: /Operations/i })).toBeTruthy();
   });
 
   test("insight fetch error shows inline error without hiding health data", async () => {

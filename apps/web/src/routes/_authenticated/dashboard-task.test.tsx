@@ -370,7 +370,7 @@ describe("task creation from insight actions", () => {
 
     // Dashboard health should still be visible
     expect(view.getByLabelText("startup health hero")).toBeTruthy();
-    expect(view.getByLabelText("connector status")).toBeTruthy();
+    expect(view.getByRole("tab", { name: /Operations/i })).toBeTruthy();
   });
 });
 
@@ -513,7 +513,7 @@ describe("task list error handling", () => {
 
     // Health hero should still be visible
     expect(view.getByLabelText("startup health hero")).toBeTruthy();
-    expect(view.getByLabelText("connector status")).toBeTruthy();
+    expect(view.getByRole("tab", { name: /Operations/i })).toBeTruthy();
   });
 
   test("task list retry loads tasks successfully after error", async () => {
@@ -602,7 +602,7 @@ describe("dashboard section isolation", () => {
     expect(await view.findByTestId("startup-task-list")).toBeTruthy();
     expect(view.getByTestId("startup-insight-card")).toBeTruthy();
     expect(view.getByLabelText("startup health hero")).toBeTruthy();
-    expect(view.getByLabelText("connector status")).toBeTruthy();
+    expect(view.getByRole("tab", { name: /Operations/i })).toBeTruthy();
     expect(view.getByLabelText("portfolio startup card")).toBeTruthy();
   });
 });

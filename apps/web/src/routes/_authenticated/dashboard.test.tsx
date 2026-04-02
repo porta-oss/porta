@@ -21,6 +21,10 @@ function setNativeInputValue(element: HTMLInputElement, value: string) {
   fireEvent.input(element, { target: { value } });
 }
 
+async function openOperationsTab(view: ReturnType<typeof render>) {
+  fireEvent.click(await view.findByRole("tab", { name: /Operations/i }));
+}
+
 const WORKSPACE_A: WorkspaceSummary = {
   id: "workspace_a",
   name: "Acme Ventures",
@@ -401,6 +405,7 @@ describe("dashboard route", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openOperationsTab(view);
     expect(await view.findByText("Connected")).toBeTruthy();
     expect(view.getByText("Sync failed")).toBeTruthy();
     expect(view.getByText("Provider validation failed")).toBeTruthy();
@@ -415,10 +420,9 @@ describe("dashboard route", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    expect(
-      await view.findByRole("form", { name: "PostHog setup form" })
-    ).toBeTruthy();
-    expect(view.getByRole("form", { name: "Stripe setup form" })).toBeTruthy();
+    await openOperationsTab(view);
+    expect(await view.findByLabelText("PostHog setup form")).toBeTruthy();
+    expect(view.getByLabelText("Stripe setup form")).toBeTruthy();
   });
 
   test("hides the setup card after a connector is created successfully", async () => {
@@ -445,14 +449,15 @@ describe("dashboard route", () => {
     const view = render(
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
-    await view.findByRole("form", { name: "Stripe setup form" });
+    await openOperationsTab(view);
+    await view.findByLabelText("Stripe setup form");
 
     // Fill and submit the Stripe form
     setNativeInputValue(
       view.getByLabelText("Secret key") as HTMLInputElement,
       "sk_test_valid123"
     );
-    fireEvent.submit(view.getByRole("form", { name: "Stripe setup form" }));
+    fireEvent.click(view.getByRole("button", { name: "Connect Stripe" }));
 
     await waitFor(() => {
       expect(createConnector).toHaveBeenCalled();
@@ -460,9 +465,7 @@ describe("dashboard route", () => {
 
     // Stripe setup form should disappear since connector now exists
     await waitFor(() => {
-      expect(
-        view.queryByRole("form", { name: "Stripe setup form" })
-      ).toBeNull();
+      expect(view.queryByLabelText("Stripe setup form")).toBeNull();
     });
   });
 
@@ -487,6 +490,7 @@ describe("dashboard route", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openOperationsTab(view);
     const resyncButton = await view.findByRole("button", { name: "Resync" });
     fireEvent.click(resyncButton);
 
@@ -511,10 +515,12 @@ describe("dashboard route", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openOperationsTab(view);
     const disconnectButton = await view.findByRole("button", {
       name: "Disconnect",
     });
     fireEvent.click(disconnectButton);
+    fireEvent.click(await view.findByRole("button", { name: "Confirm" }));
 
     await waitFor(() => {
       expect(deleteCallCount).toBe(1);
@@ -536,6 +542,7 @@ describe("dashboard route", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openOperationsTab(view);
     const resyncButton = await view.findByRole("button", { name: "Resync" });
     fireEvent.click(resyncButton);
 
@@ -549,7 +556,7 @@ describe("dashboard route", () => {
     expect(view.getByText("Connected")).toBeTruthy();
   });
 
-  test("shows zero-connectors message when no connectors exist", async () => {
+  test("prioritizes setup cards when no connectors exist", async () => {
     const api = createApi({
       listConnectors: mock(async () => ({ connectors: [] })),
     });
@@ -558,10 +565,9 @@ describe("dashboard route", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    expect(
-      await view.findByText(
-        "No connectors configured yet. Connect PostHog or Stripe to start syncing data."
-      )
-    ).toBeTruthy();
+    await openOperationsTab(view);
+    expect(await view.findByLabelText("PostHog setup form")).toBeTruthy();
+    expect(view.getByLabelText("Stripe setup form")).toBeTruthy();
+    expect(view.queryByLabelText("connector status")).toBeNull();
   });
 });

@@ -134,6 +134,7 @@ test.describe("connector setup and status flow", () => {
     // ----------------------------------------------------------------
     // Step 6: Verify connector status panels on dashboard
     // ----------------------------------------------------------------
+    await page.getByRole("tab", { name: /Operations/ }).click();
     const connectorSection = page.getByLabel("connector status");
     await expect(connectorSection).toBeVisible({ timeout: 10_000 });
 
@@ -146,6 +147,7 @@ test.describe("connector setup and status flow", () => {
     // ----------------------------------------------------------------
     await page.reload();
     await expect(page).toHaveURL(/\/app$/);
+    await page.getByRole("tab", { name: /Operations/ }).click();
     await expect(page.getByLabel("connector status")).toBeVisible({
       timeout: 10_000,
     });
@@ -215,22 +217,20 @@ test.describe("connector setup and status flow", () => {
     ).toBeVisible();
 
     // Dashboard should show setup cards for missing connectors
-    await expect(
-      page.getByRole("form", { name: "PostHog setup form" })
-    ).toBeVisible({
+    await page.getByRole("tab", { name: /Operations/ }).click();
+    await expect(page.getByLabel("PostHog setup form")).toBeVisible({
       timeout: 10_000,
     });
-    await expect(
-      page.getByRole("form", { name: "Stripe setup form" })
-    ).toBeVisible();
+    await expect(page.getByLabel("Stripe setup form")).toBeVisible();
 
     // Connect PostHog from the dashboard
-    const posthogForm = page.getByRole("form", { name: "PostHog setup form" });
+    const posthogForm = page.getByLabel("PostHog setup form");
     await posthogForm.getByLabel("API key").fill("phx_dashboard_key");
     await posthogForm.getByLabel("Project ID").fill("54321");
     await posthogForm.getByRole("button", { name: "Connect PostHog" }).click();
 
     // PostHog form should disappear and connector status should show
+    await page.getByRole("tab", { name: /Operations/ }).click();
     await expect(
       page.getByLabel("connector status").getByText("PostHog")
     ).toBeVisible({

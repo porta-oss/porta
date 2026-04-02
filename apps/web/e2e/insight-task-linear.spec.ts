@@ -202,6 +202,7 @@ test.describe("insight → task → Linear sync flow", () => {
 
     // Health and connector sections should be visible
     await expect(page.getByLabel("startup health hero")).toBeVisible();
+    await page.getByRole("tab", { name: /Operations/ }).click();
     await expect(page.getByLabel("connector status")).toBeVisible();
 
     // Click "Create task" on the first action
@@ -217,6 +218,7 @@ test.describe("insight → task → Linear sync flow", () => {
 
     // Health, connector, and insight sections should still be visible
     await expect(page.getByLabel("startup health hero")).toBeVisible();
+    await page.getByRole("tab", { name: /Operations/ }).click();
     await expect(page.getByLabel("connector status")).toBeVisible();
     await expect(page.getByTestId("startup-insight-card")).toBeVisible();
   });

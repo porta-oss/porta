@@ -12,6 +12,10 @@ import {
   type StartupHealthPayload,
 } from "./dashboard";
 
+async function openOperationsTab(view: ReturnType<typeof render>) {
+  fireEvent.click(await view.findByRole("tab", { name: /Operations/i }));
+}
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -320,7 +324,9 @@ describe("startup health page", () => {
 
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
     expect(view.getByText("Stale data")).toBeTruthy();
-    expect(view.getByText(/Resync your connectors below/)).toBeTruthy();
+    expect(
+      view.getByText(/Open Operations to refresh your connectors/)
+    ).toBeTruthy();
   });
 
   test("shows health error inline without losing connector panel", async () => {
@@ -341,6 +347,7 @@ describe("startup health page", () => {
     expect(view.getAllByText("Server error").length).toBeGreaterThanOrEqual(1);
 
     // Connector panel should still be visible
+    await openOperationsTab(view);
     expect(view.getByLabelText("connector status")).toBeTruthy();
     expect(view.getByText("Connected")).toBeTruthy();
 
@@ -373,8 +380,11 @@ describe("startup health page", () => {
 
   test("health hero shows zero MRR without delta when no previous value", async () => {
     const payload = createHealthyPayload();
-    payload.health!.northStarValue = 0;
-    payload.health!.northStarPreviousValue = null;
+    if (!payload.health) {
+      throw new Error("Expected a healthy payload for this test.");
+    }
+    payload.health.northStarValue = 0;
+    payload.health.northStarPreviousValue = null;
 
     const api = createApi({
       fetchHealth: mock(async () => payload),

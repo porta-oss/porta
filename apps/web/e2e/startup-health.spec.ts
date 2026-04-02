@@ -124,6 +124,7 @@ test.describe("startup health page flow", () => {
     // ----------------------------------------------------------------
     // Step 5: Verify connector status is visible alongside health
     // ----------------------------------------------------------------
+    await page.getByRole("tab", { name: /Operations/ }).click();
     await expect(page.getByLabel("connector status")).toBeVisible();
     await expect(
       page.getByLabel("connector status").getByText("PostHog")
@@ -140,6 +141,7 @@ test.describe("startup health page flow", () => {
     await expect(page.getByLabel("startup health hero")).toBeVisible({
       timeout: 15_000,
     });
+    await page.getByRole("tab", { name: /Operations/ }).click();
     await expect(page.getByLabel("connector status")).toBeVisible();
   });
 });

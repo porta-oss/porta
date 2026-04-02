@@ -152,6 +152,7 @@ test.describe("portfolio prioritization surface", () => {
     // Step 6: Verify health detail drill-down still renders
     // ----------------------------------------------------------------
     await expect(page.getByText("Health detail")).toBeVisible();
+    await page.getByRole("tab", { name: /Operations/ }).click();
     await expect(page.getByLabel("connector status")).toBeVisible();
 
     // ----------------------------------------------------------------
@@ -172,6 +173,7 @@ test.describe("portfolio prioritization surface", () => {
     await expect(page.getByTestId("portfolio-top-issue")).toBeVisible();
 
     // Health detail still available
+    await page.getByRole("tab", { name: /Operations/ }).click();
     await expect(page.getByLabel("connector status")).toBeVisible();
   });
 });
