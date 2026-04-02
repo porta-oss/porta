@@ -396,7 +396,8 @@ export async function createApiApp(
         magicLinkTransport: auth.bootstrap.magicLinkTransport,
         observability: {
           sessionEndpoint: '/api/auth/session',
-          activeWorkspaceEndpoint: '/api/workspaces/active'
+          activeWorkspaceEndpoint: '/api/workspaces/active',
+          devMagicLinkEndpoint: env.nodeEnv === 'production' ? null : '/api/dev/magic-links/latest'
         }
       },
       database: {
@@ -427,6 +428,44 @@ export async function createApiApp(
         }
       };
     })
+    .get(
+      '/dev/magic-links/latest',
+      ({ query, set }) => {
+        if (env.nodeEnv === 'production') {
+          set.status = 404;
+          return {
+            error: {
+              code: 'DEV_ENDPOINT_DISABLED',
+              message: 'Magic-link inbox inspection is disabled outside local development and tests.'
+            }
+          };
+        }
+
+        const email = query.email?.trim() || undefined;
+        const delivery = auth.listMagicLinks(email).at(-1);
+
+        if (!delivery) {
+          set.status = 404;
+          return {
+            error: {
+              code: 'MAGIC_LINK_NOT_FOUND',
+              message: 'No queued magic link matches the requested email.'
+            }
+          };
+        }
+
+        return {
+          delivery,
+          count: auth.listMagicLinks(email).length,
+          transport: auth.bootstrap.magicLinkTransport
+        };
+      },
+      {
+        query: t.Object({
+          email: t.Optional(t.String())
+        })
+      }
+    )
     .post(
       '/workspaces',
       async ({ authContext, body, request, set }) => {

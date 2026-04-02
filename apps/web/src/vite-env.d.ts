@@ -2,6 +2,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_API_URL?: string;
+  readonly VITE_WEB_URL?: string;
   readonly VITE_AUTH_TIMEOUT_MS?: string;
 }
 

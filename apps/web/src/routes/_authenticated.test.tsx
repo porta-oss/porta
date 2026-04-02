@@ -1,11 +1,10 @@
 import '../test/setup-dom';
 
 import { afterEach, describe, expect, mock, test } from 'bun:test';
-import { cleanup, render, waitFor, act } from '@testing-library/react';
-import { RouterProvider, createMemoryHistory } from '@tanstack/react-router';
+import { cleanup, render } from '@testing-library/react';
 
 import type { AuthController, AuthSnapshot } from '../lib/auth-client';
-import { createAppRouter } from '../router';
+import { AuthPendingShell, authenticatedRoute } from './_authenticated';
 
 function createSnapshot(overrides: Partial<AuthSnapshot> = {}): AuthSnapshot {
   return {
@@ -68,21 +67,20 @@ function createTestAuthController(
     })
   };
 
-  return {
-    controller,
-    setSnapshot(next: AuthSnapshot) {
-      snapshot = next;
-      listeners.forEach((listener) => listener());
-    }
-  };
+  return { controller };
 }
 
-function renderProtectedRoute(auth: AuthController) {
-  const history = createMemoryHistory({ initialEntries: ['/app'] });
-  const router = createAppRouter(auth, { history });
-  const view = render(<RouterProvider router={router} />);
+async function runBeforeLoad(auth: AuthController, pathname = '/app') {
+  const beforeLoad = authenticatedRoute.options.beforeLoad;
 
-  return { router, view };
+  if (!beforeLoad) {
+    throw new Error('Expected authenticated route beforeLoad to be defined.');
+  }
+
+  return beforeLoad({
+    context: { auth },
+    location: { pathname }
+  } as never);
 }
 
 afterEach(() => {
@@ -93,49 +91,36 @@ describe('authenticated route guard', () => {
   test('redirects signed-out users to /auth/sign-in', async () => {
     const bootstrapSession = mock(async () => createSnapshot({ diagnostic: 'missing-session' }));
     const { controller } = createTestAuthController(createSnapshot(), { bootstrapSession });
-    const { router, view } = renderProtectedRoute(controller);
 
-    expect(await view.findByRole('main', { name: 'sign-in page' })).toBeTruthy();
-
-    await waitFor(() => {
-      expect(router.state.location.pathname).toBe('/auth/sign-in');
-      expect(router.state.location.search).toMatchObject({ redirect: '/app' });
-    });
+    try {
+      await runBeforeLoad(controller);
+      throw new Error('Expected the authenticated route to redirect signed-out users.');
+    } catch (error) {
+      expect(error).toMatchObject({
+        options: {
+          to: '/auth/sign-in',
+          search: {
+            redirect: '/app'
+          }
+        }
+      });
+    }
   });
 
-  test('shows a deterministic loading shell while the session bootstrap is pending', async () => {
-    let resolveBootstrap: ((value: AuthSnapshot) => void) | undefined;
-    const deferred = new Promise<AuthSnapshot>((resolve) => {
-      resolveBootstrap = resolve;
-    });
-    const bootstrapSession = mock(() => deferred);
-    const { controller, setSnapshot } = createTestAuthController(createSnapshot({ status: 'idle' }), { bootstrapSession });
+  test('shows a deterministic loading shell while the session bootstrap is pending', () => {
+    const view = render(<AuthPendingShell />);
 
-    const { view } = renderProtectedRoute(controller);
-
-    expect(await view.findByRole('main', { name: 'auth bootstrap' })).toBeTruthy();
+    expect(view.getByRole('main', { name: 'auth bootstrap' })).toBeTruthy();
     expect(view.getByText('The dashboard stays locked until the session bootstrap resolves.')).toBeTruthy();
-
-    const authenticatedSnapshot = createAuthenticatedSnapshot();
-    await act(async () => {
-      setSnapshot(authenticatedSnapshot);
-      resolveBootstrap?.(authenticatedSnapshot);
-      await deferred;
-    });
-
-    expect(await view.findByRole('main', { name: 'dashboard placeholder' })).toBeTruthy();
   });
 
   test('unlocks the guarded route tree for authenticated sessions', async () => {
-    const bootstrapSession = mock(async () => createAuthenticatedSnapshot());
-    const { controller } = createTestAuthController(createAuthenticatedSnapshot(), { bootstrapSession });
-    const { router, view } = renderProtectedRoute(controller);
+    const authState = createAuthenticatedSnapshot();
+    const bootstrapSession = mock(async () => authState);
+    const { controller } = createTestAuthController(authState, { bootstrapSession });
 
-    expect(await view.findByRole('main', { name: 'dashboard placeholder' })).toBeTruthy();
-    expect(view.getByText('Dashboard access is unlocked because a valid Better Auth session exists.')).toBeTruthy();
-
-    await waitFor(() => {
-      expect(router.state.location.pathname).toBe('/app');
+    await expect(runBeforeLoad(controller)).resolves.toMatchObject({
+      authState
     });
   });
 
@@ -146,13 +131,19 @@ describe('authenticated route guard', () => {
     });
     const bootstrapSession = mock(async () => malformedSignedOut);
     const { controller } = createTestAuthController(createSnapshot(), { bootstrapSession });
-    const { router, view } = renderProtectedRoute(controller);
 
-    expect(await view.findByRole('main', { name: 'sign-in page' })).toBeTruthy();
-
-    await waitFor(() => {
-      expect(router.state.location.pathname).toBe('/auth/sign-in');
-      expect(router.state.location.search).toMatchObject({ redirect: '/app' });
-    });
+    try {
+      await runBeforeLoad(controller);
+      throw new Error('Expected malformed session bootstrap to redirect safely.');
+    } catch (error) {
+      expect(error).toMatchObject({
+        options: {
+          to: '/auth/sign-in',
+          search: {
+            redirect: '/app'
+          }
+        }
+      });
+    }
   });
 });

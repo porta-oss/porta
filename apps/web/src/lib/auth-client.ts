@@ -24,8 +24,23 @@ function resolveApiBaseUrl() {
   return 'http://localhost:3000';
 }
 
+function resolveWebBaseUrl() {
+  const configured = import.meta.env.VITE_WEB_URL?.trim();
+
+  if (configured) {
+    return configured;
+  }
+
+  if (typeof window !== 'undefined' && window.location.origin) {
+    return window.location.origin;
+  }
+
+  return 'http://localhost:5173';
+}
+
 export const AUTH_BASE_URL = new URL('/api/auth', resolveApiBaseUrl()).toString();
 export const API_BASE_URL = new URL('/api', AUTH_BASE_URL).toString();
+export const WEB_BASE_URL = resolveWebBaseUrl();
 
 export const authClient = createAuthClient({
   baseURL: AUTH_BASE_URL,
@@ -188,6 +203,11 @@ function sanitizeRedirectTarget(value: string | undefined) {
   return value;
 }
 
+export function buildWebAuthUrl(pathname: string) {
+  const normalizedPath = pathname.startsWith('/') ? pathname : `/${pathname}`;
+  return new URL(normalizedPath, `${WEB_BASE_URL}/`).toString();
+}
+
 export function createAuthController(client: typeof authClient = authClient): AuthController {
   let snapshot = createInitialSnapshot();
   let inFlight: Promise<AuthSnapshot> | null = null;
@@ -289,7 +309,7 @@ export function createAuthController(client: typeof authClient = authClient): Au
     async signInWithGoogle(options) {
       const response = await client.signIn.social({
         provider: 'google',
-        callbackURL: sanitizeRedirectTarget(options?.redirectTo)
+        callbackURL: buildWebAuthUrl(sanitizeRedirectTarget(options?.redirectTo))
       });
 
       const payload = unwrapActionResponse(response);
@@ -301,8 +321,8 @@ export function createAuthController(client: typeof authClient = authClient): Au
     async signInWithMagicLink(options) {
       const response = await client.signIn.magicLink({
         email: options.email,
-        callbackURL: sanitizeRedirectTarget(options.redirectTo),
-        errorCallbackURL: '/auth/sign-in'
+        callbackURL: buildWebAuthUrl(sanitizeRedirectTarget(options.redirectTo)),
+        errorCallbackURL: buildWebAuthUrl('/auth/sign-in')
       });
 
       const payload = unwrapActionResponse(response);

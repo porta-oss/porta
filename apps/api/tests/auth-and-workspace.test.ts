@@ -95,7 +95,10 @@ describe('auth and workspace integration', () => {
     expect(healthPayload.auth).toMatchObject({
       mounted: true,
       mountPath: '/api/auth',
-      magicLinkTransport: 'dev-inbox'
+      magicLinkTransport: 'dev-inbox',
+      observability: {
+        devMagicLinkEndpoint: '/api/dev/magic-links/latest'
+      }
     });
     expect((healthPayload.auth as { providers: { google: { configured: boolean } } }).providers.google.configured).toBe(true);
 
@@ -147,6 +150,31 @@ describe('auth and workspace integration', () => {
     expect(activeWorkspaceResponse.status).toBe(200);
     expect(activeWorkspacePayload.workspace).toBeNull();
     expect(activeWorkspacePayload.member).toBeNull();
+  });
+
+  test('exposes the latest queued dev magic link so local verification can complete the browser flow', async () => {
+    const signInResponse = await send('/api/auth/sign-in/magic-link', {
+      method: 'POST',
+      body: {
+        email: 'observer@example.com',
+        name: 'Observer'
+      }
+    });
+
+    expect(signInResponse.status).toBe(200);
+
+    const latestMagicLinkResponse = await send('/api/dev/magic-links/latest?email=observer@example.com');
+    const latestMagicLinkPayload = await parseJson(latestMagicLinkResponse);
+
+    expect(latestMagicLinkResponse.status).toBe(200);
+    expect(latestMagicLinkPayload).toMatchObject({
+      transport: 'dev-inbox',
+      count: 1,
+      delivery: {
+        email: 'observer@example.com'
+      }
+    });
+    expect(String((latestMagicLinkPayload.delivery as { url: string }).url)).toContain('/api/auth/magic-link/verify');
   });
 
   test('rejects unauthenticated or invalid-cookie workspace access', async () => {
