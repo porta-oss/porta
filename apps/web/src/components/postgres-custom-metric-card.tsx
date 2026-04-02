@@ -1,9 +1,18 @@
 import type { CustomMetricSummary } from "@shared/custom-metric";
 import { useState } from "react";
 
-// ------------------------------------------------------------------
-// Types
-// ------------------------------------------------------------------
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export interface PostgresSetupFormValues {
   connectionUri: string;
@@ -14,17 +23,10 @@ export interface PostgresSetupFormValues {
 }
 
 export interface PostgresCustomMetricCardProps {
-  /** Whether setup is disabled (e.g. during loading). */
   disabled?: boolean;
-  /** Existing custom metric — null means not configured. */
   existing: CustomMetricSummary | null;
-  /** Submit handler — receives the narrow contract fields. */
   onSetup: (values: PostgresSetupFormValues) => Promise<void>;
 }
-
-// ------------------------------------------------------------------
-// Validation
-// ------------------------------------------------------------------
 
 const SQL_IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/;
 
@@ -72,10 +74,6 @@ function validateSetupFields(values: PostgresSetupFormValues): string | null {
   return null;
 }
 
-// ------------------------------------------------------------------
-// Component
-// ------------------------------------------------------------------
-
 export function PostgresCustomMetricCard({
   existing,
   disabled = false,
@@ -91,53 +89,42 @@ export function PostgresCustomMetricCard({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // If already configured, show the configured state
   if (existing) {
-    let statusColor: string;
     let statusLabel: string;
     if (existing.status === "active") {
-      statusColor = "#065f46";
       statusLabel = "Syncing";
     } else if (existing.status === "error") {
-      statusColor = "#991b1b";
       statusLabel = "Sync failed";
     } else {
-      statusColor = "#92400e";
       statusLabel = "Pending sync";
     }
 
     return (
-      <section
+      <Card
         aria-label="postgres custom metric"
+        className={
+          existing.status === "error"
+            ? "border-danger-border bg-danger-bg"
+            : "border-success-border bg-success-bg"
+        }
         data-testid="postgres-custom-metric-configured"
-        style={{
-          display: "grid",
-          gap: "0.5rem",
-          padding: "1rem",
-          border: `1px solid ${existing.status === "error" ? "#fecaca" : "#d1fae5"}`,
-          borderRadius: "0.75rem",
-          background: existing.status === "error" ? "#fef2f2" : "#ecfdf5",
-        }}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <p style={{ margin: 0, fontWeight: 600 }}>Postgres Custom Metric</p>
-          <span
-            role="status"
-            style={{ fontSize: "0.8rem", fontWeight: 500, color: statusColor }}
-          >
-            {statusLabel}
-          </span>
-        </div>
-        <p style={{ margin: 0, fontSize: "0.85rem", color: "#374151" }}>
-          {existing.label} ({existing.schema}.{existing.view})
-        </p>
-      </section>
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
+            <p className="font-semibold">Postgres Custom Metric</p>
+            <Badge
+              variant={
+                existing.status === "error" ? "destructive" : "secondary"
+              }
+            >
+              {statusLabel}
+            </Badge>
+          </div>
+          <p className="mt-1 text-sm">
+            {existing.label} ({existing.schema}.{existing.view})
+          </p>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -174,119 +161,106 @@ export function PostgresCustomMetricCard({
   }
 
   return (
-    <form
+    <Card
       aria-label="Postgres custom metric setup form"
       data-testid="postgres-custom-metric-setup"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void handleSubmit();
-      }}
-      style={{
-        display: "grid",
-        gap: "0.75rem",
-        padding: "1rem",
-        border: "1px solid #e5e7eb",
-        borderRadius: "0.75rem",
-      }}
     >
-      <div>
-        <p style={{ margin: 0, fontWeight: 600 }}>Postgres Custom Metric</p>
-        <p
-          style={{
-            margin: "0.25rem 0 0",
-            fontSize: "0.85rem",
-            color: "#6b7280",
-          }}
-        >
+      <CardHeader>
+        <CardTitle>Postgres Custom Metric</CardTitle>
+        <CardDescription>
           Connect a read-only Postgres view to track one custom metric on the
           health dashboard.
-        </p>
-      </div>
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form
+          className="grid gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleSubmit();
+          }}
+        >
+          <div className="grid gap-1.5">
+            <Label htmlFor="pg-connection-uri">Connection URI</Label>
+            <Input
+              disabled={isDisabled}
+              id="pg-connection-uri"
+              onChange={(e) =>
+                setValues((v) => ({ ...v, connectionUri: e.target.value }))
+              }
+              placeholder="postgresql://user:pass@host:5432/db"
+              type="password"
+              value={values.connectionUri}
+            />
+          </div>
 
-      <label htmlFor="pg-connection-uri">Connection URI</label>
-      <input
-        disabled={isDisabled}
-        id="pg-connection-uri"
-        onInput={(e) =>
-          setValues((v) => ({
-            ...v,
-            connectionUri: (e.target as HTMLInputElement).value,
-          }))
-        }
-        placeholder="postgresql://user:pass@host:5432/db"
-        type="password"
-        value={values.connectionUri}
-      />
+          <div className="grid gap-1.5">
+            <Label htmlFor="pg-schema">Schema</Label>
+            <Input
+              disabled={isDisabled}
+              id="pg-schema"
+              onChange={(e) =>
+                setValues((v) => ({ ...v, schema: e.target.value }))
+              }
+              placeholder="public"
+              type="text"
+              value={values.schema}
+            />
+          </div>
 
-      <label htmlFor="pg-schema">Schema</label>
-      <input
-        disabled={isDisabled}
-        id="pg-schema"
-        onInput={(e) =>
-          setValues((v) => ({
-            ...v,
-            schema: (e.target as HTMLInputElement).value,
-          }))
-        }
-        placeholder="public"
-        type="text"
-        value={values.schema}
-      />
+          <div className="grid gap-1.5">
+            <Label htmlFor="pg-view">View</Label>
+            <Input
+              disabled={isDisabled}
+              id="pg-view"
+              onChange={(e) =>
+                setValues((v) => ({ ...v, view: e.target.value }))
+              }
+              placeholder="daily_revenue"
+              type="text"
+              value={values.view}
+            />
+          </div>
 
-      <label htmlFor="pg-view">View</label>
-      <input
-        disabled={isDisabled}
-        id="pg-view"
-        onInput={(e) =>
-          setValues((v) => ({
-            ...v,
-            view: (e.target as HTMLInputElement).value,
-          }))
-        }
-        placeholder="daily_revenue"
-        type="text"
-        value={values.view}
-      />
+          <div className="grid gap-1.5">
+            <Label htmlFor="pg-label">Label</Label>
+            <Input
+              disabled={isDisabled}
+              id="pg-label"
+              onChange={(e) =>
+                setValues((v) => ({ ...v, label: e.target.value }))
+              }
+              placeholder="Daily Revenue"
+              type="text"
+              value={values.label}
+            />
+          </div>
 
-      <label htmlFor="pg-label">Label</label>
-      <input
-        disabled={isDisabled}
-        id="pg-label"
-        onInput={(e) =>
-          setValues((v) => ({
-            ...v,
-            label: (e.target as HTMLInputElement).value,
-          }))
-        }
-        placeholder="Daily Revenue"
-        type="text"
-        value={values.label}
-      />
+          <div className="grid gap-1.5">
+            <Label htmlFor="pg-unit">Unit</Label>
+            <Input
+              disabled={isDisabled}
+              id="pg-unit"
+              onChange={(e) =>
+                setValues((v) => ({ ...v, unit: e.target.value }))
+              }
+              placeholder="$"
+              type="text"
+              value={values.unit}
+            />
+          </div>
 
-      <label htmlFor="pg-unit">Unit</label>
-      <input
-        disabled={isDisabled}
-        id="pg-unit"
-        onInput={(e) =>
-          setValues((v) => ({
-            ...v,
-            unit: (e.target as HTMLInputElement).value,
-          }))
-        }
-        placeholder="$"
-        type="text"
-        value={values.unit}
-      />
+          {error ? (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
 
-      {error ? (
-        <p role="alert" style={{ margin: 0, color: "#991b1b" }}>
-          {error}
-        </p>
-      ) : null}
-
-      <button disabled={isDisabled} type="submit">
-        {submitting ? "Setting up…" : "Add Postgres metric"}
-      </button>
-    </form>
+          <Button disabled={isDisabled} type="submit">
+            {submitting ? "Setting up\u2026" : "Add Postgres metric"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
