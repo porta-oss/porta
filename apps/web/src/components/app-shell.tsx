@@ -1,6 +1,10 @@
 import type { StartupRecord, WorkspaceSummary } from "@shared/types";
 import type { ReactNode } from "react";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+
 import { StartupList } from "./startup-list";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 
@@ -44,75 +48,43 @@ export function AppShell({
     workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null;
 
   return (
-    <main
-      aria-label="dashboard shell"
-      style={{
-        display: "grid",
-        gap: "1.5rem",
-        padding: "2rem 1.5rem",
-        background: "#f8fafc",
-      }}
-    >
-      <header
-        style={{
-          display: "grid",
-          gap: "0.5rem",
-          padding: "1.5rem",
-          borderRadius: "1.25rem",
-          background: "linear-gradient(135deg, #111827 0%, #1f2937 100%)",
-          color: "#f9fafb",
-        }}
-      >
-        <p
-          style={{
-            margin: 0,
-            fontSize: "0.8rem",
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            color: "#cbd5e1",
-          }}
-        >
-          Founder dashboard
-        </p>
-        <h1 style={{ margin: 0, fontSize: "1.75rem" }}>Portfolio overview</h1>
-        <p style={{ margin: 0, color: "#e5e7eb" }}>
-          {user.name ? `${user.name} (${user.email})` : user.email} — prioritize
-          and monitor your startups from one surface.
-        </p>
-      </header>
+    <main aria-label="dashboard shell" className="grid gap-6 bg-background p-6">
+      <Card className="overflow-hidden border-0 bg-gradient-to-br from-[oklch(0.18_0.015_270)] to-[oklch(0.25_0.02_265)] text-[oklch(0.97_0.005_80)]">
+        <CardContent className="grid gap-2 pt-6">
+          <p className="text-[oklch(0.78_0.02_270)] text-sm uppercase tracking-wider">
+            Founder dashboard
+          </p>
+          <h1 className="text-xl leading-tight">Portfolio overview</h1>
+          <p className="text-[oklch(0.88_0.008_80)]">
+            {user.name ? `${user.name} (${user.email})` : user.email} —
+            prioritize and monitor your startups from one surface.
+          </p>
+        </CardContent>
+      </Card>
 
       {shellStatus === "loading" ? (
-        <p role="status">Bootstrapping the authenticated shell…</p>
-      ) : null}
-      {shellStatus === "error" ? (
-        <section
-          aria-label="shell bootstrap error"
-          style={{
-            display: "grid",
-            gap: "0.75rem",
-            padding: "1rem",
-            border: "1px solid #fecaca",
-            borderRadius: "1rem",
-            background: "#fef2f2",
-          }}
-        >
-          <p role="alert" style={{ margin: 0, color: "#991b1b" }}>
-            {shellError ?? "The authenticated shell could not be loaded."}
-          </p>
-          <button onClick={() => void onRetryShell?.()} type="button">
-            Retry shell bootstrap
-          </button>
-        </section>
+        <p className="text-muted-foreground" role="status">
+          Loading your dashboard…
+        </p>
       ) : null}
 
-      <div
-        style={{
-          display: "grid",
-          gap: "1.5rem",
-          gridTemplateColumns: "minmax(0, 18rem) minmax(0, 1fr)",
-        }}
-      >
-        <aside style={{ display: "grid", gap: "1rem", alignContent: "start" }}>
+      {shellStatus === "error" ? (
+        <Card className="border-danger-border bg-danger-bg">
+          <CardContent className="grid gap-3 pt-6">
+            <Alert variant="destructive">
+              <AlertDescription>
+                {shellError ?? "The dashboard could not be loaded."}
+              </AlertDescription>
+            </Alert>
+            <Button onClick={() => void onRetryShell?.()} variant="outline">
+              Try again
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <div className="grid grid-cols-[minmax(0,18rem)_minmax(0,1fr)] gap-6">
+        <aside className="grid content-start gap-4">
           <WorkspaceSwitcher
             activeWorkspaceId={activeWorkspaceId}
             error={workspaceError}
@@ -131,28 +103,18 @@ export function AppShell({
           />
         </aside>
 
-        <section
-          aria-label="dashboard content"
-          style={{
-            display: "grid",
-            gap: "1rem",
-            padding: "1.25rem",
-            border: "1px solid #e5e7eb",
-            borderRadius: "1rem",
-            background: "#fff",
-          }}
-        >
-          {children ?? (
-            <>
-              <h2 style={{ margin: 0 }}>Workspace overview</h2>
-              <p style={{ margin: 0, color: "#4b5563" }}>
-                The dashboard shell keeps workspace and startup context visible
-                so auth, tenancy, and onboarding regressions show up as explicit
-                UI states instead of broken chrome.
-              </p>
-            </>
-          )}
-        </section>
+        <Card aria-label="dashboard content">
+          <CardContent className="grid gap-4 pt-5">
+            {children ?? (
+              <>
+                <h2>Workspace overview</h2>
+                <p className="text-muted-foreground">
+                  Select a startup to view health metrics, insights, and tasks.
+                </p>
+              </>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </main>
   );
