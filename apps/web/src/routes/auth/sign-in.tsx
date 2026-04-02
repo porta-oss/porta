@@ -1,5 +1,18 @@
 import { createRoute, useNavigate } from "@tanstack/react-router";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 
 import {
   type AuthController,
@@ -58,37 +71,46 @@ function getCallbackErrorMessage(errorCode: string | undefined) {
       return "That magic link can no longer be used. Request another one.";
     default:
       return errorCode
-        ? "Authentication could not be completed. Please try again."
+        ? "Sign-in could not be completed. Please try again."
         : null;
   }
 }
 
 function SessionStateNotice({ snapshot }: { snapshot: AuthSnapshot }) {
   if (snapshot.status === "loading") {
-    return <p role="status">Checking for an existing founder session…</p>;
+    return (
+      <Alert>
+        <AlertDescription role="status">
+          Checking your session\u2026
+        </AlertDescription>
+      </Alert>
+    );
   }
 
   if (snapshot.status === "error") {
     return (
-      <p role="alert">
-        {snapshot.error?.message ??
-          "Authentication is temporarily unavailable."}
-      </p>
+      <Alert variant="destructive">
+        <AlertDescription>
+          {snapshot.error?.message ?? "Sign-in is temporarily unavailable."}
+        </AlertDescription>
+      </Alert>
     );
   }
 
   if (snapshot.status === "authenticated") {
     return (
-      <p role="status">
-        Session found. Redirecting you to the dashboard shell…
-      </p>
+      <Alert>
+        <AlertDescription role="status">
+          You're signed in. Redirecting to your dashboard\u2026
+        </AlertDescription>
+      </Alert>
     );
   }
 
   return (
-    <p role="status">
-      No active session found. Choose Google or request a magic link.
-    </p>
+    <Alert>
+      <AlertDescription role="status">Sign in to continue.</AlertDescription>
+    </Alert>
   );
 }
 
@@ -150,7 +172,9 @@ export function SignInPage({ auth, search, navigateTo }: SignInPageProps) {
     }
   }
 
-  async function handleMagicLinkSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleMagicLinkSubmit(
+    event: React.FormEvent<HTMLFormElement>
+  ) {
     event.preventDefault();
     setInlineError(null);
     setMagicLinkSentTo(null);
@@ -158,7 +182,7 @@ export function SignInPage({ auth, search, navigateTo }: SignInPageProps) {
     const trimmedEmail = email.trim();
 
     if (!trimmedEmail) {
-      setInlineError("Enter an email address to receive a magic link.");
+      setInlineError("Enter your email address to receive a magic link.");
       return;
     }
 
@@ -180,75 +204,101 @@ export function SignInPage({ auth, search, navigateTo }: SignInPageProps) {
   }
 
   return (
-    <main
-      aria-label="sign-in page"
-      style={{ maxWidth: "32rem", padding: "2rem 1.5rem" }}
-    >
-      <h1>Sign in to Founder Control Plane</h1>
-      <p>Use Google OAuth or a magic link to enter your founder workspace.</p>
+    <main aria-label="sign-in page" className="mx-auto max-w-lg px-6 py-8">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-xl">Sign in to your dashboard</CardTitle>
+          <CardDescription>
+            Use Google or a magic link to access your workspace.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <SessionStateNotice snapshot={snapshot} />
 
-      <SessionStateNotice snapshot={snapshot} />
-      {snapshot.status === "error" ? (
-        <button
-          disabled={isRetryingSession}
-          onClick={() => void handleRetrySession()}
-          type="button"
-        >
-          {isRetryingSession
-            ? "Retrying session check…"
-            : "Retry session check"}
-        </button>
-      ) : null}
+          {snapshot.status === "error" ? (
+            <Button
+              disabled={isRetryingSession}
+              onClick={() => void handleRetrySession()}
+              variant="outline"
+            >
+              {isRetryingSession
+                ? "Retrying session check\u2026"
+                : "Retry session check"}
+            </Button>
+          ) : null}
 
-      {callbackErrorMessage ? <p role="alert">{callbackErrorMessage}</p> : null}
-      {inlineError ? <p role="alert">{inlineError}</p> : null}
-      {magicLinkSentTo ? (
-        <p role="status">Magic link requested for {magicLinkSentTo}.</p>
-      ) : null}
+          {callbackErrorMessage ? (
+            <Alert variant="destructive">
+              <AlertDescription>{callbackErrorMessage}</AlertDescription>
+            </Alert>
+          ) : null}
 
-      <div style={{ display: "grid", gap: "1rem", marginTop: "1.5rem" }}>
-        <button
-          disabled={pendingAction !== null}
-          onClick={handleGoogleSignIn}
-          type="button"
-        >
-          {pendingAction === "google"
-            ? "Starting Google sign-in…"
-            : "Continue with Google"}
-        </button>
+          {inlineError ? (
+            <Alert variant="destructive">
+              <AlertDescription>{inlineError}</AlertDescription>
+            </Alert>
+          ) : null}
 
-        <form
-          onSubmit={handleMagicLinkSubmit}
-          style={{ display: "grid", gap: "0.75rem" }}
-        >
-          <label htmlFor="magic-link-email">Work email</label>
-          <input
-            autoComplete="email"
-            id="magic-link-email"
-            name="email"
-            onInput={(event) =>
-              setEmail((event.target as HTMLInputElement).value)
-            }
-            placeholder="founder@startup.com"
-            type="email"
-            value={email}
-          />
-          <button disabled={pendingAction !== null} type="submit">
-            {pendingAction === "magic-link"
-              ? "Sending magic link…"
-              : "Send magic link"}
-          </button>
-        </form>
-      </div>
+          {magicLinkSentTo ? (
+            <Alert>
+              <AlertDescription role="status">
+                Magic link requested for {magicLinkSentTo}.
+              </AlertDescription>
+            </Alert>
+          ) : null}
 
-      <p style={{ marginTop: "1.5rem", color: "#4b5563" }}>
-        After sign-in you will land in the protected dashboard shell at{" "}
-        <code>{redirectTo || DEFAULT_AUTH_REDIRECT_PATH}</code>.
-      </p>
-      <p>
-        Looking for the protected surface?{" "}
-        <a href="/app">Open the guarded dashboard route</a>.
-      </p>
+          <Button
+            className="w-full"
+            disabled={pendingAction !== null}
+            onClick={handleGoogleSignIn}
+            variant="outline"
+          >
+            {pendingAction === "google"
+              ? "Starting Google sign-in\u2026"
+              : "Continue with Google"}
+          </Button>
+
+          <div className="flex items-center gap-4">
+            <Separator className="flex-1" />
+            <span className="text-muted-foreground text-xs">or</span>
+            <Separator className="flex-1" />
+          </div>
+
+          <form className="grid gap-3" onSubmit={handleMagicLinkSubmit}>
+            <div className="grid gap-1.5">
+              <Label htmlFor="magic-link-email">Work email</Label>
+              <Input
+                autoComplete="email"
+                id="magic-link-email"
+                name="email"
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="founder@startup.com"
+                type="email"
+                value={email}
+              />
+            </div>
+            <Button disabled={pendingAction !== null} type="submit">
+              {pendingAction === "magic-link"
+                ? "Sending magic link\u2026"
+                : "Send magic link"}
+            </Button>
+          </form>
+
+          <p className="text-muted-foreground text-sm">
+            You'll be redirected to{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-xs">
+              {redirectTo || DEFAULT_AUTH_REDIRECT_PATH}
+            </code>{" "}
+            after signing in.
+          </p>
+          <a
+            className="text-primary text-sm underline-offset-4 hover:underline"
+            href="/app"
+          >
+            Go to the dashboard
+          </a>
+        </CardContent>
+      </Card>
     </main>
   );
 }
