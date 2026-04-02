@@ -29,9 +29,11 @@ export const authenticatedRoute = createRoute({
 
 export function AuthPendingShell() {
   return (
-    <main aria-label="auth bootstrap" style={{ padding: "2rem 1.5rem" }}>
-      <h1>Checking authentication…</h1>
-      <p>The dashboard stays locked until the session bootstrap resolves.</p>
+    <main aria-label="auth bootstrap" className="p-6">
+      <h1 className="font-bold text-xl">Signing you in…</h1>
+      <p className="mt-2 text-muted-foreground">
+        Verifying your session before loading the dashboard.
+      </p>
     </main>
   );
 }

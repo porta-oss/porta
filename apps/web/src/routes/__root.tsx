@@ -27,48 +27,33 @@ function RootLayout() {
     liveSnapshot.status === "idle" ? bootstrapSnapshot : liveSnapshot;
 
   return (
-    <div
-      data-auth-state={snapshot.status}
-      style={{ fontFamily: "Inter, system-ui, sans-serif", minHeight: "100vh" }}
-    >
-      <header
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "1rem 1.5rem",
-          borderBottom: "1px solid #e5e7eb",
-        }}
-      >
+    <div className="min-h-screen" data-auth-state={snapshot.status}>
+      <header className="flex items-center justify-between border-border border-b px-6 py-4">
         <div>
-          <p
-            style={{
-              margin: 0,
-              fontSize: "0.75rem",
-              color: "#4b5563",
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-            }}
-          >
+          <p className="text-muted-foreground text-xs uppercase tracking-wider">
             Founder Control Plane
           </p>
-          <strong>Auth and workspace shell</strong>
+          <strong>Portfolio Dashboard</strong>
         </div>
         <nav>
-          <Link to="/auth/sign-in">Sign in</Link>
+          <Link
+            className="text-primary text-sm underline-offset-4 hover:underline"
+            to="/auth/sign-in"
+          >
+            Sign in
+          </Link>
         </nav>
       </header>
 
       <div
         aria-live="polite"
+        className={`border-border border-b px-6 py-3 text-sm ${
+          snapshot.status === "error"
+            ? "bg-danger-bg text-danger"
+            : "bg-muted text-muted-foreground"
+        }`}
         data-auth-diagnostic={snapshot.diagnostic}
         role="status"
-        style={{
-          padding: "0.75rem 1.5rem",
-          background: snapshot.status === "error" ? "#fef2f2" : "#f9fafb",
-          color: snapshot.status === "error" ? "#991b1b" : "#374151",
-          borderBottom: "1px solid #e5e7eb",
-        }}
       >
         {describeSessionState(snapshot)}
       </div>
