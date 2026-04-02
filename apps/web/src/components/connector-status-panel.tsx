@@ -175,68 +175,70 @@ export function ConnectorStatusPanel({
           </p>
         ) : null}
 
-        {connectors.map((c) => {
+        {connectors.map((c, index) => {
           const providerLabel = PROVIDER_LABELS[c.provider] ?? c.provider;
           const actionState = actionStates[c.id] ?? "idle";
           const actionError = actionErrors[c.id] ?? null;
 
           return (
-            <Card aria-label={`${providerLabel} status`} key={c.id}>
-              <CardContent className="grid gap-2 pt-4">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold">{providerLabel}</span>
-                  <Badge role="status" variant={statusBadgeVariant(c.status)}>
-                    {statusLabel(c.status)}
-                  </Badge>
-                </div>
+            <section
+              aria-label={`${providerLabel} status`}
+              className={`grid gap-2 ${index > 0 ? "border-border border-t pt-3" : ""}`}
+              key={c.id}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-semibold">{providerLabel}</span>
+                <Badge role="status" variant={statusBadgeVariant(c.status)}>
+                  {statusLabel(c.status)}
+                </Badge>
+              </div>
 
-                <div className="flex gap-4 text-muted-foreground text-sm">
-                  <span>Last sync: {formatSyncAge(c.lastSyncAt)}</span>
-                  {c.lastSyncDurationMs === null ? null : (
-                    <span>{String(c.lastSyncDurationMs)}ms</span>
-                  )}
-                </div>
+              <div className="flex gap-4 text-muted-foreground text-sm">
+                <span>Last sync: {formatSyncAge(c.lastSyncAt)}</span>
+                {c.lastSyncDurationMs === null ? null : (
+                  <span>{String(c.lastSyncDurationMs)}ms</span>
+                )}
+              </div>
 
-                {c.lastSyncError ? (
-                  <Alert variant="destructive">
-                    <AlertDescription className="text-sm">
-                      {c.lastSyncError}
-                    </AlertDescription>
-                  </Alert>
+              {c.lastSyncError ? (
+                <Alert variant="destructive">
+                  <AlertDescription className="text-sm">
+                    {c.lastSyncError}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              {actionError ? (
+                <Alert variant="destructive">
+                  <AlertDescription className="text-sm">
+                    {actionError}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              <div className="flex gap-2">
+                {c.status !== "disconnected" && onResync ? (
+                  <Button
+                    disabled={actionState === "working"}
+                    onClick={() => void handleResync(c.id)}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {actionState === "working" ? "Syncing\u2026" : "Resync"}
+                  </Button>
                 ) : null}
-
-                {actionError ? (
-                  <Alert variant="destructive">
-                    <AlertDescription className="text-sm">
-                      {actionError}
-                    </AlertDescription>
-                  </Alert>
+                {c.status !== "disconnected" && onDisconnect ? (
+                  <Button
+                    disabled={actionState === "working"}
+                    onClick={() => void handleDisconnect(c.id)}
+                    size="sm"
+                    variant="destructive"
+                  >
+                    Disconnect
+                  </Button>
                 ) : null}
-
-                <div className="flex gap-2">
-                  {c.status !== "disconnected" && onResync ? (
-                    <Button
-                      disabled={actionState === "working"}
-                      onClick={() => void handleResync(c.id)}
-                      size="sm"
-                      variant="outline"
-                    >
-                      {actionState === "working" ? "Syncing\u2026" : "Resync"}
-                    </Button>
-                  ) : null}
-                  {c.status !== "disconnected" && onDisconnect ? (
-                    <Button
-                      disabled={actionState === "working"}
-                      onClick={() => void handleDisconnect(c.id)}
-                      size="sm"
-                      variant="destructive"
-                    >
-                      Disconnect
-                    </Button>
-                  ) : null}
-                </div>
-              </CardContent>
-            </Card>
+              </div>
+            </section>
           );
         })}
       </CardContent>

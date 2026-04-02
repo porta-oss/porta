@@ -48,19 +48,18 @@ export function AppShell({
     workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null;
 
   return (
-    <main aria-label="dashboard shell" className="grid gap-6 bg-background p-6">
-      <Card className="overflow-hidden border-0 bg-gradient-to-br from-[oklch(0.18_0.015_270)] to-[oklch(0.25_0.02_265)] text-[oklch(0.97_0.005_80)]">
-        <CardContent className="grid gap-2 pt-6">
-          <p className="text-[oklch(0.78_0.02_270)] text-sm uppercase tracking-wider">
-            Founder dashboard
-          </p>
-          <h1 className="text-xl leading-tight">Portfolio overview</h1>
-          <p className="text-[oklch(0.88_0.008_80)]">
-            {user.name ? `${user.name} (${user.email})` : user.email} —
-            prioritize and monitor your startups from one surface.
-          </p>
-        </CardContent>
-      </Card>
+    <main
+      aria-label="dashboard shell"
+      className="grid gap-8 bg-background p-6 pb-10"
+    >
+      <header className="grid gap-1">
+        <p className="text-muted-foreground text-xs uppercase tracking-wider">
+          {user.name ? `${user.name} (${user.email})` : user.email}
+        </p>
+        <h1 className="font-semibold text-xl leading-tight tracking-display">
+          Portfolio overview
+        </h1>
+      </header>
 
       {shellStatus === "loading" ? (
         <p className="text-muted-foreground" role="status">
@@ -70,7 +69,7 @@ export function AppShell({
 
       {shellStatus === "error" ? (
         <Card className="border-danger-border bg-danger-bg">
-          <CardContent className="grid gap-3 pt-6">
+          <CardContent className="grid gap-3 pt-5">
             <Alert variant="destructive">
               <AlertDescription>
                 {shellError ?? "The dashboard could not be loaded."}

@@ -61,7 +61,7 @@ export function PortfolioStartupCard({ viewModel }: PortfolioStartupCardProps) {
 
         <div className="flex items-baseline gap-3">
           <span
-            className={`font-bold text-xl tabular-nums leading-tight ${
+            className={`font-bold text-xl tabular-nums leading-tight tracking-display ${
               viewModel.badge === "blocked" || viewModel.badge === "error"
                 ? "text-muted-foreground"
                 : "text-foreground"

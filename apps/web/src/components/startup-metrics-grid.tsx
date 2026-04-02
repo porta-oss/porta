@@ -8,8 +8,6 @@ import {
   SUPPORTING_METRICS,
 } from "@shared/startup-health";
 
-import { Card, CardContent } from "@/components/ui/card";
-
 export interface StartupMetricsGridProps {
   metrics: SupportingMetricsSnapshot;
   muted?: boolean;
@@ -63,22 +61,20 @@ export function StartupMetricsGrid({
         const change = computeChange(metric.value, metric.previous);
 
         return (
-          <Card aria-label={SUPPORTING_METRIC_LABELS[key]} key={key}>
-            <CardContent className="grid gap-1 p-3">
-              <span className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-                {SUPPORTING_METRIC_LABELS[key]}
-              </span>
-              <span
-                className={`font-semibold text-lg tabular-nums leading-snug ${muted ? "text-muted-foreground" : "text-foreground"}`}
-                data-testid={`metric-${key}`}
-              >
-                {formatMetricValue(key, metric.value)}
-              </span>
-              {change ? (
-                <span className="text-muted-foreground text-xs">{change}</span>
-              ) : null}
-            </CardContent>
-          </Card>
+          <div className="grid gap-1 rounded-lg bg-muted/50 p-3" key={key}>
+            <span className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+              {SUPPORTING_METRIC_LABELS[key]}
+            </span>
+            <span
+              className={`font-semibold text-lg tabular-nums leading-snug ${muted ? "text-muted-foreground" : "text-foreground"}`}
+              data-testid={`metric-${key}`}
+            >
+              {formatMetricValue(key, metric.value)}
+            </span>
+            {change ? (
+              <span className="text-muted-foreground text-xs">{change}</span>
+            ) : null}
+          </div>
         );
       })}
     </section>

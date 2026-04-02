@@ -121,7 +121,7 @@ export function ConnectorSetupCard({
         aria-label={`${label} connector`}
         className="border-success-border bg-success-bg"
       >
-        <CardContent className="pt-6">
+        <CardContent className="pt-5">
           <p className="font-semibold">{label}</p>
           <p className="text-success" role="status">
             Connected
@@ -135,7 +135,7 @@ export function ConnectorSetupCard({
 
   return (
     <Card aria-label={`${label} setup form`}>
-      <CardContent className="pt-6">
+      <CardContent className="pt-5">
         <form
           className="grid gap-3"
           onSubmit={(event) => {

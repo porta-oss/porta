@@ -256,7 +256,11 @@ describe("startup health page", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    expect(await view.findByLabelText("supporting metrics")).toBeTruthy();
+    // Expand the supporting metrics disclosure
+    expect(await view.findByLabelText("startup health hero")).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: /supporting metrics/i }));
+
+    expect(view.getByLabelText("supporting metrics")).toBeTruthy();
     expect(view.getByTestId("metric-active_users").textContent).toContain(
       "340"
     );
@@ -276,7 +280,11 @@ describe("startup health page", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    expect(await view.findByLabelText("funnel")).toBeTruthy();
+    // Expand the acquisition funnel disclosure
+    expect(await view.findByLabelText("startup health hero")).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: /acquisition funnel/i }));
+
+    expect(view.getByLabelText("funnel")).toBeTruthy();
     expect(view.getByTestId("funnel-visitor").textContent).toContain("8,200");
     expect(view.getByTestId("funnel-signup").textContent).toContain("620");
     expect(view.getByTestId("funnel-activation").textContent).toContain("210");

@@ -147,7 +147,7 @@ export function StartupHealthHero({
             {NORTH_STAR_LABELS[northStarKey]}
           </p>
           <p
-            className={`mt-1 font-bold text-2xl tabular-nums leading-tight ${isBlocked ? "text-muted-foreground" : "text-foreground"}`}
+            className={`mt-1 font-bold text-2xl tabular-nums leading-tight tracking-display ${isBlocked ? "text-muted-foreground" : "text-foreground"}`}
             data-testid="north-star-value"
           >
             {formatCurrency(northStarValue)}

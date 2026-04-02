@@ -49,7 +49,7 @@ export function CustomMetricPanel({
         className="bg-muted"
         data-testid="custom-metric-panel"
       >
-        <CardContent className="pt-6">
+        <CardContent className="pt-5">
           <p className="text-muted-foreground text-sm">
             No custom metric configured. Add a Postgres-backed metric below to
             track additional KPIs.
@@ -66,7 +66,7 @@ export function CustomMetricPanel({
         className="border-danger-border bg-danger-bg"
         data-testid="custom-metric-panel"
       >
-        <CardContent className="grid gap-2 pt-6">
+        <CardContent className="grid gap-2 pt-5">
           <div className="flex items-center justify-between">
             <p className="font-semibold">{customMetric.label}</p>
             <Badge variant="destructive">Sync failed</Badge>
@@ -96,7 +96,7 @@ export function CustomMetricPanel({
         className="border-warning-border bg-warning-bg"
         data-testid="custom-metric-panel"
       >
-        <CardContent className="grid gap-2 pt-6">
+        <CardContent className="grid gap-2 pt-5">
           <p className="font-semibold">{customMetric.label}</p>
           <p className="text-sm text-warning" role="status">
             Waiting for the first sync to complete\u2026
@@ -117,7 +117,7 @@ export function CustomMetricPanel({
       className="border-success-border bg-success-bg"
       data-testid="custom-metric-panel"
     >
-      <CardContent className="grid gap-2 pt-6">
+      <CardContent className="grid gap-2 pt-5">
         <div className="flex items-center justify-between">
           <p className="font-semibold">{customMetric.label}</p>
           <Badge variant="secondary">Active</Badge>
@@ -126,7 +126,7 @@ export function CustomMetricPanel({
           className="flex items-baseline gap-2"
           data-testid="custom-metric-value"
         >
-          <span className="font-bold text-xl leading-tight">
+          <span className="font-bold text-xl tabular-nums leading-tight tracking-display">
             {formatMetricValue(customMetric.metricValue, customMetric.unit)}
           </span>
           {delta ? (

@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -7,18 +8,19 @@ const sharedSrcPath = fileURLToPath(
 );
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [tailwindcss(), react()],
   resolve: {
     alias: {
       "@shared": sharedSrcPath,
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
   server: {
-    host: "127.0.0.1",
+    host: "localhost",
     port: Number(process.env.WEB_PORT ?? 5173),
   },
   preview: {
-    host: "127.0.0.1",
+    host: "localhost",
     port: 4173,
   },
 });

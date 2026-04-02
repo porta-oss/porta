@@ -93,7 +93,7 @@ export function StartupTaskList({
 
   return (
     <Card aria-label="startup tasks" data-testid="startup-task-list">
-      <CardContent className="grid gap-2 pt-4">
+      <CardContent className="grid gap-2 pt-5">
         <p className="text-muted-foreground text-xs uppercase tracking-wider">
           Tasks
         </p>

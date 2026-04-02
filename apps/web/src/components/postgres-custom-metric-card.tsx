@@ -109,7 +109,7 @@ export function PostgresCustomMetricCard({
         }
         data-testid="postgres-custom-metric-configured"
       >
-        <CardContent className="pt-6">
+        <CardContent className="pt-5">
           <div className="flex items-center justify-between">
             <p className="font-semibold">Postgres Custom Metric</p>
             <Badge

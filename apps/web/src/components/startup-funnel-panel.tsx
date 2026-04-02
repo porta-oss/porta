@@ -1,6 +1,6 @@
 import type { FunnelStageRow } from "@shared/startup-health";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 
 export interface StartupFunnelPanelProps {
@@ -36,9 +36,6 @@ export function StartupFunnelPanel({
 
   return (
     <Card aria-label="funnel">
-      <CardHeader>
-        <CardTitle className="text-sm">Acquisition Funnel</CardTitle>
-      </CardHeader>
       <CardContent className="grid gap-2">
         {sorted.map((stage, idx) => {
           const prev = idx > 0 ? sorted[idx - 1] : null;

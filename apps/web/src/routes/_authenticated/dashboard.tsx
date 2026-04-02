@@ -31,6 +31,7 @@ import { AppShell } from "../../components/app-shell";
 import { ConnectorSetupCard } from "../../components/connector-setup-card";
 import { ConnectorStatusPanel } from "../../components/connector-status-panel";
 import { CustomMetricPanel } from "../../components/custom-metric-panel";
+import { DisclosureSection } from "../../components/disclosure-section";
 import { PortfolioStartupCard } from "../../components/portfolio-startup-card";
 import type { PostgresSetupFormValues } from "../../components/postgres-custom-metric-card";
 import { PostgresCustomMetricCard } from "../../components/postgres-custom-metric-card";
@@ -1131,9 +1132,9 @@ export function DashboardPage({
       workspaceError={workspaceError}
       workspaces={workspaces}
     >
-      <div className="grid gap-6">
+      <div className="grid gap-4">
         {/* ── Portfolio prioritization surface ── */}
-        <div>
+        <div className="mb-2">
           <p className="text-muted-foreground text-xs uppercase tracking-wider">
             Portfolio
           </p>
@@ -1178,7 +1179,7 @@ export function DashboardPage({
                 aria-label="health error"
                 className="border-danger-border bg-danger-bg"
               >
-                <CardContent className="grid gap-2 pt-4">
+                <CardContent className="grid gap-2 pt-5">
                   <Alert variant="destructive">
                     <AlertDescription>
                       {healthError ?? "Failed to load startup health data."}
@@ -1215,7 +1216,7 @@ export function DashboardPage({
                 aria-label="insight error"
                 className="border-danger-border bg-danger-bg"
               >
-                <CardContent className="grid gap-2 pt-4">
+                <CardContent className="grid gap-2 pt-5">
                   <Alert variant="destructive">
                     <AlertDescription>
                       {insightError ?? "Failed to load insight data."}
@@ -1248,8 +1249,8 @@ export function DashboardPage({
             />
 
             {/* ── Health & connector drill-down ── */}
-            <div className="border-border border-t pt-5">
-              <p className="mb-3 text-muted-foreground text-xs uppercase tracking-wider">
+            <div className="mt-6">
+              <p className="text-muted-foreground text-xs uppercase tracking-wider">
                 Health detail
               </p>
             </div>
@@ -1271,20 +1272,24 @@ export function DashboardPage({
                 {/* Supporting metrics grid — show even when stale with muted styling */}
                 {healthPayload.health ? (
                   <>
-                    <StartupMetricsGrid
-                      metrics={healthPayload.health.supportingMetrics}
-                      muted={
-                        healthPayload.status === "stale" ||
-                        healthPayload.status === "blocked"
-                      }
-                    />
-                    <StartupFunnelPanel
-                      muted={
-                        healthPayload.status === "stale" ||
-                        healthPayload.status === "blocked"
-                      }
-                      stages={healthPayload.health.funnel}
-                    />
+                    <DisclosureSection title="Supporting metrics">
+                      <StartupMetricsGrid
+                        metrics={healthPayload.health.supportingMetrics}
+                        muted={
+                          healthPayload.status === "stale" ||
+                          healthPayload.status === "blocked"
+                        }
+                      />
+                    </DisclosureSection>
+                    <DisclosureSection title="Acquisition funnel">
+                      <StartupFunnelPanel
+                        muted={
+                          healthPayload.status === "stale" ||
+                          healthPayload.status === "blocked"
+                        }
+                        stages={healthPayload.health.funnel}
+                      />
+                    </DisclosureSection>
                   </>
                 ) : null}
 

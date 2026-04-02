@@ -312,19 +312,21 @@ describe("startup insight card", () => {
 
     // Wait for the insight card to appear
     expect(await view.findByTestId("startup-insight-card")).toBeTruthy();
-    expect(view.getByTestId("insight-observation")).toBeTruthy();
-    expect(view.getByTestId("insight-hypothesis")).toBeTruthy();
+    expect(view.getByTestId("insight-condition").textContent).toContain(
+      "MRR Declining"
+    );
     expect(view.getByTestId("insight-actions")).toBeTruthy();
 
-    // Check content
+    // Expand evidence disclosure to check observation and hypothesis
+    fireEvent.click(view.getByRole("button", { name: /evidence/i }));
+    expect(view.getByTestId("insight-observation")).toBeTruthy();
+    expect(view.getByTestId("insight-hypothesis")).toBeTruthy();
+
     expect(view.getByTestId("insight-observation").textContent).toContain(
       "MRR declined"
     );
     expect(view.getByTestId("insight-hypothesis").textContent).toContain(
       "pricing friction"
-    );
-    expect(view.getByTestId("insight-condition").textContent).toContain(
-      "MRR Declining"
     );
   });
 
@@ -334,7 +336,10 @@ describe("startup insight card", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    expect(await view.findByTestId("insight-evidence")).toBeTruthy();
+    // Expand evidence disclosure
+    expect(await view.findByTestId("startup-insight-card")).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: /evidence/i }));
+    expect(view.getByTestId("insight-evidence")).toBeTruthy();
     expect(view.getByTestId("insight-evidence").textContent).toContain(
       "Monthly Recurring Revenue"
     );
@@ -502,7 +507,8 @@ describe("startup insight card", () => {
     expect(view.getByTestId("insight-diagnostic").textContent).toContain(
       "failed"
     );
-    // The actual insight content should still be visible
+    // Expand evidence to verify the stale insight content is preserved
+    fireEvent.click(view.getByRole("button", { name: /evidence/i }));
     expect(view.getByTestId("insight-observation")).toBeTruthy();
   });
 });

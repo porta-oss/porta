@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
+import { DisclosureSection } from "./disclosure-section";
 import type { InsightDisplayStatus } from "./startup-insight-card-types";
 
 export type { InsightDisplayStatus };
@@ -321,8 +322,12 @@ export function StartupInsightCard({
         </p>
       </div>
 
-      <EvidenceBullets insight={insight} />
-      <ExplanationSection explanation={insight.explanation} />
+      <DisclosureSection title="Evidence & analysis">
+        <div className="grid gap-3">
+          <EvidenceBullets insight={insight} />
+          <ExplanationSection explanation={insight.explanation} />
+        </div>
+      </DisclosureSection>
 
       <ActionList
         actions={insight.explanation.actions}
