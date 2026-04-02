@@ -1,8 +1,7 @@
 import type { HealthState, NorthStarMetric } from "@shared/startup-health";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 
 export interface StartupHealthHeroProps {
   blockedReasons: Array<{ code: string; message: string }>;
@@ -12,10 +11,6 @@ export interface StartupHealthHeroProps {
   northStarPreviousValue: number | null;
   northStarValue: number;
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 const NORTH_STAR_LABELS: Record<NorthStarMetric, string> = {
   mrr: "Monthly Recurring Revenue",
@@ -48,24 +43,48 @@ function computeDelta(
   };
 }
 
-function healthStateBanner(state: HealthState): {
-  color: string;
-  bg: string;
+function healthBannerConfig(state: HealthState): {
+  badgeVariant: "default" | "secondary" | "destructive" | "outline";
+  cardClass: string;
   text: string;
 } {
   switch (state) {
     case "ready":
-      return { color: "#065f46", bg: "#ecfdf5", text: "Healthy" };
+      return {
+        cardClass: "border-success-border bg-success-bg",
+        badgeVariant: "default",
+        text: "Healthy",
+      };
     case "syncing":
-      return { color: "#92400e", bg: "#fffbeb", text: "Syncing…" };
+      return {
+        cardClass: "border-warning-border bg-warning-bg",
+        badgeVariant: "secondary",
+        text: "Syncing\u2026",
+      };
     case "stale":
-      return { color: "#92400e", bg: "#fffbeb", text: "Stale data" };
+      return {
+        cardClass: "border-warning-border bg-warning-bg",
+        badgeVariant: "secondary",
+        text: "Stale data",
+      };
     case "blocked":
-      return { color: "#991b1b", bg: "#fef2f2", text: "Blocked" };
+      return {
+        cardClass: "border-danger-border bg-danger-bg",
+        badgeVariant: "destructive",
+        text: "Blocked",
+      };
     case "error":
-      return { color: "#991b1b", bg: "#fef2f2", text: "Error" };
+      return {
+        cardClass: "border-danger-border bg-danger-bg",
+        badgeVariant: "destructive",
+        text: "Error",
+      };
     default:
-      return { color: "#374151", bg: "#f9fafb", text: String(state) };
+      return {
+        cardClass: "",
+        badgeVariant: "outline",
+        text: String(state),
+      };
   }
 }
 
@@ -89,10 +108,6 @@ function formatSnapshotAge(iso: string | null): string {
   return `Updated ${String(days)}d ago`;
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
 export function StartupHealthHero({
   healthState,
   northStarKey,
@@ -101,108 +116,62 @@ export function StartupHealthHero({
   lastSnapshotAt,
   blockedReasons,
 }: StartupHealthHeroProps) {
-  const banner = healthStateBanner(healthState);
+  const banner = healthBannerConfig(healthState);
   const delta = computeDelta(northStarValue, northStarPreviousValue);
   const isBlocked = healthState === "blocked" || healthState === "error";
 
+  function deltaColorClass(): string {
+    if (delta?.direction === "up") {
+      return "text-success";
+    }
+    if (delta?.direction === "down") {
+      return "text-danger";
+    }
+    return "text-muted-foreground";
+  }
+
   return (
-    <section
-      aria-label="startup health hero"
-      style={{
-        display: "grid",
-        gap: "0.75rem",
-        padding: "1.25rem",
-        border: `1px solid ${banner.color}20`,
-        borderRadius: "1rem",
-        background: banner.bg,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <span
-          role="status"
-          style={{
-            fontSize: "0.75rem",
-            fontWeight: 600,
-            letterSpacing: "0.05em",
-            textTransform: "uppercase",
-            color: banner.color,
-          }}
-        >
-          {banner.text}
-        </span>
-        <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>
-          {formatSnapshotAge(lastSnapshotAt)}
-        </span>
-      </div>
-
-      <div>
-        <p
-          style={{
-            margin: 0,
-            fontSize: "0.8rem",
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            color: "#6b7280",
-          }}
-        >
-          {NORTH_STAR_LABELS[northStarKey]}
-        </p>
-        <p
-          data-testid="north-star-value"
-          style={{
-            margin: "0.25rem 0 0",
-            fontSize: "2.25rem",
-            fontWeight: 700,
-            fontVariantNumeric: "tabular-nums",
-            color: isBlocked ? "#9ca3af" : "#111827",
-          }}
-        >
-          {formatCurrency(northStarValue)}
-        </p>
-        {delta ? (
-          <span
-            data-testid="north-star-delta"
-            style={{
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: (() => {
-                if (delta.direction === "up") {
-                  return "#065f46";
-                }
-                if (delta.direction === "down") {
-                  return "#991b1b";
-                }
-                return "#6b7280";
-              })(),
-            }}
-          >
-            {delta.label} from previous
+    <Card aria-label="startup health hero" className={banner.cardClass}>
+      <CardContent className="grid gap-3 pt-5">
+        <div className="flex items-center justify-between">
+          <Badge role="status" variant={banner.badgeVariant}>
+            {banner.text}
+          </Badge>
+          <span className="text-muted-foreground text-xs">
+            {formatSnapshotAge(lastSnapshotAt)}
           </span>
-        ) : null}
-      </div>
-
-      {blockedReasons.length > 0 ? (
-        <div
-          aria-label="blocked reasons"
-          role="alert"
-          style={{ display: "grid", gap: "0.35rem" }}
-        >
-          {blockedReasons.map((reason) => (
-            <p
-              key={reason.code}
-              style={{ margin: 0, fontSize: "0.85rem", color: banner.color }}
-            >
-              {reason.message}
-            </p>
-          ))}
         </div>
-      ) : null}
-    </section>
+
+        <div>
+          <p className="text-muted-foreground text-sm uppercase tracking-wide">
+            {NORTH_STAR_LABELS[northStarKey]}
+          </p>
+          <p
+            className={`mt-1 font-bold text-2xl tabular-nums leading-tight ${isBlocked ? "text-muted-foreground" : "text-foreground"}`}
+            data-testid="north-star-value"
+          >
+            {formatCurrency(northStarValue)}
+          </p>
+          {delta ? (
+            <span
+              className={`font-medium text-sm ${deltaColorClass()}`}
+              data-testid="north-star-delta"
+            >
+              {delta.label} from previous
+            </span>
+          ) : null}
+        </div>
+
+        {blockedReasons.length > 0 ? (
+          <div aria-label="blocked reasons" className="grid gap-1" role="alert">
+            {blockedReasons.map((reason) => (
+              <p className="text-danger text-sm" key={reason.code}>
+                {reason.message}
+              </p>
+            ))}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
