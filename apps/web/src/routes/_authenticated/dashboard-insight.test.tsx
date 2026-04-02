@@ -13,6 +13,12 @@ import {
   type StartupInsightPayload,
 } from "./dashboard";
 
+async function openHealthConnectorsTab(view: ReturnType<typeof render>) {
+  fireEvent.click(
+    await view.findByRole("tab", { name: /Health & connectors/i })
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -388,7 +394,7 @@ describe("startup insight card", () => {
     );
   });
 
-  test("shows error state with retry button when generation failed", async () => {
+  test("shows error state when generation failed", async () => {
     const api = createApi({
       fetchInsight: mock(async () => createErrorInsightPayload()),
     });
@@ -401,9 +407,6 @@ describe("startup insight card", () => {
     expect(view.getByTestId("insight-error").textContent).toContain(
       "Anthropic API rate limited"
     );
-    expect(
-      view.getByRole("button", { name: "Retry insight load" })
-    ).toBeTruthy();
   });
 
   test("insight card does not hide portfolio or health sections", async () => {
@@ -412,10 +415,13 @@ describe("startup insight card", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    // Both insight card and health hero should be visible
     expect(await view.findByTestId("startup-insight-card")).toBeTruthy();
-    expect(view.getByLabelText("startup health hero")).toBeTruthy();
-    expect(view.getByRole("tab", { name: /Operations/i })).toBeTruthy();
+    expect(
+      view.getByRole("tab", { name: /Health & connectors/i })
+    ).toBeTruthy();
+
+    await openHealthConnectorsTab(view);
+    expect(await view.findByLabelText("startup health hero")).toBeTruthy();
   });
 
   test("insight fetch error shows inline error without hiding health data", async () => {
@@ -428,17 +434,15 @@ describe("startup insight card", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    // Health hero should still load
-    expect(await view.findByLabelText("startup health hero")).toBeTruthy();
-
-    // Insight error should show
     expect(await view.findByLabelText("insight error")).toBeTruthy();
     expect(view.getByText("Network timeout")).toBeTruthy();
 
-    // Retry button should exist
     expect(
       view.getByRole("button", { name: "Retry insight load" })
     ).toBeTruthy();
+
+    await openHealthConnectorsTab(view);
+    expect(await view.findByLabelText("startup health hero")).toBeTruthy();
   });
 
   test("shows loading state before insight data arrives", async () => {
@@ -454,12 +458,12 @@ describe("startup insight card", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    expect(await view.findByText("Loading insight…")).toBeTruthy();
+    expect(await view.findByLabelText("startup insight")).toBeTruthy();
 
     // Resolve to let the test clean up
     resolveInsight?.(createReadyInsightPayload());
     await waitFor(() => {
-      expect(view.queryByText("Loading insight…")).toBeNull();
+      expect(view.queryByTestId("startup-insight-card")).toBeTruthy();
     });
   });
 

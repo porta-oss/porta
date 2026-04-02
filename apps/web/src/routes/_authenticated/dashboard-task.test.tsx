@@ -17,6 +17,12 @@ import {
   type StartupInsightPayload,
 } from "./dashboard";
 
+async function openHealthConnectorsTab(view: ReturnType<typeof render>) {
+  fireEvent.click(
+    await view.findByRole("tab", { name: /Health & connectors/i })
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -368,9 +374,11 @@ describe("task creation from insight actions", () => {
       expect(view.getByTestId("task-create-error")).toBeTruthy();
     });
 
-    // Dashboard health should still be visible
-    expect(view.getByLabelText("startup health hero")).toBeTruthy();
-    expect(view.getByRole("tab", { name: /Operations/i })).toBeTruthy();
+    expect(
+      view.getByRole("tab", { name: /Health & connectors/i })
+    ).toBeTruthy();
+    await openHealthConnectorsTab(view);
+    expect(await view.findByLabelText("startup health hero")).toBeTruthy();
   });
 });
 
@@ -511,9 +519,11 @@ describe("task list error handling", () => {
     expect(view.getByText("Task fetch failed")).toBeTruthy();
     expect(view.getByRole("button", { name: "Retry task load" })).toBeTruthy();
 
-    // Health hero should still be visible
-    expect(view.getByLabelText("startup health hero")).toBeTruthy();
-    expect(view.getByRole("tab", { name: /Operations/i })).toBeTruthy();
+    expect(
+      view.getByRole("tab", { name: /Health & connectors/i })
+    ).toBeTruthy();
+    await openHealthConnectorsTab(view);
+    expect(await view.findByLabelText("startup health hero")).toBeTruthy();
   });
 
   test("task list retry loads tasks successfully after error", async () => {
@@ -598,11 +608,14 @@ describe("dashboard section isolation", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    // All sections should coexist
     expect(await view.findByTestId("startup-task-list")).toBeTruthy();
     expect(view.getByTestId("startup-insight-card")).toBeTruthy();
-    expect(view.getByLabelText("startup health hero")).toBeTruthy();
-    expect(view.getByRole("tab", { name: /Operations/i })).toBeTruthy();
     expect(view.getByLabelText("portfolio startup card")).toBeTruthy();
+    expect(
+      view.getByRole("tab", { name: /Health & connectors/i })
+    ).toBeTruthy();
+
+    await openHealthConnectorsTab(view);
+    expect(await view.findByLabelText("startup health hero")).toBeTruthy();
   });
 });

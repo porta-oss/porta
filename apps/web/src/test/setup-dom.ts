@@ -6,6 +6,19 @@ const dom = new JSDOM("<!doctype html><html><body></body></html>", {
 
 const { window } = dom;
 
+window.HTMLElement.prototype.scrollIntoView = () => undefined;
+
+type LegacyHTMLElementPrototype = typeof window.HTMLElement.prototype & {
+  attachEvent: () => void;
+  detachEvent: () => void;
+};
+
+const legacyHTMLElementPrototype = window.HTMLElement
+  .prototype as LegacyHTMLElementPrototype;
+
+legacyHTMLElementPrototype.attachEvent = () => undefined;
+legacyHTMLElementPrototype.detachEvent = () => undefined;
+
 Object.assign(globalThis, {
   window,
   document: window.document,
@@ -26,6 +39,7 @@ Object.assign(globalThis, {
   SubmitEvent: window.SubmitEvent,
   MouseEvent: window.MouseEvent,
   KeyboardEvent: window.KeyboardEvent,
+  CustomEvent: window.CustomEvent,
   FormData: window.FormData,
   getComputedStyle: window.getComputedStyle.bind(window),
   requestAnimationFrame: (callback: FrameRequestCallback) =>

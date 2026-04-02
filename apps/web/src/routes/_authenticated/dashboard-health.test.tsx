@@ -12,8 +12,10 @@ import {
   type StartupHealthPayload,
 } from "./dashboard";
 
-async function openOperationsTab(view: ReturnType<typeof render>) {
-  fireEvent.click(await view.findByRole("tab", { name: /Operations/i }));
+async function openHealthConnectorsTab(view: ReturnType<typeof render>) {
+  fireEvent.click(
+    await view.findByRole("tab", { name: /Health & connectors/i })
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -246,6 +248,7 @@ describe("startup health page", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
     const northStar = view.getByTestId("north-star-value");
     expect(northStar.textContent).toContain("12,500");
@@ -260,7 +263,7 @@ describe("startup health page", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    // Expand the supporting metrics disclosure
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
     fireEvent.click(view.getByRole("button", { name: /supporting metrics/i }));
 
@@ -284,7 +287,7 @@ describe("startup health page", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    // Expand the acquisition funnel disclosure
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
     fireEvent.click(view.getByRole("button", { name: /acquisition funnel/i }));
 
@@ -305,6 +308,7 @@ describe("startup health page", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
     const hero = view.getByLabelText("startup health hero");
     expect(hero.textContent).toContain("Blocked");
@@ -322,10 +326,11 @@ describe("startup health page", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
     expect(view.getByText("Stale data")).toBeTruthy();
     expect(
-      view.getByText(/Open Operations to refresh your connectors/)
+      view.getByText(/Refresh your connectors in the setup section below/)
     ).toBeTruthy();
   });
 
@@ -342,12 +347,11 @@ describe("startup health page", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    // Health error should appear
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("health error")).toBeTruthy();
     expect(view.getAllByText("Server error").length).toBeGreaterThanOrEqual(1);
 
     // Connector panel should still be visible
-    await openOperationsTab(view);
     expect(view.getByLabelText("connector status")).toBeTruthy();
     expect(view.getByText("Connected")).toBeTruthy();
 
@@ -369,6 +373,7 @@ describe("startup health page", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("health error")).toBeTruthy();
     expect(
       view.getAllByText(/Health snapshot contains invalid data/).length
@@ -393,6 +398,7 @@ describe("startup health page", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openHealthConnectorsTab(view);
     expect(await view.findByTestId("north-star-value")).toBeTruthy();
     expect(view.getByTestId("north-star-value").textContent).toContain("$0");
     expect(view.queryByTestId("north-star-delta")).toBeNull();
@@ -411,12 +417,14 @@ describe("startup health page", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    expect(await view.findByText("Loading health data…")).toBeTruthy();
+    await openHealthConnectorsTab(view);
+    expect(await view.findByLabelText("startup health hero")).toBeTruthy();
+    expect(view.queryByTestId("north-star-value")).toBeNull();
 
     // Resolve health to let the test clean up
     resolveHealth?.(createHealthyPayload());
     await waitFor(() => {
-      expect(view.queryByText("Loading health data…")).toBeNull();
+      expect(view.getByTestId("north-star-value")).toBeTruthy();
     });
   });
 
@@ -435,6 +443,7 @@ describe("startup health page", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("health error")).toBeTruthy();
 
     fireEvent.click(view.getByRole("button", { name: "Retry health load" }));

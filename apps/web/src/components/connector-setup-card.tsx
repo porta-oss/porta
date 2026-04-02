@@ -28,6 +28,13 @@ export interface ConnectorSetupCardProps {
   provider: ConnectorProvider;
 }
 
+interface ConnectorFormValues {
+  apiKey: string;
+  host: string;
+  projectId: string;
+  secretKey: string;
+}
+
 function validatePostHogFields(values: PostHogFormValues): string | null {
   if (!values.apiKey.trim()) {
     return "PostHog API key cannot be blank.";
@@ -64,26 +71,23 @@ export function ConnectorSetupCard({
   onConnect,
   onSkip,
 }: ConnectorSetupCardProps) {
-  const [posthogValues, setPosthogValues] = useState<PostHogFormValues>({
-    apiKey: "",
-    projectId: "",
-    host: "",
-  });
-  const [stripeValues, setStripeValues] = useState<StripeFormValues>({
-    secretKey: "",
-  });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const label = PROVIDER_LABELS[provider];
 
-  async function handleSubmit() {
+  async function handleSubmit(formValues: ConnectorFormValues) {
     setError(null);
 
     let validationError: string | null = null;
     let config: Record<string, string> = {};
 
     if (provider === "posthog") {
+      const posthogValues: PostHogFormValues = {
+        apiKey: formValues.apiKey,
+        projectId: formValues.projectId,
+        host: formValues.host,
+      };
       validationError = validatePostHogFields(posthogValues);
       config = {
         apiKey: posthogValues.apiKey.trim(),
@@ -91,6 +95,9 @@ export function ConnectorSetupCard({
         host: posthogValues.host.trim() || "https://us.posthog.com",
       };
     } else {
+      const stripeValues: StripeFormValues = {
+        secretKey: formValues.secretKey,
+      };
       validationError = validateStripeFields(stripeValues);
       config = { secretKey: stripeValues.secretKey.trim() };
     }
@@ -140,7 +147,13 @@ export function ConnectorSetupCard({
           className="grid gap-3"
           onSubmit={(event) => {
             event.preventDefault();
-            void handleSubmit();
+            const formData = new FormData(event.currentTarget);
+            void handleSubmit({
+              apiKey: String(formData.get("apiKey") ?? ""),
+              host: String(formData.get("host") ?? ""),
+              projectId: String(formData.get("projectId") ?? ""),
+              secretKey: String(formData.get("secretKey") ?? ""),
+            });
           }}
         >
           <p className="font-semibold">{label}</p>
@@ -150,43 +163,34 @@ export function ConnectorSetupCard({
               <div className="grid gap-1.5">
                 <Label htmlFor={`${provider}-api-key`}>API key</Label>
                 <Input
+                  defaultValue=""
                   disabled={isDisabled}
                   id={`${provider}-api-key`}
-                  onChange={(e) =>
-                    setPosthogValues((v) => ({ ...v, apiKey: e.target.value }))
-                  }
+                  name="apiKey"
                   placeholder="phc_..."
                   type="text"
-                  value={posthogValues.apiKey}
                 />
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor={`${provider}-project-id`}>Project ID</Label>
                 <Input
+                  defaultValue=""
                   disabled={isDisabled}
                   id={`${provider}-project-id`}
-                  onChange={(e) =>
-                    setPosthogValues((v) => ({
-                      ...v,
-                      projectId: e.target.value,
-                    }))
-                  }
+                  name="projectId"
                   placeholder="12345"
                   type="text"
-                  value={posthogValues.projectId}
                 />
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor={`${provider}-host`}>Host (optional)</Label>
                 <Input
+                  defaultValue=""
                   disabled={isDisabled}
                   id={`${provider}-host`}
-                  onChange={(e) =>
-                    setPosthogValues((v) => ({ ...v, host: e.target.value }))
-                  }
+                  name="host"
                   placeholder="https://us.posthog.com"
                   type="text"
-                  value={posthogValues.host}
                 />
               </div>
             </>
@@ -194,14 +198,12 @@ export function ConnectorSetupCard({
             <div className="grid gap-1.5">
               <Label htmlFor={`${provider}-secret-key`}>Secret key</Label>
               <Input
+                defaultValue=""
                 disabled={isDisabled}
                 id={`${provider}-secret-key`}
-                onChange={(e) =>
-                  setStripeValues((v) => ({ ...v, secretKey: e.target.value }))
-                }
+                name="secretKey"
                 placeholder="sk_test_..."
                 type="password"
-                value={stripeValues.secretKey}
               />
             </div>
           )}

@@ -169,11 +169,13 @@ function setNativeInputValue(element: HTMLInputElement, value: string) {
     "value"
   );
   descriptor?.set?.call(element, value);
-  fireEvent.input(element, { target: { value } });
+  element.dispatchEvent(new window.Event("input", { bubbles: true }));
 }
 
-async function openOperationsTab(view: ReturnType<typeof render>) {
-  fireEvent.click(await view.findByRole("tab", { name: /Operations/i }));
+async function openHealthConnectorsTab(view: ReturnType<typeof render>) {
+  fireEvent.click(
+    await view.findByRole("tab", { name: /Health & connectors/i })
+  );
 }
 
 function createApi(overrides: Partial<DashboardApi> = {}): DashboardApi {
@@ -253,9 +255,8 @@ describe("postgres custom metric on dashboard", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    // Wait for the dashboard to load
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
-    await openOperationsTab(view);
 
     // Postgres setup form should be visible
     expect(view.getByTestId("postgres-custom-metric-setup")).toBeTruthy();
@@ -273,6 +274,7 @@ describe("postgres custom metric on dashboard", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
     expect(view.queryByTestId("custom-metric-panel")).toBeNull();
   });
@@ -293,6 +295,7 @@ describe("postgres custom metric on dashboard", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
 
     const panel = view.getByTestId("custom-metric-panel");
@@ -331,8 +334,8 @@ describe("postgres custom metric on dashboard", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
-    await openOperationsTab(view);
 
     // Should show the configured card, not the setup form
     const configuredCard = view.getByTestId(
@@ -363,6 +366,7 @@ describe("postgres custom metric on dashboard", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
 
     const panel = view.getByTestId("custom-metric-panel");
@@ -392,6 +396,7 @@ describe("postgres custom metric on dashboard", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
 
     const panel = view.getByTestId("custom-metric-panel");
@@ -408,13 +413,13 @@ describe("postgres custom metric on dashboard", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    await openOperationsTab(view);
+    await openHealthConnectorsTab(view);
     expect(
       await view.findByTestId("postgres-custom-metric-setup")
     ).toBeTruthy();
 
     // Submit with empty fields
-    fireEvent.submit(view.getByLabelText("Postgres custom metric setup form"));
+    fireEvent.click(view.getByRole("button", { name: "Add Postgres metric" }));
 
     const alerts = await view.findAllByRole("alert");
     expect(
@@ -433,7 +438,7 @@ describe("postgres custom metric on dashboard", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    await openOperationsTab(view);
+    await openHealthConnectorsTab(view);
     expect(
       await view.findByTestId("postgres-custom-metric-setup")
     ).toBeTruthy();
@@ -452,7 +457,7 @@ describe("postgres custom metric on dashboard", () => {
     );
     setNativeInputValue(view.getByLabelText("Unit") as HTMLInputElement, "$");
 
-    fireEvent.submit(view.getByLabelText("Postgres custom metric setup form"));
+    fireEvent.click(view.getByRole("button", { name: "Add Postgres metric" }));
 
     const alerts = await view.findAllByRole("alert");
     expect(alerts.some((a) => a.textContent?.includes("postgres://"))).toBe(
@@ -471,7 +476,7 @@ describe("postgres custom metric on dashboard", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    await openOperationsTab(view);
+    await openHealthConnectorsTab(view);
     expect(
       await view.findByTestId("postgres-custom-metric-setup")
     ).toBeTruthy();
@@ -486,7 +491,7 @@ describe("postgres custom metric on dashboard", () => {
     );
     // label and unit left blank
 
-    fireEvent.submit(view.getByLabelText("Postgres custom metric setup form"));
+    fireEvent.click(view.getByRole("button", { name: "Add Postgres metric" }));
 
     const alerts = await view.findAllByRole("alert");
     expect(
@@ -511,7 +516,7 @@ describe("postgres custom metric on dashboard", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    await openOperationsTab(view);
+    await openHealthConnectorsTab(view);
     expect(
       await view.findByTestId("postgres-custom-metric-setup")
     ).toBeTruthy();
@@ -530,7 +535,7 @@ describe("postgres custom metric on dashboard", () => {
     );
     setNativeInputValue(view.getByLabelText("Unit") as HTMLInputElement, "$");
 
-    fireEvent.submit(view.getByLabelText("Postgres custom metric setup form"));
+    fireEvent.click(view.getByRole("button", { name: "Add Postgres metric" }));
 
     await waitFor(() => {
       expect(createPostgresMetric).toHaveBeenCalled();
@@ -552,7 +557,7 @@ describe("postgres custom metric on dashboard", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    await openOperationsTab(view);
+    await openHealthConnectorsTab(view);
     expect(
       await view.findByTestId("postgres-custom-metric-setup")
     ).toBeTruthy();
@@ -571,7 +576,7 @@ describe("postgres custom metric on dashboard", () => {
     );
     setNativeInputValue(view.getByLabelText("Unit") as HTMLInputElement, "$");
 
-    fireEvent.submit(view.getByLabelText("Postgres custom metric setup form"));
+    fireEvent.click(view.getByRole("button", { name: "Add Postgres metric" }));
 
     const alerts = await view.findAllByRole("alert");
     expect(
@@ -597,7 +602,10 @@ describe("postgres custom metric on dashboard", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: /supporting metrics/i }));
+    fireEvent.click(view.getByRole("button", { name: /acquisition funnel/i }));
     expect(view.getByLabelText("supporting metrics")).toBeTruthy();
     expect(view.getByLabelText("funnel")).toBeTruthy();
     expect(view.queryByTestId("custom-metric-panel")).toBeNull();
@@ -619,6 +627,7 @@ describe("postgres custom metric on dashboard", () => {
     );
 
     // First load succeeds — custom metric should be visible
+    await openHealthConnectorsTab(view);
     expect(await view.findByTestId("custom-metric-value")).toBeTruthy();
     expect(view.getByTestId("custom-metric-value").textContent).toContain(
       "4,250"
@@ -656,8 +665,8 @@ describe("postgres custom metric on dashboard", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
-    await openOperationsTab(view);
 
     const panel = view.getByTestId("custom-metric-panel");
     expect(panel.textContent).toContain("No data has been synced yet");
@@ -684,12 +693,15 @@ describe("onboarding regression", () => {
     );
 
     // All fixed health panels should be visible
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: /supporting metrics/i }));
+    fireEvent.click(view.getByRole("button", { name: /acquisition funnel/i }));
     expect(view.getByLabelText("supporting metrics")).toBeTruthy();
     expect(view.getByLabelText("funnel")).toBeTruthy();
     expect(view.queryByTestId("custom-metric-panel")).toBeNull();
 
-    await openOperationsTab(view);
+    await openHealthConnectorsTab(view);
     expect(view.getByLabelText("connector status")).toBeTruthy();
     expect(view.getByTestId("postgres-custom-metric-setup")).toBeTruthy();
     // But PostHog/Stripe setup forms should NOT be shown (already connected)

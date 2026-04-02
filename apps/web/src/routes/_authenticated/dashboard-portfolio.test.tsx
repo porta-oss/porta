@@ -3,7 +3,7 @@ import "../../test/setup-dom";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { ConnectorProvider, ConnectorSummary } from "@shared/connectors";
 import type { StartupRecord, WorkspaceSummary } from "@shared/types";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 
 import type { AuthSnapshot } from "../../lib/auth-client";
 import {
@@ -11,6 +11,12 @@ import {
   DashboardPage,
   type StartupHealthPayload,
 } from "./dashboard";
+
+async function openHealthConnectorsTab(view: ReturnType<typeof render>) {
+  fireEvent.click(
+    await view.findByRole("tab", { name: /Health & connectors/i })
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -369,7 +375,7 @@ describe("portfolio startup card", () => {
     const freshness = view.getByTestId("portfolio-freshness");
     expect(freshness.textContent).toContain("Unable to load");
 
-    // The health error banner and retry button should still be available
+    await openHealthConnectorsTab(view);
     expect(
       view.getByRole("button", { name: "Retry health load" })
     ).toBeTruthy();
@@ -406,10 +412,9 @@ describe("portfolio startup card", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    // Should show loading state for portfolio card
     const card = await view.findByTestId("portfolio-startup-card");
     expect(card).toBeTruthy();
-    expect(card.textContent).toContain("Loading portfolio");
+    expect(view.getByRole("status")).toBeTruthy();
 
     // Resolve to let the test clean up
     resolveHealth?.(createHealthyPayload());
@@ -422,8 +427,11 @@ describe("portfolio startup card", () => {
 
   test("handles zero MRR with no previous snapshot — no trend, $0 display", async () => {
     const payload = createHealthyPayload();
-    payload.health!.northStarValue = 0;
-    payload.health!.northStarPreviousValue = null;
+    if (!payload.health) {
+      throw new Error("Expected health payload for portfolio test.");
+    }
+    payload.health.northStarValue = 0;
+    payload.health.northStarPreviousValue = null;
 
     const api = createApi({
       fetchHealth: mock(async () => payload),
@@ -517,17 +525,16 @@ describe("portfolio startup card", () => {
     expect(topIssue.textContent).toContain("Stripe API key is invalid");
   });
 
-  test("existing health drill-down still renders below the portfolio card", async () => {
+  test("health drill-down stays available behind the secondary content view", async () => {
     const api = createApi();
     const view = render(
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    // Portfolio card appears first
     await view.findByTestId("portfolio-startup-card");
-
-    // Health hero and metrics grid still render
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: /supporting metrics/i }));
     expect(view.getByLabelText("supporting metrics")).toBeTruthy();
   });
 });

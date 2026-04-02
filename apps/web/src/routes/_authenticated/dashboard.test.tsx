@@ -18,11 +18,13 @@ function setNativeInputValue(element: HTMLInputElement, value: string) {
     "value"
   );
   descriptor?.set?.call(element, value);
-  fireEvent.input(element, { target: { value } });
+  element.dispatchEvent(new window.Event("input", { bubbles: true }));
 }
 
-async function openOperationsTab(view: ReturnType<typeof render>) {
-  fireEvent.click(await view.findByRole("tab", { name: /Operations/i }));
+async function openHealthConnectorsTab(view: ReturnType<typeof render>) {
+  fireEvent.click(
+    await view.findByRole("tab", { name: /Health & connectors/i })
+  );
 }
 
 const WORKSPACE_A: WorkspaceSummary = {
@@ -308,7 +310,7 @@ describe("dashboard route", () => {
       view.getByRole("heading", { name: "Portfolio overview" })
     ).toBeTruthy();
 
-    fireEvent.click(view.getByRole("button", { name: "Retry startup load" }));
+    fireEvent.click(view.getByRole("button", { name: "Try again" }));
 
     await waitFor(() => {
       expect(listStartups).toHaveBeenCalledTimes(2);
@@ -370,12 +372,9 @@ describe("dashboard route", () => {
 
     await view.findAllByText("Acme Analytics");
 
-    fireEvent.change(view.getByLabelText("Switch workspace"), {
-      target: { value: WORKSPACE_B.id },
-    });
-    fireEvent.click(
-      view.getByRole("button", { name: "Use selected workspace" })
-    );
+    fireEvent.click(view.getByLabelText("Switch workspace"));
+    fireEvent.click(await view.findByText("Beta Ventures"));
+    fireEvent.click(view.getByRole("button", { name: "Switch" }));
 
     await waitFor(() => {
       expect(setActiveWorkspace).toHaveBeenCalledWith({
@@ -405,7 +404,7 @@ describe("dashboard route", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    await openOperationsTab(view);
+    await openHealthConnectorsTab(view);
     expect(await view.findByText("Connected")).toBeTruthy();
     expect(view.getByText("Sync failed")).toBeTruthy();
     expect(view.getByText("Provider validation failed")).toBeTruthy();
@@ -420,7 +419,7 @@ describe("dashboard route", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    await openOperationsTab(view);
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("PostHog setup form")).toBeTruthy();
     expect(view.getByLabelText("Stripe setup form")).toBeTruthy();
   });
@@ -449,7 +448,7 @@ describe("dashboard route", () => {
     const view = render(
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
-    await openOperationsTab(view);
+    await openHealthConnectorsTab(view);
     await view.findByLabelText("Stripe setup form");
 
     // Fill and submit the Stripe form
@@ -490,7 +489,7 @@ describe("dashboard route", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    await openOperationsTab(view);
+    await openHealthConnectorsTab(view);
     const resyncButton = await view.findByRole("button", { name: "Resync" });
     fireEvent.click(resyncButton);
 
@@ -515,7 +514,7 @@ describe("dashboard route", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    await openOperationsTab(view);
+    await openHealthConnectorsTab(view);
     const disconnectButton = await view.findByRole("button", {
       name: "Disconnect",
     });
@@ -542,7 +541,7 @@ describe("dashboard route", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    await openOperationsTab(view);
+    await openHealthConnectorsTab(view);
     const resyncButton = await view.findByRole("button", { name: "Resync" });
     fireEvent.click(resyncButton);
 
@@ -565,7 +564,7 @@ describe("dashboard route", () => {
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
     );
 
-    await openOperationsTab(view);
+    await openHealthConnectorsTab(view);
     expect(await view.findByLabelText("PostHog setup form")).toBeTruthy();
     expect(view.getByLabelText("Stripe setup form")).toBeTruthy();
     expect(view.queryByLabelText("connector status")).toBeNull();

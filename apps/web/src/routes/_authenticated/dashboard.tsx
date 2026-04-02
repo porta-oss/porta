@@ -141,7 +141,7 @@ export interface DashboardPageProps {
   authState: AuthSnapshot;
 }
 
-type DashboardDetailView = "health" | "operations";
+type DashboardContentView = "overview" | "health-connectors";
 
 // ------------------------------------------------------------------
 // Internal types
@@ -825,7 +825,7 @@ export function DashboardPage({
   );
   const [_pgSetupError, setPgSetupError] = useState<string | null>(null);
   const [pgSetupSubmitting, setPgSetupSubmitting] = useState(false);
-  const [detailView, setDetailView] = useState<DashboardDetailView | null>(
+  const [contentView, setContentView] = useState<DashboardContentView | null>(
     null
   );
 
@@ -841,10 +841,10 @@ export function DashboardPage({
 
   useEffect(() => {
     if (!primaryStartupId) {
-      setDetailView(null);
+      setContentView(null);
       return;
     }
-    setDetailView(null);
+    setContentView(null);
   }, [primaryStartupId]);
 
   // Determine which providers already have a connector
@@ -1136,7 +1136,7 @@ export function DashboardPage({
     customMetric ?? healthPayload?.customMetric ?? null;
   const missingCoreConnectorCount =
     Number(!posthogConnector) + Number(!stripeConnector);
-  const resolvedDetailView = detailView ?? "health";
+  const resolvedContentView = contentView ?? "overview";
   const showConnectorStatusPanel =
     connectorLoading || connectorError !== null || activeConnectors.length > 0;
 
@@ -1157,200 +1157,202 @@ export function DashboardPage({
     >
       <div className="grid gap-6">
         {activeWorkspace && startups.length > 0 ? (
-          <>
-            <section
-              aria-labelledby="dashboard-triage-heading"
-              className="grid gap-4"
-            >
+          <section
+            aria-labelledby="dashboard-content-heading"
+            className="grid gap-4"
+          >
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div className="grid gap-1">
                 <p className="text-muted-foreground text-xs uppercase tracking-[0.18em]">
-                  Triage
+                  Content view
                 </p>
-                <h1
-                  className="font-semibold text-lg tracking-tight"
-                  id="dashboard-triage-heading"
-                >
-                  What needs attention now
-                </h1>
+                <div className="grid gap-1">
+                  <h2
+                    className="font-semibold text-lg tracking-tight"
+                    id="dashboard-content-heading"
+                  >
+                    {resolvedContentView === "overview"
+                      ? "Daily triage"
+                      : "Health & connectors"}
+                  </h2>
+                  <p className="text-muted-foreground text-sm">
+                    {resolvedContentView === "overview"
+                      ? "Stay in the founder scan by default: portfolio status, grounded insight, and next tasks."
+                      : "Drill into health signals or manage sources only when you need deeper diagnostics and setup work."}
+                  </p>
+                </div>
               </div>
 
-              {/* Portfolio card — the primary founder-facing representation */}
-              {healthStatus === "ready" && healthPayload && primaryStartup ? (
-                <FadeIn>
-                  <PortfolioStartupCard
-                    viewModel={buildPortfolioCardViewModel(
-                      primaryStartup,
-                      healthPayload
-                    )}
-                  />
-                </FadeIn>
-              ) : null}
-              {healthStatus === "error" && primaryStartup ? (
-                <PortfolioStartupCard
-                  viewModel={buildPortfolioErrorViewModel(
-                    primaryStartup,
-                    healthError ?? "Failed to load startup health data."
-                  )}
-                />
-              ) : null}
-              {healthStatus === "loading" && primaryStartup ? (
-                <div role="status">
-                  <span className="sr-only">Loading portfolio</span>
-                  <PortfolioCardSkeleton />
-                </div>
-              ) : null}
-
-              {/* Health error banner — preserves connector panel and shell */}
-              {healthStatus === "error" ? (
-                <Card
-                  aria-label="health error"
-                  className="border-danger-border bg-danger-bg"
+              <div
+                aria-label="Dashboard content views"
+                className="inline-flex w-fit rounded-lg border border-border bg-muted p-1"
+                role="tablist"
+              >
+                <Button
+                  aria-controls="dashboard-overview-panel"
+                  aria-selected={resolvedContentView === "overview"}
+                  id="dashboard-overview-tab"
+                  onClick={() => setContentView("overview")}
+                  role="tab"
+                  size="sm"
+                  type="button"
+                  variant={
+                    resolvedContentView === "overview" ? "secondary" : "ghost"
+                  }
                 >
-                  <CardContent className="grid gap-2 pt-5">
-                    <Alert variant="destructive">
-                      <AlertDescription>
-                        {healthError ?? "Failed to load startup health data."}
-                      </AlertDescription>
-                    </Alert>
-                    <Button
-                      onClick={() =>
-                        void refreshHealth(primaryStartup?.id ?? null)
-                      }
-                      type="button"
-                      variant="outline"
-                    >
-                      Retry health load
-                    </Button>
-                  </CardContent>
-                </Card>
-              ) : null}
+                  Overview
+                </Button>
+                <Button
+                  aria-controls="dashboard-health-connectors-panel"
+                  aria-selected={resolvedContentView === "health-connectors"}
+                  id="dashboard-health-connectors-tab"
+                  onClick={() => setContentView("health-connectors")}
+                  role="tab"
+                  size="sm"
+                  type="button"
+                  variant={
+                    resolvedContentView === "health-connectors"
+                      ? "secondary"
+                      : "ghost"
+                  }
+                >
+                  Health & connectors
+                  {missingCoreConnectorCount > 0
+                    ? ` (${String(missingCoreConnectorCount)})`
+                    : ""}
+                </Button>
+              </div>
+            </div>
 
-              {/* ── Grounded Insight ── */}
-              {insightStatus === "ready" && insightPayload ? (
-                <FadeIn>
-                  <StartupInsightCard
-                    creatingActionIndex={creatingActionIndex}
-                    diagnosticMessage={insightPayload.diagnosticMessage}
-                    displayStatus={insightPayload.displayStatus}
-                    insight={insightPayload.insight}
-                    onCreateTask={handleCreateTaskFromAction}
+            {resolvedContentView === "overview" ? (
+              <div
+                aria-labelledby="dashboard-overview-tab"
+                className="grid gap-4"
+                id="dashboard-overview-panel"
+                role="tabpanel"
+              >
+                <section
+                  aria-labelledby="dashboard-triage-heading"
+                  className="grid gap-4"
+                >
+                  <div className="grid gap-1">
+                    <p className="text-muted-foreground text-xs uppercase tracking-[0.18em]">
+                      Triage
+                    </p>
+                    <h3
+                      className="font-semibold text-lg tracking-tight"
+                      id="dashboard-triage-heading"
+                    >
+                      What needs attention now
+                    </h3>
+                  </div>
+
+                  {healthStatus === "ready" &&
+                  healthPayload &&
+                  primaryStartup ? (
+                    <FadeIn>
+                      <PortfolioStartupCard
+                        viewModel={buildPortfolioCardViewModel(
+                          primaryStartup,
+                          healthPayload
+                        )}
+                      />
+                    </FadeIn>
+                  ) : null}
+                  {healthStatus === "error" && primaryStartup ? (
+                    <PortfolioStartupCard
+                      viewModel={buildPortfolioErrorViewModel(
+                        primaryStartup,
+                        healthError ?? "Failed to load startup health data."
+                      )}
+                    />
+                  ) : null}
+                  {healthStatus === "loading" && primaryStartup ? (
+                    <div role="status">
+                      <span className="sr-only">Loading portfolio</span>
+                      <PortfolioCardSkeleton />
+                    </div>
+                  ) : null}
+
+                  {insightStatus === "ready" && insightPayload ? (
+                    <FadeIn>
+                      <StartupInsightCard
+                        creatingActionIndex={creatingActionIndex}
+                        diagnosticMessage={insightPayload.diagnosticMessage}
+                        displayStatus={insightPayload.displayStatus}
+                        insight={insightPayload.insight}
+                        onCreateTask={handleCreateTaskFromAction}
+                        onRetry={() =>
+                          void refreshInsight(primaryStartup?.id ?? null)
+                        }
+                        taskCreateError={taskCreateError}
+                        tasks={tasks}
+                      />
+                    </FadeIn>
+                  ) : null}
+                  {insightStatus === "error" ? (
+                    <Card
+                      aria-label="insight error"
+                      className="border-danger-border bg-danger-bg"
+                    >
+                      <CardContent className="grid gap-2 pt-5">
+                        <Alert variant="destructive">
+                          <AlertDescription>
+                            {insightError ?? "Failed to load insight data."}
+                          </AlertDescription>
+                        </Alert>
+                        <Button
+                          onClick={() =>
+                            void refreshInsight(primaryStartup?.id ?? null)
+                          }
+                          type="button"
+                          variant="outline"
+                        >
+                          Retry insight load
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                  {insightStatus === "loading" ? (
+                    <div role="status">
+                      <span className="sr-only">Loading insight</span>
+                      <InsightCardSkeleton />
+                    </div>
+                  ) : null}
+
+                  <StartupTaskList
+                    error={taskListError}
                     onRetry={() =>
-                      void refreshInsight(primaryStartup?.id ?? null)
+                      void refreshTasks(primaryStartup?.id ?? null)
                     }
-                    taskCreateError={taskCreateError}
+                    status={taskListStatus}
                     tasks={tasks}
                   />
-                </FadeIn>
-              ) : null}
-              {insightStatus === "error" ? (
-                <Card
-                  aria-label="insight error"
-                  className="border-danger-border bg-danger-bg"
-                >
-                  <CardContent className="grid gap-2 pt-5">
-                    <Alert variant="destructive">
-                      <AlertDescription>
-                        {insightError ?? "Failed to load insight data."}
-                      </AlertDescription>
-                    </Alert>
-                    <Button
-                      onClick={() =>
-                        void refreshInsight(primaryStartup?.id ?? null)
-                      }
-                      type="button"
-                      variant="outline"
-                    >
-                      Retry insight load
-                    </Button>
-                  </CardContent>
-                </Card>
-              ) : null}
-              {insightStatus === "loading" ? (
-                <div role="status">
-                  <span className="sr-only">Loading insight</span>
-                  <InsightCardSkeleton />
-                </div>
-              ) : null}
-
-              <StartupTaskList
-                error={taskListError}
-                onRetry={() => void refreshTasks(primaryStartup?.id ?? null)}
-                status={taskListStatus}
-                tasks={tasks}
-              />
-            </section>
-
-            <section
-              aria-labelledby="dashboard-detail-heading"
-              className="grid gap-4 border-border border-t pt-6"
-            >
-              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-                <div className="grid gap-1">
-                  <p className="text-muted-foreground text-xs uppercase tracking-[0.18em]">
-                    Secondary view
-                  </p>
-                  <div className="grid gap-1">
-                    <h2
-                      className="font-semibold text-lg tracking-tight"
-                      id="dashboard-detail-heading"
-                    >
-                      Health detail
-                    </h2>
-                    <p className="text-muted-foreground text-sm">
-                      Inspect the drill-down or manage connectors without
-                      crowding the triage flow.
-                    </p>
-                  </div>
-                </div>
-
-                <div
-                  aria-label="Dashboard detail views"
-                  className="inline-flex w-fit rounded-lg border border-border bg-muted p-1"
-                  role="tablist"
-                >
-                  <Button
-                    aria-controls="dashboard-health-panel"
-                    aria-selected={resolvedDetailView === "health"}
-                    id="dashboard-health-tab"
-                    onClick={() => setDetailView("health")}
-                    role="tab"
-                    size="sm"
-                    type="button"
-                    variant={
-                      resolvedDetailView === "health" ? "secondary" : "ghost"
-                    }
-                  >
-                    Health detail
-                  </Button>
-                  <Button
-                    aria-controls="dashboard-operations-panel"
-                    aria-selected={resolvedDetailView === "operations"}
-                    id="dashboard-operations-tab"
-                    onClick={() => setDetailView("operations")}
-                    role="tab"
-                    size="sm"
-                    type="button"
-                    variant={
-                      resolvedDetailView === "operations"
-                        ? "secondary"
-                        : "ghost"
-                    }
-                  >
-                    Operations
-                    {missingCoreConnectorCount > 0
-                      ? ` (${String(missingCoreConnectorCount)})`
-                      : ""}
-                  </Button>
-                </div>
+                </section>
               </div>
-
-              {resolvedDetailView === "health" ? (
-                <div
-                  aria-labelledby="dashboard-health-tab"
+            ) : (
+              <div
+                aria-labelledby="dashboard-health-connectors-tab"
+                className="grid gap-4"
+                id="dashboard-health-connectors-panel"
+                role="tabpanel"
+              >
+                <section
+                  aria-labelledby="dashboard-health-heading"
                   className="grid gap-4"
-                  id="dashboard-health-panel"
-                  role="tabpanel"
                 >
+                  <div className="grid gap-1">
+                    <p className="text-muted-foreground text-xs uppercase tracking-[0.18em]">
+                      Health
+                    </p>
+                    <h3
+                      className="font-semibold text-lg tracking-tight"
+                      id="dashboard-health-heading"
+                    >
+                      Startup health detail
+                    </h3>
+                  </div>
+
                   {healthStatus === "ready" && healthPayload ? (
                     <FadeIn className="grid gap-4">
                       <StartupHealthHero
@@ -1393,8 +1395,8 @@ export function DashboardPage({
 
                       {healthPayload.status === "stale" ? (
                         <p className="text-sm text-warning">
-                          Health data is stale. Open Operations to refresh your
-                          connectors.
+                          Health data is stale. Refresh your connectors in the
+                          setup section below.
                         </p>
                       ) : null}
 
@@ -1405,6 +1407,31 @@ export function DashboardPage({
                         />
                       ) : null}
                     </FadeIn>
+                  ) : null}
+
+                  {healthStatus === "error" ? (
+                    <Card
+                      aria-label="health error"
+                      className="border-danger-border bg-danger-bg"
+                    >
+                      <CardContent className="grid gap-2 pt-5">
+                        <Alert variant="destructive">
+                          <AlertDescription>
+                            {healthError ??
+                              "Failed to load startup health data."}
+                          </AlertDescription>
+                        </Alert>
+                        <Button
+                          onClick={() =>
+                            void refreshHealth(primaryStartup?.id ?? null)
+                          }
+                          type="button"
+                          variant="outline"
+                        >
+                          Retry health load
+                        </Button>
+                      </CardContent>
+                    </Card>
                   ) : null}
 
                   {healthStatus === "error" && resolvedCustomMetric ? (
@@ -1420,14 +1447,24 @@ export function DashboardPage({
                       <HealthHeroSkeleton />
                     </div>
                   ) : null}
-                </div>
-              ) : (
-                <div
-                  aria-labelledby="dashboard-operations-tab"
-                  className="grid gap-4"
-                  id="dashboard-operations-panel"
-                  role="tabpanel"
+                </section>
+
+                <section
+                  aria-labelledby="dashboard-connectors-heading"
+                  className="grid gap-4 border-border border-t pt-6"
                 >
+                  <div className="grid gap-1">
+                    <p className="text-muted-foreground text-xs uppercase tracking-[0.18em]">
+                      Connectors
+                    </p>
+                    <h3
+                      className="font-semibold text-lg tracking-tight"
+                      id="dashboard-connectors-heading"
+                    >
+                      Sources and setup
+                    </h3>
+                  </div>
+
                   {showConnectorStatusPanel ? (
                     <ConnectorStatusPanel
                       connectors={activeConnectors}
@@ -1496,10 +1533,10 @@ export function DashboardPage({
                       />
                     )}
                   </section>
-                </div>
-              )}
-            </section>
-          </>
+                </section>
+              </div>
+            )}
+          </section>
         ) : null}
 
         {activeWorkspace &&

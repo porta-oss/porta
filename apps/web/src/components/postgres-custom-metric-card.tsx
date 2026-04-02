@@ -79,13 +79,6 @@ export function PostgresCustomMetricCard({
   disabled = false,
   onSetup,
 }: PostgresCustomMetricCardProps) {
-  const [values, setValues] = useState<PostgresSetupFormValues>({
-    connectionUri: "",
-    schema: "public",
-    view: "",
-    label: "",
-    unit: "",
-  });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -130,7 +123,7 @@ export function PostgresCustomMetricCard({
 
   const isDisabled = disabled || submitting;
 
-  async function handleSubmit() {
+  async function handleSubmit(values: PostgresSetupFormValues) {
     setError(null);
 
     const validationError = validateSetupFields(values);
@@ -177,76 +170,73 @@ export function PostgresCustomMetricCard({
           className="grid gap-3"
           onSubmit={(event) => {
             event.preventDefault();
-            void handleSubmit();
+            const formData = new FormData(event.currentTarget);
+            void handleSubmit({
+              connectionUri: String(formData.get("connectionUri") ?? ""),
+              schema: String(formData.get("schema") ?? ""),
+              view: String(formData.get("view") ?? ""),
+              label: String(formData.get("label") ?? ""),
+              unit: String(formData.get("unit") ?? ""),
+            });
           }}
         >
           <div className="grid gap-1.5">
             <Label htmlFor="pg-connection-uri">Connection URI</Label>
             <Input
+              defaultValue=""
               disabled={isDisabled}
               id="pg-connection-uri"
-              onChange={(e) =>
-                setValues((v) => ({ ...v, connectionUri: e.target.value }))
-              }
+              name="connectionUri"
               placeholder="postgresql://user:pass@host:5432/db"
               type="password"
-              value={values.connectionUri}
             />
           </div>
 
           <div className="grid gap-1.5">
             <Label htmlFor="pg-schema">Schema</Label>
             <Input
+              defaultValue="public"
               disabled={isDisabled}
               id="pg-schema"
-              onChange={(e) =>
-                setValues((v) => ({ ...v, schema: e.target.value }))
-              }
+              name="schema"
               placeholder="public"
               type="text"
-              value={values.schema}
             />
           </div>
 
           <div className="grid gap-1.5">
             <Label htmlFor="pg-view">View</Label>
             <Input
+              defaultValue=""
               disabled={isDisabled}
               id="pg-view"
-              onChange={(e) =>
-                setValues((v) => ({ ...v, view: e.target.value }))
-              }
+              name="view"
               placeholder="daily_revenue"
               type="text"
-              value={values.view}
             />
           </div>
 
           <div className="grid gap-1.5">
             <Label htmlFor="pg-label">Label</Label>
             <Input
+              defaultValue=""
               disabled={isDisabled}
               id="pg-label"
-              onChange={(e) =>
-                setValues((v) => ({ ...v, label: e.target.value }))
-              }
+              name="label"
               placeholder="Daily Revenue"
               type="text"
-              value={values.label}
             />
           </div>
 
           <div className="grid gap-1.5">
             <Label htmlFor="pg-unit">Unit</Label>
             <Input
+              defaultValue=""
               disabled={isDisabled}
               id="pg-unit"
-              onChange={(e) =>
-                setValues((v) => ({ ...v, unit: e.target.value }))
-              }
+              name="unit"
               placeholder="$"
               type="text"
-              value={values.unit}
             />
           </div>
 
