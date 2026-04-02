@@ -9,36 +9,19 @@
     "rules": {
       "suspicious": {
         "useAwait": "off",
-        "noMisplacedAssertion": "off",
-        "noEmptyBlockStatements": "warn",
-        "noExplicitAny": "warn",
-        "useIterableCallbackReturn": "warn",
-        "noSkippedTests": "warn",
-        "noArrayIndexKey": "warn"
+        "noMisplacedAssertion": "off"
       },
       "performance": {
         "useTopLevelRegex": "off",
-        "noBarrelFile": "off",
-        "noNamespaceImport": "warn"
+        "noBarrelFile": "off"
       },
       "complexity": {
         "noVoid": "off",
-        "noExcessiveCognitiveComplexity": "warn",
-        "noForEach": "warn"
+        "noExcessiveCognitiveComplexity": "warn"
       },
       "style": {
         "noNonNullAssertion": "warn",
-        "noExportedImports": "off",
-        "noNestedTernary": "warn",
-        "useConst": "warn"
-      },
-      "correctness": {
-        "useExhaustiveDependencies": "warn",
-        "noUnusedFunctionParameters": "warn"
-      },
-      "a11y": {
-        "useAriaPropsSupportedByRole": "warn",
-        "useSemanticElements": "warn"
+        "noExportedImports": "off"
       }
     }
   }
