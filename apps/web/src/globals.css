@@ -44,9 +44,9 @@
   /* --- Warm stone-tinted neutrals --- */
   --background: oklch(0.985 0.004 80);
   --foreground: oklch(0.16 0.006 75);
-  --card: oklch(0.995 0.002 80);
+  --card: oklch(0.993 0.003 80);
   --card-foreground: oklch(0.16 0.006 75);
-  --popover: oklch(0.995 0.002 80);
+  --popover: oklch(0.993 0.003 80);
   --popover-foreground: oklch(0.16 0.006 75);
   --muted: oklch(0.955 0.005 80);
   --muted-foreground: oklch(0.49 0.008 75);
@@ -58,7 +58,7 @@
   /* --- Muted indigo accent --- */
   --primary: oklch(0.45 0.16 270);
   --primary-foreground: oklch(0.98 0.005 270);
-  --secondary: oklch(0.96 0.005 80);
+  --secondary: oklch(0.955 0.005 80);
   --secondary-foreground: oklch(0.22 0.006 75);
   --ring: oklch(0.55 0.12 270);
 
@@ -248,5 +248,47 @@ body {
   }
   html {
     @apply font-sans;
+  }
+}
+
+/* ── Fade-in entry animation ── */
+
+.fade-in-enter {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 250ms cubic-bezier(0.25, 1, 0.5, 1),
+    transform 250ms cubic-bezier(0.25, 1, 0.5, 1);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-in-enter {
+    transition: none;
+  }
+}
+
+/* ── Sync checkmark draw animation ── */
+
+.sync-check-path {
+  stroke-dasharray: 14;
+  stroke-dashoffset: 14;
+  animation: sync-check-draw 350ms cubic-bezier(0.25, 1, 0.5, 1) 100ms forwards;
+}
+
+@keyframes sync-check-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sync-check-path {
+    stroke-dashoffset: 0;
+    animation: none;
   }
 }

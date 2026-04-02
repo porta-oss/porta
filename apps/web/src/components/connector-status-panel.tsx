@@ -89,6 +89,9 @@ export function ConnectorStatusPanel({
     Record<string, "idle" | "working" | "error">
   >({});
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
+  const [confirmingDisconnect, setConfirmingDisconnect] = useState<
+    string | null
+  >(null);
 
   async function handleResync(connectorId: string) {
     if (!onResync) {
@@ -119,6 +122,7 @@ export function ConnectorStatusPanel({
       return;
     }
 
+    setConfirmingDisconnect(null);
     setActionStates((s) => ({ ...s, [connectorId]: "working" }));
     setActionErrors((s) => {
       const next = { ...s };
@@ -228,14 +232,35 @@ export function ConnectorStatusPanel({
                   </Button>
                 ) : null}
                 {c.status !== "disconnected" && onDisconnect ? (
-                  <Button
-                    disabled={actionState === "working"}
-                    onClick={() => void handleDisconnect(c.id)}
-                    size="sm"
-                    variant="destructive"
-                  >
-                    Disconnect
-                  </Button>
+                  confirmingDisconnect === c.id ? (
+                    <>
+                      <span className="text-danger text-sm">Disconnect?</span>
+                      <Button
+                        disabled={actionState === "working"}
+                        onClick={() => void handleDisconnect(c.id)}
+                        size="sm"
+                        variant="destructive"
+                      >
+                        Confirm
+                      </Button>
+                      <Button
+                        onClick={() => setConfirmingDisconnect(null)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        Cancel
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      disabled={actionState === "working"}
+                      onClick={() => setConfirmingDisconnect(c.id)}
+                      size="sm"
+                      variant="destructive"
+                    >
+                      Disconnect
+                    </Button>
+                  )
                 ) : null}
               </div>
             </section>

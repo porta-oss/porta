@@ -20,16 +20,11 @@ export interface AppShellProps {
   startupError?: string | null;
   startupStatus: "idle" | "loading" | "refreshing" | "ready" | "error";
   startups: StartupRecord[];
-  user: {
-    email: string;
-    name?: string | null;
-  };
   workspaceError?: string | null;
   workspaces: WorkspaceSummary[];
 }
 
 export function AppShell({
-  user,
   workspaces,
   activeWorkspaceId,
   startups,
@@ -52,10 +47,7 @@ export function AppShell({
       aria-label="portfolio dashboard"
       className="grid gap-8 bg-background p-6 pb-10"
     >
-      <header className="grid gap-1">
-        <p className="text-muted-foreground text-xs uppercase tracking-wider">
-          {user.name ? `${user.name} (${user.email})` : user.email}
-        </p>
+      <header>
         <h1 className="font-semibold text-xl leading-tight tracking-display">
           Portfolio overview
         </h1>
@@ -75,7 +67,11 @@ export function AppShell({
                 {shellError ?? "The dashboard could not be loaded."}
               </AlertDescription>
             </Alert>
-            <Button onClick={() => void onRetryShell?.()} variant="outline">
+            <Button
+              onClick={() => void onRetryShell?.()}
+              size="sm"
+              variant="outline"
+            >
               Try again
             </Button>
           </CardContent>
@@ -102,18 +98,16 @@ export function AppShell({
           />
         </aside>
 
-        <Card aria-label="dashboard content">
-          <CardContent className="grid gap-4 pt-5">
-            {children ?? (
-              <>
-                <h2>Workspace overview</h2>
-                <p className="text-muted-foreground">
-                  Select a startup to view health metrics, insights, and tasks.
-                </p>
-              </>
-            )}
-          </CardContent>
-        </Card>
+        <div aria-label="dashboard content" className="grid gap-4">
+          {children ?? (
+            <>
+              <h2>Workspace overview</h2>
+              <p className="text-muted-foreground">
+                Select a startup to view health metrics, insights, and tasks.
+              </p>
+            </>
+          )}
+        </div>
       </div>
     </main>
   );

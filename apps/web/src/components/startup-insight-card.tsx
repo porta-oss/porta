@@ -101,6 +101,23 @@ function ExplanationSection({
   );
 }
 
+function SyncCheckIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="size-3"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      viewBox="0 0 12 12"
+    >
+      <path className="sync-check-path" d="M2 6.5 L5 9.5 L10 3" />
+    </svg>
+  );
+}
+
 function SyncStatusBadge({ status }: { status: string }) {
   const labels: Record<string, string> = {
     not_synced: "Not synced",
@@ -126,6 +143,7 @@ function SyncStatusBadge({ status }: { status: string }) {
 
   return (
     <Badge data-testid="task-sync-badge" variant={variant()}>
+      {status === "synced" ? <SyncCheckIcon /> : null}
       {labels[status] ?? status}
     </Badge>
   );
@@ -285,6 +303,7 @@ export function StartupInsightCard({
           <Button
             className="justify-self-start"
             onClick={onRetry}
+            size="sm"
             variant="outline"
           >
             Try again

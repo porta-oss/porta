@@ -57,7 +57,11 @@ export function StartupList({
                 {error ?? "Startups could not be loaded."}
               </AlertDescription>
             </Alert>
-            <Button onClick={() => void onRetry?.()} variant="outline">
+            <Button
+              onClick={() => void onRetry?.()}
+              size="sm"
+              variant="outline"
+            >
               Try again
             </Button>
           </div>
@@ -93,16 +97,16 @@ export function StartupList({
         ) : null}
 
         {startups.length > 0 ? (
-          <ul className="m-0 grid gap-3 pl-4">
-            {startups.map((startup, index) => (
-              <li key={startup.id}>
-                <strong>{startup.name}</strong>
-                <div className="text-muted-foreground text-sm">
-                  {index === 0 ? "Primary startup" : "Startup"} ·{" "}
-                  {startup.stage.replace("_", " ")} ·{" "}
-                  {startup.type.replace("_", " ")} · {startup.timezone} ·{" "}
-                  {startup.currency}
-                </div>
+          <ul className="m-0 grid list-none gap-1 p-0">
+            {startups.map((startup) => (
+              <li
+                className="flex items-center justify-between rounded-md px-3 py-2 transition-colors hover:bg-muted/50"
+                key={startup.id}
+              >
+                <span className="font-medium text-sm">{startup.name}</span>
+                <span className="text-muted-foreground text-xs">
+                  {startup.stage.replace("_", " ")}
+                </span>
               </li>
             ))}
           </ul>

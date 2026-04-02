@@ -7,6 +7,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { FadeIn } from "./fade-in";
+import { TaskListSkeleton } from "./skeleton-screens";
 
 export interface StartupTaskListProps {
   error: string | null;
@@ -39,9 +41,27 @@ function syncBadgeVariant(
   }
 }
 
+function SyncCheckIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="size-3"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      viewBox="0 0 12 12"
+    >
+      <path className="sync-check-path" d="M2 6.5 L5 9.5 L10 3" />
+    </svg>
+  );
+}
+
 function TaskSyncBadge({ status }: { status: TaskSyncStatus }) {
   return (
     <Badge data-testid="task-sync-status" variant={syncBadgeVariant(status)}>
+      {status === "synced" ? <SyncCheckIcon /> : null}
       {SYNC_LABELS[status] ?? status}
     </Badge>
   );
@@ -99,9 +119,10 @@ export function StartupTaskList({
         </p>
 
         {status === "loading" ? (
-          <p className="text-muted-foreground text-sm" role="status">
-            Loading tasks\u2026
-          </p>
+          <div role="status">
+            <span className="sr-only">Loading tasks</span>
+            <TaskListSkeleton />
+          </div>
         ) : null}
 
         {status === "error" ? (
@@ -128,11 +149,13 @@ export function StartupTaskList({
         ) : null}
 
         {tasks.length > 0 ? (
-          <ul className="m-0 list-none p-0" data-testid="task-rows">
-            {tasks.map((task) => (
-              <TaskRow key={task.id} task={task} />
-            ))}
-          </ul>
+          <FadeIn>
+            <ul className="m-0 list-none p-0" data-testid="task-rows">
+              {tasks.map((task) => (
+                <TaskRow key={task.id} task={task} />
+              ))}
+            </ul>
+          </FadeIn>
         ) : null}
       </CardContent>
     </Card>
