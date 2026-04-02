@@ -145,9 +145,15 @@ const TEAM_ID = "team-abc-123";
 
 /** Silent logger for tests. */
 const _silentLog = {
-  info: () => {},
-  warn: () => {},
-  error: () => {},
+  info: () => {
+    /* noop */
+  },
+  warn: () => {
+    /* noop */
+  },
+  error: () => {
+    /* noop */
+  },
 };
 
 /** Capturing logger to assert log calls. */

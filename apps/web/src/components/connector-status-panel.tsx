@@ -195,7 +195,7 @@ export function ConnectorStatusPanel({
         const actionError = actionErrors[c.id] ?? null;
 
         return (
-          <div
+          <article
             aria-label={`${providerLabel} status`}
             key={c.id}
             style={{
@@ -278,7 +278,7 @@ export function ConnectorStatusPanel({
                 </button>
               ) : null}
             </div>
-          </div>
+          </article>
         );
       })}
     </section>

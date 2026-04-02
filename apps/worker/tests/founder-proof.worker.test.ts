@@ -50,9 +50,15 @@ const keyBuffer = parseEncryptionKey(TEST_ENCRYPTION_KEY);
 
 function silentLog() {
   return {
-    info: () => {},
-    warn: () => {},
-    error: () => {},
+    info: () => {
+      /* noop */
+    },
+    warn: () => {
+      /* noop */
+    },
+    error: () => {
+      /* noop */
+    },
   };
 }
 
@@ -900,11 +906,10 @@ describe("non-proof runtime with absent keys", () => {
       CONNECTOR_ENCRYPTION_KEY: randomBytes(32).toString("hex"),
     });
 
-    const explainer = env.founderProofMode
-      ? createFounderProofExplainer()
-      : env.anthropicApiKey
-        ? undefined /* would be createAnthropicExplainer */
-        : undefined;
+    let explainer: ReturnType<typeof createFounderProofExplainer> | undefined;
+    if (env.founderProofMode) {
+      explainer = createFounderProofExplainer();
+    }
 
     expect(explainer).toBeUndefined();
   });

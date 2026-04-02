@@ -107,9 +107,15 @@ function createInMemoryRepo(
 
 function silentLog() {
   return {
-    info: () => {},
-    warn: () => {},
-    error: () => {},
+    info: () => {
+      /* noop */
+    },
+    warn: () => {
+      /* noop */
+    },
+    error: () => {
+      /* noop */
+    },
   };
 }
 

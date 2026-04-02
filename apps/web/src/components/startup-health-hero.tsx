@@ -171,12 +171,15 @@ export function StartupHealthHero({
             style={{
               fontSize: "0.85rem",
               fontWeight: 500,
-              color:
-                delta.direction === "up"
-                  ? "#065f46"
-                  : delta.direction === "down"
-                    ? "#991b1b"
-                    : "#6b7280",
+              color: (() => {
+                if (delta.direction === "up") {
+                  return "#065f46";
+                }
+                if (delta.direction === "down") {
+                  return "#991b1b";
+                }
+                return "#6b7280";
+              })(),
             }}
           >
             {delta.label} from previous

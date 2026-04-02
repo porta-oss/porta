@@ -4,7 +4,21 @@ import { magicLink } from "better-auth/plugins/magic-link";
 import { organization } from "better-auth/plugins/organization";
 
 import type { ApiDatabase } from "./db/index";
-import * as authSchema from "./db/schema/auth";
+import {
+  account,
+  accountRelations,
+  invitation,
+  invitationRelations,
+  member,
+  memberRelations,
+  session,
+  sessionRelations,
+  user,
+  userRelations,
+  verification,
+  workspace,
+  workspaceRelations,
+} from "./db/schema/auth";
 import type { ApiEnv } from "./lib/env";
 import { summarizeAuthProviders } from "./lib/env";
 
@@ -55,7 +69,21 @@ export function createAuthRuntime(
     database: drizzleAdapter(database.db, {
       provider: "pg",
       transaction: true,
-      schema: authSchema,
+      schema: {
+        account,
+        accountRelations,
+        invitation,
+        invitationRelations,
+        member,
+        memberRelations,
+        session,
+        sessionRelations,
+        user,
+        userRelations,
+        verification,
+        workspace,
+        workspaceRelations,
+      },
     }),
     socialProviders: providers.google.configured
       ? {

@@ -50,6 +50,7 @@ test.describe("postgres custom metric dashboard flow", () => {
       .isVisible()
       .catch(() => false);
     if (!hasStartups) {
+      // biome-ignore lint/suspicious/noSkippedTests: conditional skip when no startups exist in test environment
       test.skip();
       return;
     }
@@ -80,6 +81,7 @@ test.describe("postgres custom metric dashboard flow", () => {
       .isVisible()
       .catch(() => false);
     if (!hasStartups) {
+      // biome-ignore lint/suspicious/noSkippedTests: conditional skip when no startups exist in test environment
       test.skip();
       return;
     }

@@ -370,7 +370,6 @@ export async function loadStartupHealth(
 
   // Validate supporting metrics from JSONB
   const metricsError = validateSupportingMetrics(snapshot.supporting_metrics);
-  let supportingMetrics: SupportingMetricsSnapshot;
   if (metricsError) {
     console.error("[startup-health] malformed supporting metrics in snapshot", {
       startupId,
@@ -382,7 +381,8 @@ export async function loadStartupHealth(
       `Malformed health snapshot for startup ${startupId}: ${metricsError}`
     );
   }
-  supportingMetrics = snapshot.supporting_metrics as SupportingMetricsSnapshot;
+  const supportingMetrics =
+    snapshot.supporting_metrics as SupportingMetricsSnapshot;
 
   const funnel =
     funnelRows.length > 0

@@ -1026,9 +1026,10 @@ export function DashboardPage({
     }
   }
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only bootstrap effect
   useEffect(() => {
     void refreshShell();
-  }, [refreshShell]);
+  }, []);
 
   async function handleActivateWorkspace(workspaceId: string) {
     setWorkspaceError(null);

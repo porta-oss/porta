@@ -49,9 +49,9 @@ function EvidenceBullets({ insight }: { insight: LatestInsightPayload }) {
         listStyleType: "disc",
       }}
     >
-      {items.map((item, i) => (
+      {items.map((item) => (
         <li
-          key={`${item.metricKey}-${i}`}
+          key={`${item.metricKey}-${item.label}`}
           style={{
             fontSize: "0.85rem",
             color: "#374151",
@@ -62,22 +62,27 @@ function EvidenceBullets({ insight }: { insight: LatestInsightPayload }) {
           {item.previousValue === null ? null : (
             <span
               style={{
-                color:
-                  item.direction === "down"
-                    ? "#dc2626"
-                    : item.direction === "up"
-                      ? "#16a34a"
-                      : "#6b7280",
+                color: (() => {
+                  if (item.direction === "down") {
+                    return "#dc2626";
+                  }
+                  if (item.direction === "up") {
+                    return "#16a34a";
+                  }
+                  return "#6b7280";
+                })(),
               }}
             >
               {" "}
-              (
-              {item.direction === "down"
-                ? "↓"
-                : item.direction === "up"
-                  ? "↑"
-                  : "→"}{" "}
-              from {formatMetricValue(item.previousValue)})
+              ({(() => {
+                if (item.direction === "down") {
+                  return "↓";
+                }
+                if (item.direction === "up") {
+                  return "↑";
+                }
+                return "→";
+              })()} from {formatMetricValue(item.previousValue)})
             </span>
           )}
         </li>
@@ -226,7 +231,10 @@ function ActionList({
           const isCreating = creatingActionIndex === i;
 
           return (
-            <li key={`action-${i}`} style={{ marginBottom: "0.75rem" }}>
+            <li
+              key={`action-${action.label}`}
+              style={{ marginBottom: "0.75rem" }}
+            >
               <strong style={{ fontSize: "0.9rem", color: "#111827" }}>
                 {action.label}
               </strong>

@@ -84,7 +84,9 @@ function createStubSyncRepo(connector?: ConnectorRow): SyncRepository & {
     completedCalls,
     failedCalls,
     findConnector: async (_connectorId: string) => connector,
-    markSyncJobRunning: async () => {},
+    markSyncJobRunning: async () => {
+      /* noop */
+    },
     markSyncJobCompleted: async (syncJobId, connectorId) => {
       completedCalls.push({ syncJobId, connectorId });
     },
@@ -445,7 +447,9 @@ describe("postgres custom metric sync — boundary conditions", () => {
       updateOnSyncSuccess: async () => {
         throw new Error("DB write failed");
       },
-      updateOnSyncFailure: async () => {},
+      updateOnSyncFailure: async () => {
+        /* noop */
+      },
     };
 
     const pgResult: PostgresSyncResult = {

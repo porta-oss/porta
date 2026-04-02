@@ -109,11 +109,15 @@ export function PortfolioStartupCard({ viewModel }: PortfolioStartupCardProps) {
             style={{
               fontSize: "0.85rem",
               fontWeight: 500,
-              color: viewModel.trendSummary.includes("+")
-                ? "#065f46"
-                : viewModel.trendSummary.includes("-")
-                  ? "#991b1b"
-                  : "#6b7280",
+              color: (() => {
+                if (viewModel.trendSummary.includes("+")) {
+                  return "#065f46";
+                }
+                if (viewModel.trendSummary.includes("-")) {
+                  return "#991b1b";
+                }
+                return "#6b7280";
+              })(),
             }}
           >
             {viewModel.trendSummary}

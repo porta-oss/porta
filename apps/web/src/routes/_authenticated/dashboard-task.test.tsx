@@ -230,8 +230,16 @@ function createApi(overrides: Partial<DashboardApi> = {}): DashboardApi {
           updatedAt: new Date().toISOString(),
         },
       })),
-    triggerSync: overrides.triggerSync ?? mock(async () => {}),
-    deleteConnector: overrides.deleteConnector ?? mock(async () => {}),
+    triggerSync:
+      overrides.triggerSync ??
+      mock(async () => {
+        /* noop */
+      }),
+    deleteConnector:
+      overrides.deleteConnector ??
+      mock(async () => {
+        /* noop */
+      }),
     fetchHealth:
       overrides.fetchHealth ?? mock(async () => createHealthyPayload()),
     fetchInsight:

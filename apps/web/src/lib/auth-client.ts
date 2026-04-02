@@ -255,7 +255,9 @@ export function createAuthController(
   const listeners = new Set<() => void>();
 
   const notify = () => {
-    listeners.forEach((listener) => listener());
+    for (const listener of listeners) {
+      listener();
+    }
   };
 
   const setSnapshot = (next: AuthSnapshot) => {
@@ -321,24 +323,26 @@ export function createAuthController(
           });
         })
         .catch((error: unknown) => {
-          const uiError: AuthUiError =
-            error instanceof AuthBootstrapTimeoutError
-              ? {
-                  code: "AUTH_TIMEOUT",
-                  message:
-                    "Authentication is taking too long. Retry the session check.",
-                }
-              : error instanceof AuthResponseMalformedError
-                ? {
-                    code: "AUTH_RESPONSE_MALFORMED",
-                    message:
-                      "Authentication returned an unexpected response. Continuing as signed out.",
-                  }
-                : {
-                    code: "AUTH_UNAVAILABLE",
-                    message:
-                      "Authentication is temporarily unavailable. Please try again.",
-                  };
+          let uiError: AuthUiError;
+          if (error instanceof AuthBootstrapTimeoutError) {
+            uiError = {
+              code: "AUTH_TIMEOUT",
+              message:
+                "Authentication is taking too long. Retry the session check.",
+            };
+          } else if (error instanceof AuthResponseMalformedError) {
+            uiError = {
+              code: "AUTH_RESPONSE_MALFORMED",
+              message:
+                "Authentication returned an unexpected response. Continuing as signed out.",
+            };
+          } else {
+            uiError = {
+              code: "AUTH_UNAVAILABLE",
+              message:
+                "Authentication is temporarily unavailable. Please try again.",
+            };
+          }
 
           return setSnapshot({
             status: "error",

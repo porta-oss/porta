@@ -127,7 +127,7 @@ export function ConnectorSetupCard({
   // If connector already exists, show connected state
   if (existing && existing.status !== "disconnected") {
     return (
-      <div
+      <section
         aria-label={`${label} connector`}
         style={{
           display: "grid",
@@ -142,7 +142,7 @@ export function ConnectorSetupCard({
         <p role="status" style={{ margin: 0, color: "#065f46" }}>
           Connected
         </p>
-      </div>
+      </section>
     );
   }
 

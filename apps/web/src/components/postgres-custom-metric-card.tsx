@@ -93,19 +93,18 @@ export function PostgresCustomMetricCard({
 
   // If already configured, show the configured state
   if (existing) {
-    const statusColor =
-      existing.status === "active"
-        ? "#065f46"
-        : existing.status === "error"
-          ? "#991b1b"
-          : "#92400e";
-
-    const statusLabel =
-      existing.status === "active"
-        ? "Syncing"
-        : existing.status === "error"
-          ? "Sync failed"
-          : "Pending sync";
+    let statusColor: string;
+    let statusLabel: string;
+    if (existing.status === "active") {
+      statusColor = "#065f46";
+      statusLabel = "Syncing";
+    } else if (existing.status === "error") {
+      statusColor = "#991b1b";
+      statusLabel = "Sync failed";
+    } else {
+      statusColor = "#92400e";
+      statusLabel = "Pending sync";
+    }
 
     return (
       <section

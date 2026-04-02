@@ -52,7 +52,7 @@ function computeDelta(
 
 export function CustomMetricPanel({
   customMetric,
-  healthError = false,
+  healthError: _healthError = false,
 }: CustomMetricPanelProps) {
   // Not configured — show optional guidance
   if (!customMetric) {

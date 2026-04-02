@@ -203,9 +203,15 @@ function createInMemoryHealthRepo(): HealthSnapshotRepository & {
 
 function silentLog() {
   return {
-    info: () => {},
-    warn: () => {},
-    error: () => {},
+    info: () => {
+      /* noop */
+    },
+    warn: () => {
+      /* noop */
+    },
+    error: () => {
+      /* noop */
+    },
   };
 }
 
@@ -627,7 +633,9 @@ describe("funnel merging", () => {
   test("mergeFunnel returns zeros when input is null", () => {
     const result = mergeFunnel(null);
     expect(result.length).toBe(4);
-    result.forEach((row) => expect(row.value).toBe(0));
+    for (const row of result) {
+      expect(row.value).toBe(0);
+    }
   });
 
   test("mergeFunnel ignores non-finite values", () => {

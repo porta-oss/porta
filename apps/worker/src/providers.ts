@@ -696,12 +696,14 @@ async function syncPostgres(config: {
 
     // Validate metric_value — must be a finite number
     const rawMetricValue = row.metric_value;
-    const metricValue =
-      typeof rawMetricValue === "string"
-        ? Number.parseFloat(rawMetricValue)
-        : typeof rawMetricValue === "number"
-          ? rawMetricValue
-          : Number.NaN;
+    let metricValue: number;
+    if (typeof rawMetricValue === "string") {
+      metricValue = Number.parseFloat(rawMetricValue);
+    } else if (typeof rawMetricValue === "number") {
+      metricValue = rawMetricValue;
+    } else {
+      metricValue = Number.NaN;
+    }
 
     if (!Number.isFinite(metricValue)) {
       return {
@@ -718,12 +720,14 @@ async function syncPostgres(config: {
     const rawPreviousValue = row.previous_value;
     let previousValue: number | null = null;
     if (rawPreviousValue !== null && rawPreviousValue !== undefined) {
-      const parsed =
-        typeof rawPreviousValue === "string"
-          ? Number.parseFloat(rawPreviousValue)
-          : typeof rawPreviousValue === "number"
-            ? rawPreviousValue
-            : Number.NaN;
+      let parsed: number;
+      if (typeof rawPreviousValue === "string") {
+        parsed = Number.parseFloat(rawPreviousValue);
+      } else if (typeof rawPreviousValue === "number") {
+        parsed = rawPreviousValue;
+      } else {
+        parsed = Number.NaN;
+      }
       if (!Number.isFinite(parsed)) {
         return {
           valid: false,

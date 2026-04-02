@@ -59,13 +59,23 @@ function createTestAuthController(
       return () => listeners.delete(listener);
     },
     bootstrapSession: overrides.bootstrapSession ?? mock(async () => snapshot),
-    signInWithGoogle: overrides.signInWithGoogle ?? mock(async () => {}),
-    signInWithMagicLink: overrides.signInWithMagicLink ?? mock(async () => {}),
+    signInWithGoogle:
+      overrides.signInWithGoogle ??
+      mock(async () => {
+        /* noop */
+      }),
+    signInWithMagicLink:
+      overrides.signInWithMagicLink ??
+      mock(async () => {
+        /* noop */
+      }),
     markSignedOut:
       overrides.markSignedOut ??
       mock(() => {
         snapshot = createSnapshot();
-        listeners.forEach((listener) => listener());
+        for (const listener of listeners) {
+          listener();
+        }
       }),
   };
 

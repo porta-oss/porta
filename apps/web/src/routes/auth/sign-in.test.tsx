@@ -40,13 +40,23 @@ function createTestAuthController(
       return () => listeners.delete(listener);
     },
     bootstrapSession: overrides.bootstrapSession ?? mock(async () => snapshot),
-    signInWithGoogle: overrides.signInWithGoogle ?? mock(async () => {}),
-    signInWithMagicLink: overrides.signInWithMagicLink ?? mock(async () => {}),
+    signInWithGoogle:
+      overrides.signInWithGoogle ??
+      mock(async () => {
+        /* noop */
+      }),
+    signInWithMagicLink:
+      overrides.signInWithMagicLink ??
+      mock(async () => {
+        /* noop */
+      }),
     markSignedOut:
       overrides.markSignedOut ??
       mock(() => {
         snapshot = createSnapshot();
-        listeners.forEach((listener) => listener());
+        for (const listener of listeners) {
+          listener();
+        }
       }),
   };
 
@@ -115,7 +125,9 @@ describe("sign-in route", () => {
   });
 
   test("rejects an empty magic-link email before calling Better Auth", async () => {
-    const signInWithMagicLink = mock(async () => {});
+    const signInWithMagicLink = mock(async () => {
+      /* noop */
+    });
     const { controller } = createTestAuthController(createSnapshot(), {
       signInWithMagicLink,
     });
@@ -131,7 +143,9 @@ describe("sign-in route", () => {
   });
 
   test("requests a magic link with the protected callback path and shows inline confirmation", async () => {
-    const signInWithMagicLink = mock(async () => {});
+    const signInWithMagicLink = mock(async () => {
+      /* noop */
+    });
     const { controller } = createTestAuthController(createSnapshot(), {
       signInWithMagicLink,
     });
@@ -181,7 +195,9 @@ describe("sign-in route", () => {
   });
 
   test("falls back to the safe dashboard path when callback params are malformed", async () => {
-    const navigateTo = mock(() => {});
+    const navigateTo = mock(() => {
+      /* noop */
+    });
     const { controller } = createTestAuthController(
       createAuthenticatedSnapshot()
     );

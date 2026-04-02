@@ -126,8 +126,16 @@ function createApi(overrides: Partial<DashboardApi> = {}): DashboardApi {
       mock(async (_startupId: string, provider: ConnectorProvider) => ({
         connector: createConnector(provider, "pending"),
       })),
-    triggerSync: overrides.triggerSync ?? mock(async () => {}),
-    deleteConnector: overrides.deleteConnector ?? mock(async () => {}),
+    triggerSync:
+      overrides.triggerSync ??
+      mock(async () => {
+        /* noop */
+      }),
+    deleteConnector:
+      overrides.deleteConnector ??
+      mock(async () => {
+        /* noop */
+      }),
     fetchHealth:
       overrides.fetchHealth ?? mock(async () => createHealthyPayload()),
     fetchInsight:

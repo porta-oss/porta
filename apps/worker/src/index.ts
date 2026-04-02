@@ -57,9 +57,15 @@ async function main() {
   const db = drizzle(pool);
 
   // Repository + provider router
-  const repo = createSyncRepository(db as any);
-  const healthRepo = createHealthSnapshotRepository(db as any);
-  const insightRepo = createInsightRepository(db as any);
+  const repo = createSyncRepository(
+    db as unknown as Parameters<typeof createSyncRepository>[0]
+  );
+  const healthRepo = createHealthSnapshotRepository(
+    db as unknown as Parameters<typeof createHealthSnapshotRepository>[0]
+  );
+  const insightRepo = createInsightRepository(
+    db as unknown as Parameters<typeof createInsightRepository>[0]
+  );
 
   // Provider sync router — deterministic stubs in founder-proof mode
   const validateProvider = env.founderProofMode
@@ -73,11 +79,12 @@ async function main() {
   }
 
   // Explainer — deterministic stub in founder-proof mode, Anthropic when key present
-  const explainer = env.founderProofMode
-    ? createFounderProofExplainer()
-    : env.anthropicApiKey
-      ? createAnthropicExplainer(env.anthropicApiKey)
-      : undefined;
+  let explainer: ReturnType<typeof createAnthropicExplainer> | undefined;
+  if (env.founderProofMode) {
+    explainer = createFounderProofExplainer();
+  } else if (env.anthropicApiKey) {
+    explainer = createAnthropicExplainer(env.anthropicApiKey);
+  }
 
   if (env.founderProofMode) {
     log.info(
@@ -112,12 +119,14 @@ async function main() {
     });
   });
 
-  worker.on("failed", (job: any, err: Error) => {
+  worker.on("failed", (job: unknown, err: Error) => {
+    const j = job as Record<string, unknown> | undefined;
+    const data = j?.data as Record<string, unknown> | undefined;
     log.error("job failed", {
-      jobId: job?.id,
-      syncJobId: job?.data?.syncJobId,
-      connectorId: job?.data?.connectorId,
-      attempt: job?.attemptsMade,
+      jobId: j?.id,
+      syncJobId: data?.syncJobId,
+      connectorId: data?.connectorId,
+      attempt: j?.attemptsMade,
       error: err.message,
     });
   });
@@ -130,7 +139,9 @@ async function main() {
   // Task-sync worker (Linear delivery)
   // ---------------------------------------------------------------------------
 
-  const taskRepo = createInternalTaskRepository(db as any);
+  const taskRepo = createInternalTaskRepository(
+    db as unknown as Parameters<typeof createInternalTaskRepository>[0]
+  );
   let taskSyncWorker: ReturnType<typeof createTaskSyncWorker> | undefined;
 
   // Task-sync: founder-proof mode uses deterministic stub, otherwise needs real Linear keys
@@ -164,11 +175,13 @@ async function main() {
       });
     });
 
-    taskSyncWorker.on("failed", (job: any, err: Error) => {
+    taskSyncWorker.on("failed", (job: unknown, err: Error) => {
+      const j = job as Record<string, unknown> | undefined;
+      const data = j?.data as Record<string, unknown> | undefined;
       log.error("task-sync job failed", {
-        jobId: job?.id,
-        taskId: job?.data?.taskId,
-        attempt: job?.attemptsMade,
+        jobId: j?.id,
+        taskId: data?.taskId,
+        attempt: j?.attemptsMade,
         error: err.message,
       });
     });

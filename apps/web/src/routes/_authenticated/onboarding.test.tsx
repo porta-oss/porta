@@ -154,7 +154,9 @@ describe("startup onboarding route", () => {
       startup: createStartup(WORKSPACE_A.id, input.name),
       startups: [createStartup(WORKSPACE_A.id, input.name)],
     }));
-    const navigateTo = mock(() => {});
+    const navigateTo = mock(() => {
+      /* noop */
+    });
     const api = createApi({
       listWorkspaces,
       listStartups,
@@ -370,7 +372,9 @@ describe("startup onboarding route", () => {
       listConnectors: mock(async () => ({ connectors: [] })),
     });
 
-    const navigateTo = mock(() => {});
+    const navigateTo = mock(() => {
+      /* noop */
+    });
     const view = render(<OnboardingPage api={api} navigateTo={navigateTo} />);
 
     await view.findByRole("form", { name: "PostHog setup form" });

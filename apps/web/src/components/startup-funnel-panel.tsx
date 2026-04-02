@@ -74,7 +74,7 @@ export function StartupFunnelPanel({
           : null;
 
         return (
-          <div
+          <section
             aria-label={stage.label}
             key={stage.stage}
             style={{ display: "grid", gap: "0.2rem" }}
@@ -128,12 +128,10 @@ export function StartupFunnelPanel({
                 overflow: "hidden",
               }}
             >
-              <div
+              <meter
                 aria-label={`${stage.label} bar`}
-                aria-valuemax={maxValue}
-                aria-valuemin={0}
-                aria-valuenow={stage.value}
-                role="meter"
+                max={maxValue}
+                min={0}
                 style={{
                   width: `${String(barWidthPct(stage.value, maxValue))}%`,
                   height: "100%",
@@ -141,9 +139,10 @@ export function StartupFunnelPanel({
                   background: muted ? "#d1d5db" : "#6366f1",
                   transition: "width 0.3s ease",
                 }}
+                value={stage.value}
               />
             </div>
-          </div>
+          </section>
         );
       })}
     </section>

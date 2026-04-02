@@ -509,9 +509,10 @@ export function OnboardingPage({
     }
   }
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only bootstrap effect
   useEffect(() => {
     void loadBootstrap();
-  }, [loadBootstrap]);
+  }, []);
 
   async function handleCreateWorkspace() {
     setWorkspaceError(null);

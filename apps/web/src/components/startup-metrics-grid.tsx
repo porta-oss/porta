@@ -77,7 +77,7 @@ export function StartupMetricsGrid({
         const change = computeChange(metric.value, metric.previous);
 
         return (
-          <div
+          <article
             aria-label={SUPPORTING_METRIC_LABELS[key]}
             key={key}
             style={{
@@ -116,7 +116,7 @@ export function StartupMetricsGrid({
                 {change}
               </span>
             ) : null}
-          </div>
+          </article>
         );
       })}
     </section>
