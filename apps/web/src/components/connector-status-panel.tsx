@@ -1,9 +1,10 @@
 import type { ConnectorProvider, ConnectorSummary } from "@shared/connectors";
 import { useState } from "react";
 
-// ------------------------------------------------------------------
-// Types
-// ------------------------------------------------------------------
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export interface ConnectorStatusPanelProps {
   connectors: ConnectorSummary[];
@@ -14,28 +15,26 @@ export interface ConnectorStatusPanelProps {
   onResync?: (connectorId: string) => Promise<void>;
 }
 
-// ------------------------------------------------------------------
-// Helpers
-// ------------------------------------------------------------------
-
 const PROVIDER_LABELS: Record<ConnectorProvider, string> = {
   posthog: "PostHog",
   stripe: "Stripe",
   postgres: "Postgres",
 };
 
-function statusBadgeColor(status: ConnectorSummary["status"]): string {
+function statusBadgeVariant(
+  status: ConnectorSummary["status"]
+): "default" | "secondary" | "destructive" | "outline" {
   switch (status) {
     case "connected":
-      return "#065f46";
+      return "default";
     case "pending":
-      return "#92400e";
+      return "secondary";
     case "error":
-      return "#991b1b";
+      return "destructive";
     case "disconnected":
-      return "#6b7280";
+      return "outline";
     default:
-      return "#374151";
+      return "secondary";
   }
 }
 
@@ -44,7 +43,7 @@ function statusLabel(status: ConnectorSummary["status"]): string {
     case "connected":
       return "Connected";
     case "pending":
-      return "Syncing…";
+      return "Syncing\u2026";
     case "error":
       return "Sync failed";
     case "disconnected":
@@ -77,10 +76,6 @@ function formatSyncAge(isoDate: string | null): string {
   const days = Math.floor(hours / 24);
   return `${String(days)}d ago`;
 }
-
-// ------------------------------------------------------------------
-// Component
-// ------------------------------------------------------------------
 
 export function ConnectorStatusPanel({
   connectors,
@@ -145,142 +140,106 @@ export function ConnectorStatusPanel({
   }
 
   return (
-    <section
-      aria-label="connector status"
-      style={{
-        display: "grid",
-        gap: "1rem",
-        padding: "1rem",
-        border: "1px solid #e5e7eb",
-        borderRadius: "0.75rem",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <h3 style={{ margin: 0 }}>Connectors</h3>
+    <Card aria-label="connector status">
+      <CardHeader className="flex-row items-center justify-between space-y-0">
+        <CardTitle>Connectors</CardTitle>
         {onRefresh ? (
-          <button disabled={loading} onClick={onRefresh} type="button">
-            {loading ? "Refreshing…" : "Refresh"}
-          </button>
-        ) : null}
-      </div>
-
-      {loading && connectors.length === 0 ? (
-        <p role="status" style={{ margin: 0 }}>
-          Loading connectors…
-        </p>
-      ) : null}
-
-      {error ? (
-        <p role="alert" style={{ margin: 0, color: "#991b1b" }}>
-          {error}
-        </p>
-      ) : null}
-
-      {!(loading || error) && connectors.length === 0 ? (
-        <p style={{ margin: 0, color: "#6b7280" }}>
-          No connectors configured yet. Connect PostHog or Stripe to start
-          syncing data.
-        </p>
-      ) : null}
-
-      {connectors.map((c) => {
-        const providerLabel = PROVIDER_LABELS[c.provider] ?? c.provider;
-        const actionState = actionStates[c.id] ?? "idle";
-        const actionError = actionErrors[c.id] ?? null;
-
-        return (
-          <article
-            aria-label={`${providerLabel} status`}
-            key={c.id}
-            style={{
-              display: "grid",
-              gap: "0.5rem",
-              padding: "0.75rem",
-              border: "1px solid #f3f4f6",
-              borderRadius: "0.5rem",
-            }}
+          <Button
+            disabled={loading}
+            onClick={onRefresh}
+            size="sm"
+            variant="outline"
           >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <span style={{ fontWeight: 600 }}>{providerLabel}</span>
-              <span
-                role="status"
-                style={{
-                  fontSize: "0.8rem",
-                  fontWeight: 500,
-                  color: statusBadgeColor(c.status),
-                }}
-              >
-                {statusLabel(c.status)}
-              </span>
-            </div>
+            {loading ? "Refreshing\u2026" : "Refresh"}
+          </Button>
+        ) : null}
+      </CardHeader>
 
-            <div
-              style={{
-                display: "flex",
-                gap: "1rem",
-                fontSize: "0.8rem",
-                color: "#6b7280",
-              }}
-            >
-              <span>Last sync: {formatSyncAge(c.lastSyncAt)}</span>
-              {c.lastSyncDurationMs === null ? null : (
-                <span>{String(c.lastSyncDurationMs)}ms</span>
-              )}
-            </div>
+      <CardContent className="grid gap-3">
+        {loading && connectors.length === 0 ? (
+          <p className="text-muted-foreground text-sm" role="status">
+            Loading connectors\u2026
+          </p>
+        ) : null}
 
-            {c.lastSyncError ? (
-              <p
-                role="alert"
-                style={{ margin: 0, fontSize: "0.8rem", color: "#991b1b" }}
-              >
-                {c.lastSyncError}
-              </p>
-            ) : null}
+        {error ? (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
 
-            {actionError ? (
-              <p
-                role="alert"
-                style={{ margin: 0, fontSize: "0.8rem", color: "#991b1b" }}
-              >
-                {actionError}
-              </p>
-            ) : null}
+        {!(loading || error) && connectors.length === 0 ? (
+          <p className="text-muted-foreground text-sm">
+            No connectors configured yet. Connect PostHog or Stripe to start
+            syncing data.
+          </p>
+        ) : null}
 
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              {c.status !== "disconnected" && onResync ? (
-                <button
-                  disabled={actionState === "working"}
-                  onClick={() => void handleResync(c.id)}
-                  type="button"
-                >
-                  {actionState === "working" ? "Syncing…" : "Resync"}
-                </button>
-              ) : null}
-              {c.status !== "disconnected" && onDisconnect ? (
-                <button
-                  disabled={actionState === "working"}
-                  onClick={() => void handleDisconnect(c.id)}
-                  type="button"
-                >
-                  Disconnect
-                </button>
-              ) : null}
-            </div>
-          </article>
-        );
-      })}
-    </section>
+        {connectors.map((c) => {
+          const providerLabel = PROVIDER_LABELS[c.provider] ?? c.provider;
+          const actionState = actionStates[c.id] ?? "idle";
+          const actionError = actionErrors[c.id] ?? null;
+
+          return (
+            <Card aria-label={`${providerLabel} status`} key={c.id}>
+              <CardContent className="grid gap-2 pt-4">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold">{providerLabel}</span>
+                  <Badge role="status" variant={statusBadgeVariant(c.status)}>
+                    {statusLabel(c.status)}
+                  </Badge>
+                </div>
+
+                <div className="flex gap-4 text-muted-foreground text-sm">
+                  <span>Last sync: {formatSyncAge(c.lastSyncAt)}</span>
+                  {c.lastSyncDurationMs === null ? null : (
+                    <span>{String(c.lastSyncDurationMs)}ms</span>
+                  )}
+                </div>
+
+                {c.lastSyncError ? (
+                  <Alert variant="destructive">
+                    <AlertDescription className="text-sm">
+                      {c.lastSyncError}
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+
+                {actionError ? (
+                  <Alert variant="destructive">
+                    <AlertDescription className="text-sm">
+                      {actionError}
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+
+                <div className="flex gap-2">
+                  {c.status !== "disconnected" && onResync ? (
+                    <Button
+                      disabled={actionState === "working"}
+                      onClick={() => void handleResync(c.id)}
+                      size="sm"
+                      variant="outline"
+                    >
+                      {actionState === "working" ? "Syncing\u2026" : "Resync"}
+                    </Button>
+                  ) : null}
+                  {c.status !== "disconnected" && onDisconnect ? (
+                    <Button
+                      disabled={actionState === "working"}
+                      onClick={() => void handleDisconnect(c.id)}
+                      size="sm"
+                      variant="destructive"
+                    >
+                      Disconnect
+                    </Button>
+                  ) : null}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
