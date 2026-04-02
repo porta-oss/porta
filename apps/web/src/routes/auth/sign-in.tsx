@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
-import { Link, createRoute, useNavigate } from '@tanstack/react-router';
+import { createRoute, useNavigate } from '@tanstack/react-router';
 
 import {
   DEFAULT_AUTH_REDIRECT_PATH,
@@ -182,7 +182,7 @@ export function SignInPage({ auth, search, navigateTo }: SignInPageProps) {
             autoComplete="email"
             placeholder="founder@startup.com"
             value={email}
-            onChange={(event) => setEmail(event.currentTarget.value)}
+            onInput={(event) => setEmail((event.target as HTMLInputElement).value)}
           />
           <button type="submit" disabled={pendingAction !== null}>
             {pendingAction === 'magic-link' ? 'Sending magic link…' : 'Send magic link'}

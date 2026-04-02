@@ -1,7 +1,7 @@
 import '../test/setup-dom';
 
 import { afterEach, describe, expect, mock, test } from 'bun:test';
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, render, waitFor, act } from '@testing-library/react';
 import { RouterProvider, createMemoryHistory } from '@tanstack/react-router';
 
 import type { AuthController, AuthSnapshot } from '../lib/auth-client';
@@ -117,8 +117,11 @@ describe('authenticated route guard', () => {
     expect(view.getByText('The dashboard stays locked until the session bootstrap resolves.')).toBeTruthy();
 
     const authenticatedSnapshot = createAuthenticatedSnapshot();
-    setSnapshot(authenticatedSnapshot);
-    resolveBootstrap?.(authenticatedSnapshot);
+    await act(async () => {
+      setSnapshot(authenticatedSnapshot);
+      resolveBootstrap?.(authenticatedSnapshot);
+      await deferred;
+    });
 
     expect(await view.findByRole('main', { name: 'dashboard placeholder' })).toBeTruthy();
   });

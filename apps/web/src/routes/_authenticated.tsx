@@ -1,4 +1,4 @@
-import { Outlet, createRoute, redirect } from '@tanstack/react-router';
+import { Link, Outlet, createRoute, redirect } from '@tanstack/react-router';
 
 import {
   buildProtectedRedirectTarget,
@@ -78,6 +78,9 @@ export function ProtectedHomePage() {
         <dt>Active workspace id</dt>
         <dd>{authState?.session?.session.activeOrganizationId ?? 'No active workspace yet'}</dd>
       </dl>
+      <p>
+        Still setting up the workspace? <Link to="/app/onboarding">Open the startup onboarding flow</Link>.
+      </p>
     </main>
   );
 }

@@ -25,6 +25,7 @@ function resolveApiBaseUrl() {
 }
 
 export const AUTH_BASE_URL = new URL('/api/auth', resolveApiBaseUrl()).toString();
+export const API_BASE_URL = new URL('/api', AUTH_BASE_URL).toString();
 
 export const authClient = createAuthClient({
   baseURL: AUTH_BASE_URL,

@@ -6,6 +6,12 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import type { AuthController, AuthSnapshot } from '../../lib/auth-client';
 import { SignInPage } from './sign-in';
 
+function setNativeInputValue(element: HTMLInputElement, value: string) {
+  const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+  descriptor?.set?.call(element, value);
+  fireEvent.input(element, { target: { value } });
+}
+
 function createSnapshot(overrides: Partial<AuthSnapshot> = {}): AuthSnapshot {
   return {
     status: 'signed-out',
@@ -118,9 +124,7 @@ describe('sign-in route', () => {
 
     const view = render(<SignInPage auth={controller} search={{ redirect: '/app' }} />);
 
-    fireEvent.change(view.getByLabelText('Work email'), {
-      target: { value: 'founder@example.com' }
-    });
+    setNativeInputValue(view.getByLabelText('Work email') as HTMLInputElement, 'founder@example.com');
     fireEvent.click(view.getByRole('button', { name: 'Send magic link' }));
 
     await waitFor(() => {
