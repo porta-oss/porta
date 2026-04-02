@@ -448,23 +448,6 @@ export function buildProtectedRedirectTarget(pathname: string) {
   return sanitizeRedirectTarget(pathname);
 }
 
-export function describeSessionState(snapshot: AuthSnapshot) {
-  switch (snapshot.status) {
-    case "loading":
-      return "Checking your existing session…";
-    case "authenticated":
-      return "Existing session found.";
-    case "signed-out":
-      return "No active session found.";
-    case "error":
-      return (
-        snapshot.error?.message ?? "Authentication is temporarily unavailable."
-      );
-    default:
-      return "Preparing authentication…";
-  }
-}
-
 export function normalizePostAuthRedirect(value: string | undefined) {
   return sanitizeRedirectTarget(value);
 }

@@ -19,7 +19,7 @@ test.describe("postgres custom metric dashboard flow", () => {
 
     // Wait for dashboard to load
     await expect(
-      page.getByRole("main", { name: "dashboard shell" })
+      page.getByRole("main", { name: "portfolio dashboard" })
     ).toBeVisible({ timeout: 10_000 });
 
     // The postgres setup form should be visible when no postgres connector exists
@@ -42,7 +42,7 @@ test.describe("postgres custom metric dashboard flow", () => {
   test("setup form validates blank fields", async ({ page }) => {
     await page.goto("/app");
     await expect(
-      page.getByRole("main", { name: "dashboard shell" })
+      page.getByRole("main", { name: "portfolio dashboard" })
     ).toBeVisible({ timeout: 10_000 });
 
     const hasStartups = await page
@@ -73,7 +73,7 @@ test.describe("postgres custom metric dashboard flow", () => {
   }) => {
     await page.goto("/app");
     await expect(
-      page.getByRole("main", { name: "dashboard shell" })
+      page.getByRole("main", { name: "portfolio dashboard" })
     ).toBeVisible({ timeout: 10_000 });
 
     const hasStartups = await page

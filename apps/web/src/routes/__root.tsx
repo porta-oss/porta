@@ -6,7 +6,6 @@ import {
 
 import {
   type AuthController,
-  describeSessionState,
   useAuthBootstrap,
   useAuthSnapshot,
 } from "../lib/auth-client";
@@ -44,19 +43,6 @@ function RootLayout() {
           </Link>
         </nav>
       </header>
-
-      <div
-        aria-live="polite"
-        className={`border-border border-b px-6 py-3 text-sm ${
-          snapshot.status === "error"
-            ? "bg-danger-bg text-danger"
-            : "bg-muted text-muted-foreground"
-        }`}
-        data-auth-diagnostic={snapshot.diagnostic}
-        role="status"
-      >
-        {describeSessionState(snapshot)}
-      </div>
 
       <Outlet />
     </div>

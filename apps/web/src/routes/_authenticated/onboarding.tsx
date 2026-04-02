@@ -787,7 +787,7 @@ export function OnboardingPage({
             <p className="text-muted-foreground text-sm">
               {activeWorkspace
                 ? `The first startup will be created inside ${activeWorkspace.name}.`
-                : "Startup creation stays locked until a valid active workspace exists."}
+                : "Create a workspace first, then add your startup."}
             </p>
           </div>
 
@@ -883,7 +883,7 @@ export function OnboardingPage({
       {/* Legacy: if startup exists but no connector step, still show dashboard nav */}
       {primaryStartup && !showConnectorStep ? (
         <Button onClick={() => navigateTo?.("/app")} type="button">
-          Return to dashboard shell
+          Go to dashboard
         </Button>
       ) : null}
 

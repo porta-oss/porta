@@ -79,7 +79,7 @@ export async function signInFounder(
 
   await expect(page).toHaveURL(/\/app$/);
   await expect(
-    page.getByRole("main", { name: "dashboard shell" })
+    page.getByRole("main", { name: "portfolio dashboard" })
   ).toBeVisible();
 }
 
@@ -92,7 +92,7 @@ export async function completeOnboarding(
   workspaceName: string,
   startupName: string
 ): Promise<void> {
-  await page.getByRole("link", { name: "Open workspace onboarding" }).click();
+  await page.getByRole("link", { name: "Get started" }).click();
   await expect(page).toHaveURL(/\/app\/onboarding$/);
 
   await page.getByLabel("Workspace name").fill(workspaceName);
@@ -141,7 +141,7 @@ export async function connectFounderProofProviders(page: Page): Promise<void> {
 
   await expect(page).toHaveURL(/\/app$/);
   await expect(
-    page.getByRole("main", { name: "dashboard shell" })
+    page.getByRole("main", { name: "portfolio dashboard" })
   ).toBeVisible();
 }
 

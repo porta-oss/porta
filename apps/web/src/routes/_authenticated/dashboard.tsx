@@ -1388,14 +1388,13 @@ export function DashboardPage({
         {!activeWorkspace && shellStatus === "ready" ? (
           <div className="grid gap-2">
             <p className="text-sm">
-              Create or select a workspace before the dashboard can load scoped
-              product data.
+              Create or select a workspace to see your portfolio.
             </p>
             <a
               className="text-primary text-sm underline-offset-4 hover:underline"
               href="/app/onboarding"
             >
-              Open workspace onboarding
+              Get started
             </a>
           </div>
         ) : null}

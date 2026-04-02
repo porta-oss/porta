@@ -62,13 +62,13 @@ test.describe("portfolio prioritization surface", () => {
 
     await expect(page).toHaveURL(/\/app$/);
     await expect(
-      page.getByRole("main", { name: "dashboard shell" })
+      page.getByRole("main", { name: "portfolio dashboard" })
     ).toBeVisible();
 
     // ----------------------------------------------------------------
     // Step 2: Create workspace + startup via onboarding
     // ----------------------------------------------------------------
-    await page.getByRole("link", { name: "Open workspace onboarding" }).click();
+    await page.getByRole("link", { name: "Get started" }).click();
     await expect(page).toHaveURL(/\/app\/onboarding$/);
 
     await page.getByLabel("Workspace name").fill(workspaceName);
@@ -107,7 +107,7 @@ test.describe("portfolio prioritization surface", () => {
 
     await expect(page).toHaveURL(/\/app$/);
     await expect(
-      page.getByRole("main", { name: "dashboard shell" })
+      page.getByRole("main", { name: "portfolio dashboard" })
     ).toBeVisible();
 
     // ----------------------------------------------------------------

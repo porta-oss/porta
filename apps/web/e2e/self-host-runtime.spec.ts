@@ -55,7 +55,7 @@ test.describe("self-host runtime", () => {
 
     // The page should contain sign-in related content
     const signInContent = page.locator(
-      'text=/sign[\\s-]?in|log[\\s-]?in|email/i'
+      "text=/sign[\\s-]?in|log[\\s-]?in|email/i"
     );
     await expect(signInContent.first()).toBeVisible({ timeout: 10_000 });
   });

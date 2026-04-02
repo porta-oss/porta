@@ -233,7 +233,7 @@ afterEach(() => {
   cleanup();
 });
 
-describe("dashboard shell route", () => {
+describe("dashboard route", () => {
   test("shows the mounted workspace and startup context after bootstrap", async () => {
     const api = createApi();
     const view = render(
@@ -241,7 +241,7 @@ describe("dashboard shell route", () => {
     );
 
     expect(
-      await view.findByRole("main", { name: "dashboard shell" })
+      await view.findByRole("main", { name: "portfolio dashboard" })
     ).toBeTruthy();
     expect(
       view.getByRole("heading", { name: "Portfolio overview" })
@@ -263,7 +263,7 @@ describe("dashboard shell route", () => {
     );
 
     expect(
-      await view.findByRole("main", { name: "dashboard shell" })
+      await view.findByRole("main", { name: "portfolio dashboard" })
     ).toBeTruthy();
     expect(
       (
@@ -314,10 +314,10 @@ describe("dashboard shell route", () => {
     ).toBeGreaterThanOrEqual(2);
   });
 
-  test("shows a shell bootstrap failure loudly when workspace context cannot be parsed", async () => {
+  test("shows a loading failure when workspace context cannot be parsed", async () => {
     const api = createApi({
       listWorkspaces: mock(async () => {
-        throw new Error("The dashboard shell could not be bootstrapped.");
+        throw new Error("Could not load the dashboard. Please try again.");
       }),
     });
     const view = render(
@@ -325,11 +325,9 @@ describe("dashboard shell route", () => {
     );
 
     expect((await view.findByRole("alert")).textContent).toContain(
-      "The dashboard shell could not be bootstrapped."
+      "Could not load the dashboard. Please try again."
     );
-    expect(
-      view.getByRole("button", { name: "Retry shell bootstrap" })
-    ).toBeTruthy();
+    expect(view.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 
   test("switches the active workspace and reloads startup navigation for the new tenant", async () => {

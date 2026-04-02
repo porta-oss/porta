@@ -65,13 +65,13 @@ test.describe("connector setup and status flow", () => {
 
     await expect(page).toHaveURL(/\/app$/);
     await expect(
-      page.getByRole("main", { name: "dashboard shell" })
+      page.getByRole("main", { name: "portfolio dashboard" })
     ).toBeVisible();
 
     // ----------------------------------------------------------------
     // Step 2: Create workspace + startup via onboarding
     // ----------------------------------------------------------------
-    await page.getByRole("link", { name: "Open workspace onboarding" }).click();
+    await page.getByRole("link", { name: "Get started" }).click();
     await expect(page).toHaveURL(/\/app\/onboarding$/);
 
     await page.getByLabel("Workspace name").fill(workspaceName);
@@ -127,7 +127,7 @@ test.describe("connector setup and status flow", () => {
 
     await expect(page).toHaveURL(/\/app$/);
     await expect(
-      page.getByRole("main", { name: "dashboard shell" })
+      page.getByRole("main", { name: "portfolio dashboard" })
     ).toBeVisible();
     await expect(page.getByText("Primary startup:")).toBeVisible();
 
@@ -188,7 +188,7 @@ test.describe("connector setup and status flow", () => {
     await expect(page).toHaveURL(/\/app$/);
 
     // Create workspace + startup
-    await page.getByRole("link", { name: "Open workspace onboarding" }).click();
+    await page.getByRole("link", { name: "Get started" }).click();
     await page.getByLabel("Workspace name").fill(workspaceName);
     await page.getByRole("button", { name: "Create workspace" }).click();
     await expect(
@@ -211,7 +211,7 @@ test.describe("connector setup and status flow", () => {
 
     await expect(page).toHaveURL(/\/app$/);
     await expect(
-      page.getByRole("main", { name: "dashboard shell" })
+      page.getByRole("main", { name: "portfolio dashboard" })
     ).toBeVisible();
 
     // Dashboard should show setup cards for missing connectors
@@ -266,7 +266,7 @@ test.describe("connector setup and status flow", () => {
     await expect(page).toHaveURL(/\/app$/);
 
     // Create workspace + startup
-    await page.getByRole("link", { name: "Open workspace onboarding" }).click();
+    await page.getByRole("link", { name: "Get started" }).click();
     await page.getByLabel("Workspace name").fill(workspaceName);
     await page.getByRole("button", { name: "Create workspace" }).click();
     await expect(

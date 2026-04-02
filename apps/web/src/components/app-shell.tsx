@@ -49,7 +49,7 @@ export function AppShell({
 
   return (
     <main
-      aria-label="dashboard shell"
+      aria-label="portfolio dashboard"
       className="grid gap-8 bg-background p-6 pb-10"
     >
       <header className="grid gap-1">

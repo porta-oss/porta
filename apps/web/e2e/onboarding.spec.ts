@@ -25,7 +25,7 @@ async function fetchLatestMagicLink(request: APIRequestContext, email: string) {
 }
 
 test.describe("founder onboarding flow", () => {
-  test("signs in with a dev magic link, finishes onboarding, and lands in the authenticated shell", async ({
+  test("signs in with a dev magic link, finishes onboarding, and lands in the dashboard", async ({
     page,
   }) => {
     const runId = Date.now();
@@ -58,20 +58,13 @@ test.describe("founder onboarding flow", () => {
 
     await expect(page).toHaveURL(/\/app$/);
     await expect(
-      page.getByRole("main", { name: "dashboard shell" })
+      page.getByRole("main", { name: "portfolio dashboard" })
     ).toBeVisible();
     await expect(
-      page.getByText(
-        "Create or select a workspace before the dashboard can load scoped product data."
-      )
-    ).toBeVisible();
-    await expect(
-      page.getByText(
-        "The dashboard shell is ready, but startup navigation stays locked until a workspace becomes active."
-      )
+      page.getByText("Create or select a workspace to see your portfolio.")
     ).toBeVisible();
 
-    await page.getByRole("link", { name: "Open workspace onboarding" }).click();
+    await page.getByRole("link", { name: "Get started" }).click();
 
     await expect(page).toHaveURL(/\/app\/onboarding$/);
     await page.getByLabel("Workspace name").fill(workspaceName);

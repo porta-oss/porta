@@ -40,7 +40,7 @@ test.describe("founder self-serve proof", () => {
 
     // Dashboard shell should be visible after returning from onboarding
     await expect(
-      page.getByRole("main", { name: "dashboard shell" })
+      page.getByRole("main", { name: "portfolio dashboard" })
     ).toBeVisible({ timeout: 10_000 });
 
     // ── Phase 4: Wait for worker to process sync + health recompute ──
@@ -51,7 +51,7 @@ test.describe("founder self-serve proof", () => {
     await page.waitForTimeout(3000);
     await page.reload();
     await expect(
-      page.getByRole("main", { name: "dashboard shell" })
+      page.getByRole("main", { name: "portfolio dashboard" })
     ).toBeVisible({ timeout: 10_000 });
 
     // Startup list should show the startup we created
@@ -101,7 +101,7 @@ test.describe("founder self-serve proof", () => {
     // ── Phase 7: Verify state survives page reload ──
     await page.reload();
     await expect(
-      page.getByRole("main", { name: "dashboard shell" })
+      page.getByRole("main", { name: "portfolio dashboard" })
     ).toBeVisible({ timeout: 10_000 });
 
     // Health and startup list should still be visible

@@ -125,14 +125,12 @@ describe("authenticated route guard", () => {
     }
   });
 
-  test("shows a deterministic loading shell while the session bootstrap is pending", () => {
+  test("shows a loading state while verifying the session", () => {
     const view = render(<AuthPendingShell />);
 
-    expect(view.getByRole("main", { name: "auth bootstrap" })).toBeTruthy();
+    expect(view.getByRole("main", { name: "signing in" })).toBeTruthy();
     expect(
-      view.getByText(
-        "The dashboard stays locked until the session bootstrap resolves."
-      )
+      view.getByText("Verifying your session before loading the dashboard.")
     ).toBeTruthy();
   });
 
@@ -148,7 +146,7 @@ describe("authenticated route guard", () => {
     });
   });
 
-  test("treats malformed session bootstrap results as unauthenticated and redirects safely", async () => {
+  test("treats malformed session data as unauthenticated and redirects safely", async () => {
     const malformedSignedOut = createSnapshot({
       status: "signed-out",
       diagnostic: "malformed-session",
@@ -160,9 +158,7 @@ describe("authenticated route guard", () => {
 
     try {
       await runBeforeLoad(controller);
-      throw new Error(
-        "Expected malformed session bootstrap to redirect safely."
-      );
+      throw new Error("Expected malformed session data to redirect safely.");
     } catch (error) {
       expect(error).toMatchObject({
         options: {
