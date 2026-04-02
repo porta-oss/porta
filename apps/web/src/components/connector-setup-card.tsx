@@ -1,9 +1,11 @@
 import type { ConnectorProvider, ConnectorSummary } from "@shared/connectors";
 import { useState } from "react";
 
-// ------------------------------------------------------------------
-// Types
-// ------------------------------------------------------------------
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export interface PostHogFormValues {
   apiKey: string;
@@ -17,7 +19,6 @@ export interface StripeFormValues {
 
 export interface ConnectorSetupCardProps {
   disabled?: boolean;
-  /** Pre-existing connector for this provider (null = not connected). */
   existing: ConnectorSummary | null;
   onConnect: (
     provider: ConnectorProvider,
@@ -26,10 +27,6 @@ export interface ConnectorSetupCardProps {
   onSkip?: (provider: ConnectorProvider) => void;
   provider: ConnectorProvider;
 }
-
-// ------------------------------------------------------------------
-// Validation helpers
-// ------------------------------------------------------------------
 
 function validatePostHogFields(values: PostHogFormValues): string | null {
   if (!values.apiKey.trim()) {
@@ -54,19 +51,11 @@ function validateStripeFields(values: StripeFormValues): string | null {
   return null;
 }
 
-// ------------------------------------------------------------------
-// Provider labels
-// ------------------------------------------------------------------
-
 const PROVIDER_LABELS: Record<ConnectorProvider, string> = {
   posthog: "PostHog",
   stripe: "Stripe",
   postgres: "Postgres",
 };
-
-// ------------------------------------------------------------------
-// Component
-// ------------------------------------------------------------------
 
 export function ConnectorSetupCard({
   provider,
@@ -117,138 +106,129 @@ export function ConnectorSetupCard({
       await onConnect(provider, config);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Connection failed. Please retry."
+        err instanceof Error
+          ? err.message
+          : "Could not connect. Check your credentials and try again."
       );
     } finally {
       setSubmitting(false);
     }
   }
 
-  // If connector already exists, show connected state
   if (existing && existing.status !== "disconnected") {
     return (
-      <section
+      <Card
         aria-label={`${label} connector`}
-        style={{
-          display: "grid",
-          gap: "0.5rem",
-          padding: "1rem",
-          border: "1px solid #d1fae5",
-          borderRadius: "0.75rem",
-          background: "#ecfdf5",
-        }}
+        className="border-success-border bg-success-bg"
       >
-        <p style={{ margin: 0, fontWeight: 600 }}>{label}</p>
-        <p role="status" style={{ margin: 0, color: "#065f46" }}>
-          Connected
-        </p>
-      </section>
+        <CardContent className="pt-6">
+          <p className="font-semibold">{label}</p>
+          <p className="text-success" role="status">
+            Connected
+          </p>
+        </CardContent>
+      </Card>
     );
   }
 
   const isDisabled = disabled || submitting;
 
   return (
-    <form
-      aria-label={`${label} setup form`}
-      onSubmit={(event) => {
-        event.preventDefault();
-        void handleSubmit();
-      }}
-      style={{
-        display: "grid",
-        gap: "0.75rem",
-        padding: "1rem",
-        border: "1px solid #e5e7eb",
-        borderRadius: "0.75rem",
-      }}
-    >
-      <p style={{ margin: 0, fontWeight: 600 }}>{label}</p>
+    <Card aria-label={`${label} setup form`}>
+      <CardContent className="pt-6">
+        <form
+          className="grid gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleSubmit();
+          }}
+        >
+          <p className="font-semibold">{label}</p>
 
-      {provider === "posthog" ? (
-        <>
-          <label htmlFor={`${provider}-api-key`}>API key</label>
-          <input
-            disabled={isDisabled}
-            id={`${provider}-api-key`}
-            onInput={(e) =>
-              setPosthogValues((v) => ({
-                ...v,
-                apiKey: (e.target as HTMLInputElement).value,
-              }))
-            }
-            placeholder="phc_..."
-            type="text"
-            value={posthogValues.apiKey}
-          />
-          <label htmlFor={`${provider}-project-id`}>Project ID</label>
-          <input
-            disabled={isDisabled}
-            id={`${provider}-project-id`}
-            onInput={(e) =>
-              setPosthogValues((v) => ({
-                ...v,
-                projectId: (e.target as HTMLInputElement).value,
-              }))
-            }
-            placeholder="12345"
-            type="text"
-            value={posthogValues.projectId}
-          />
-          <label htmlFor={`${provider}-host`}>Host (optional)</label>
-          <input
-            disabled={isDisabled}
-            id={`${provider}-host`}
-            onInput={(e) =>
-              setPosthogValues((v) => ({
-                ...v,
-                host: (e.target as HTMLInputElement).value,
-              }))
-            }
-            placeholder="https://us.posthog.com"
-            type="text"
-            value={posthogValues.host}
-          />
-        </>
-      ) : (
-        <>
-          <label htmlFor={`${provider}-secret-key`}>Secret key</label>
-          <input
-            disabled={isDisabled}
-            id={`${provider}-secret-key`}
-            onInput={(e) =>
-              setStripeValues((v) => ({
-                ...v,
-                secretKey: (e.target as HTMLInputElement).value,
-              }))
-            }
-            placeholder="sk_test_..."
-            type="password"
-            value={stripeValues.secretKey}
-          />
-        </>
-      )}
+          {provider === "posthog" ? (
+            <>
+              <div className="grid gap-1.5">
+                <Label htmlFor={`${provider}-api-key`}>API key</Label>
+                <Input
+                  disabled={isDisabled}
+                  id={`${provider}-api-key`}
+                  onChange={(e) =>
+                    setPosthogValues((v) => ({ ...v, apiKey: e.target.value }))
+                  }
+                  placeholder="phc_..."
+                  type="text"
+                  value={posthogValues.apiKey}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor={`${provider}-project-id`}>Project ID</Label>
+                <Input
+                  disabled={isDisabled}
+                  id={`${provider}-project-id`}
+                  onChange={(e) =>
+                    setPosthogValues((v) => ({
+                      ...v,
+                      projectId: e.target.value,
+                    }))
+                  }
+                  placeholder="12345"
+                  type="text"
+                  value={posthogValues.projectId}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor={`${provider}-host`}>Host (optional)</Label>
+                <Input
+                  disabled={isDisabled}
+                  id={`${provider}-host`}
+                  onChange={(e) =>
+                    setPosthogValues((v) => ({ ...v, host: e.target.value }))
+                  }
+                  placeholder="https://us.posthog.com"
+                  type="text"
+                  value={posthogValues.host}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${provider}-secret-key`}>Secret key</Label>
+              <Input
+                disabled={isDisabled}
+                id={`${provider}-secret-key`}
+                onChange={(e) =>
+                  setStripeValues((v) => ({ ...v, secretKey: e.target.value }))
+                }
+                placeholder="sk_test_..."
+                type="password"
+                value={stripeValues.secretKey}
+              />
+            </div>
+          )}
 
-      {error ? (
-        <p role="alert" style={{ margin: 0, color: "#991b1b" }}>
-          {error}
-        </p>
-      ) : null}
+          {error ? (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
 
-      <div style={{ display: "flex", gap: "0.5rem" }}>
-        <button disabled={isDisabled} type="submit">
-          {submitting ? `Connecting ${label}…` : `Connect ${label}`}
-        </button>
-        {onSkip ? (
-          <button
-            disabled={isDisabled}
-            onClick={() => onSkip(provider)}
-            type="button"
-          >
-            Skip for now
-          </button>
-        ) : null}
-      </div>
-    </form>
+          <div className="flex gap-2">
+            <Button disabled={isDisabled} type="submit">
+              {submitting ? `Connecting ${label}\u2026` : `Connect ${label}`}
+            </Button>
+            {onSkip ? (
+              <Button
+                disabled={isDisabled}
+                onClick={() => onSkip(provider)}
+                type="button"
+                variant="outline"
+              >
+                Skip for now
+              </Button>
+            ) : null}
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
