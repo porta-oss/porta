@@ -172,9 +172,7 @@ export function SignInPage({ auth, search, navigateTo }: SignInPageProps) {
     }
   }
 
-  async function handleMagicLinkSubmit(
-    event: React.FormEvent<HTMLFormElement>
-  ) {
+  async function handleMagicLinkSubmit(event: { preventDefault: () => void }) {
     event.preventDefault();
     setInlineError(null);
     setMagicLinkSentTo(null);
