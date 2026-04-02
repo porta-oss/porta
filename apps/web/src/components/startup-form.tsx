@@ -6,6 +6,18 @@ import {
   type StartupDraft,
 } from "@shared/types";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
 export interface StartupFormProps {
   disabled?: boolean;
   error?: string | null;
@@ -24,110 +36,122 @@ export function StartupForm({
   return (
     <form
       aria-label="startup form"
+      className="grid gap-3"
       onSubmit={(event) => {
         event.preventDefault();
         void onSubmit();
       }}
-      style={{ display: "grid", gap: "0.75rem" }}
     >
-      <label htmlFor="startup-name">Startup name</label>
-      <input
-        disabled={disabled}
-        id="startup-name"
-        name="name"
-        onInput={(event) =>
-          onChange({ ...value, name: (event.target as HTMLInputElement).value })
-        }
-        placeholder="Acme Analytics"
-        type="text"
-        value={value.name}
-      />
+      <div className="grid gap-1.5">
+        <Label htmlFor="startup-name">Startup name</Label>
+        <Input
+          disabled={disabled}
+          id="startup-name"
+          name="name"
+          onChange={(event) => onChange({ ...value, name: event.target.value })}
+          placeholder="Acme Analytics"
+          type="text"
+          value={value.name}
+        />
+      </div>
 
-      <label htmlFor="startup-type">Startup type</label>
-      <select
-        disabled={disabled}
-        id="startup-type"
-        name="type"
-        onChange={(event) =>
-          onChange({
-            ...value,
-            type: event.target.value as StartupDraft["type"],
-          })
-        }
-        value={value.type}
-      >
-        {STARTUP_TYPES.map((type) => (
-          <option key={type} value={type}>
-            {type}
-          </option>
-        ))}
-      </select>
+      <div className="grid gap-1.5">
+        <Label htmlFor="startup-type">Startup type</Label>
+        <Select
+          disabled={disabled}
+          onValueChange={(v) =>
+            onChange({ ...value, type: v as StartupDraft["type"] })
+          }
+          value={value.type}
+        >
+          <SelectTrigger id="startup-type">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {STARTUP_TYPES.map((type) => (
+              <SelectItem key={type} value={type}>
+                {type}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
-      <label htmlFor="startup-stage">Stage</label>
-      <select
-        disabled={disabled}
-        id="startup-stage"
-        name="stage"
-        onChange={(event) =>
-          onChange({
-            ...value,
-            stage: event.target.value as StartupDraft["stage"],
-          })
-        }
-        value={value.stage}
-      >
-        {STARTUP_STAGES.map((stage) => (
-          <option key={stage} value={stage}>
-            {stage}
-          </option>
-        ))}
-      </select>
+      <div className="grid gap-1.5">
+        <Label htmlFor="startup-stage">Stage</Label>
+        <Select
+          disabled={disabled}
+          onValueChange={(v) =>
+            onChange({ ...value, stage: v as StartupDraft["stage"] })
+          }
+          value={value.stage}
+        >
+          <SelectTrigger id="startup-stage">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {STARTUP_STAGES.map((stage) => (
+              <SelectItem key={stage} value={stage}>
+                {stage}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
-      <label htmlFor="startup-timezone">Timezone</label>
-      <select
-        disabled={disabled}
-        id="startup-timezone"
-        name="timezone"
-        onChange={(event) =>
-          onChange({
-            ...value,
-            timezone: event.target.value as StartupDraft["timezone"],
-          })
-        }
-        value={value.timezone}
-      >
-        {STARTUP_TIMEZONES.map((timezone) => (
-          <option key={timezone} value={timezone}>
-            {timezone}
-          </option>
-        ))}
-      </select>
+      <div className="grid gap-1.5">
+        <Label htmlFor="startup-timezone">Timezone</Label>
+        <Select
+          disabled={disabled}
+          onValueChange={(v) =>
+            onChange({ ...value, timezone: v as StartupDraft["timezone"] })
+          }
+          value={value.timezone}
+        >
+          <SelectTrigger id="startup-timezone">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {STARTUP_TIMEZONES.map((timezone) => (
+              <SelectItem key={timezone} value={timezone}>
+                {timezone}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
-      <label htmlFor="startup-currency">Currency</label>
-      <select
-        disabled={disabled}
-        id="startup-currency"
-        name="currency"
-        onChange={(event) =>
-          onChange({
-            ...value,
-            currency: event.target.value as StartupDraft["currency"],
-          })
-        }
-        value={value.currency}
-      >
-        {STARTUP_CURRENCIES.map((currency) => (
-          <option key={currency} value={currency}>
-            {currency}
-          </option>
-        ))}
-      </select>
+      <div className="grid gap-1.5">
+        <Label htmlFor="startup-currency">Currency</Label>
+        <Select
+          disabled={disabled}
+          onValueChange={(v) =>
+            onChange({ ...value, currency: v as StartupDraft["currency"] })
+          }
+          value={value.currency}
+        >
+          <SelectTrigger id="startup-currency">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {STARTUP_CURRENCIES.map((currency) => (
+              <SelectItem key={currency} value={currency}>
+                {currency}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
 
-      <button disabled={disabled} type="submit">
-        {disabled ? "Creating startup…" : "Create startup"}
-      </button>
+      <Button disabled={disabled} type="submit">
+        {disabled ? "Creating startup\u2026" : "Create startup"}
+      </Button>
     </form>
   );
 }
