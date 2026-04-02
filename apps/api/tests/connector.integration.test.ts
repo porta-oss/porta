@@ -25,14 +25,13 @@ const TEST_ENV = {
   API_PORT: "3000",
   API_URL: "http://localhost:3000",
   WEB_URL: "http://localhost:5173",
-  DATABASE_URL:
-    "postgres://postgres:postgres@127.0.0.1:5432/founder_control_plane",
+  DATABASE_URL: "postgres://postgres:postgres@127.0.0.1:5432/porta",
   REDIS_URL: "redis://127.0.0.1:6379",
   BETTER_AUTH_URL: "http://localhost:3000",
   BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
   GOOGLE_CLIENT_ID: "google-client-id",
   GOOGLE_CLIENT_SECRET: "google-client-secret",
-  MAGIC_LINK_SENDER_EMAIL: "dev@founder-control-plane.local",
+  MAGIC_LINK_SENDER_EMAIL: "dev@porta.local",
   CONNECTOR_ENCRYPTION_KEY:
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   AUTH_CONTEXT_TIMEOUT_MS: "2000",

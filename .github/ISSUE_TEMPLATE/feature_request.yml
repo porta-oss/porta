@@ -1,0 +1,69 @@
+name: Feature Request
+description: Suggest a new feature or improvement for Porta
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a feature. Porta is in public alpha — we value community input on what to build next.
+
+        > **Questions or help:** If you need help using Porta, please use [GitHub Discussions](../../../discussions) or [Discord](https://discord.gg/porta) instead.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of Porta does this relate to?
+      options:
+        - API server
+        - Web dashboard
+        - Background worker
+        - Connectors / integrations
+        - Self-hosting / deployment
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or motivation
+      description: What problem does this feature solve? Why is it needed?
+      placeholder: I'm always frustrated when ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would you like this to work?
+      placeholder: Describe the feature or behavior you'd like to see.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Have you considered any alternatives or workarounds?
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Any other context, mockups, or references.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I searched existing issues and this feature has not been requested
+          required: true

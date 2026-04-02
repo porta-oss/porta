@@ -1,4 +1,4 @@
-# Founder Control Plane — v1 feature breakdown
+# Porta — v1 feature breakdown
 
 ## Release goal
 

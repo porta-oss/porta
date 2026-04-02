@@ -1,5 +1,5 @@
 {
-  "name": "founder-control-plane",
+  "name": "porta",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -23,7 +23,9 @@
     "lint": "bun run typecheck",
     "check": "ultracite check",
     "fix": "ultracite fix",
-    "prepare": "lefthook install"
+    "prepare": "lefthook install",
+    "verify:m002:s01": "bash scripts/verify-m002-s01.sh",
+    "verify:m002:s03": "bash scripts/verify-m002-s03.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.9",

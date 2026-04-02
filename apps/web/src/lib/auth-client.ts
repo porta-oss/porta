@@ -11,33 +11,47 @@ export const AUTH_BOOTSTRAP_TIMEOUT_MS = Number(
 export const DEFAULT_AUTH_REDIRECT_PATH = "/app";
 export const AUTH_SESSION_BOOTSTRAP_PATH = "/get-session";
 
-function resolveApiBaseUrl() {
+export function resolveApiBaseUrl(location?: {
+  origin: string;
+  hostname: string;
+}) {
   const configured = import.meta.env.VITE_API_URL?.trim();
 
   if (configured) {
     return configured;
   }
 
-  if (typeof window !== "undefined" && window.location.origin) {
-    const { hostname } = window.location;
+  const loc =
+    location ?? (typeof window === "undefined" ? undefined : window.location);
+
+  // Self-host: resolve from the current origin so the web client
+  // always reaches the API through the same host the user loaded.
+  if (loc?.origin) {
+    const { hostname } = loc;
 
     if (hostname === "localhost" || hostname === "127.0.0.1") {
       return "http://localhost:3000";
     }
+
+    // Non-localhost origin → same-origin /api (reverse-proxy expected)
+    return loc.origin;
   }
 
   return "http://localhost:3000";
 }
 
-function resolveWebBaseUrl() {
+export function resolveWebBaseUrl(location?: { origin: string }) {
   const configured = import.meta.env.VITE_WEB_URL?.trim();
 
   if (configured) {
     return configured;
   }
 
-  if (typeof window !== "undefined" && window.location.origin) {
-    return window.location.origin;
+  const loc =
+    location ?? (typeof window === "undefined" ? undefined : window.location);
+
+  if (loc?.origin) {
+    return loc.origin;
   }
 
   return "http://localhost:5173";

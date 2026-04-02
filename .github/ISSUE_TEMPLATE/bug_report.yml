@@ -1,0 +1,89 @@
+name: Bug Report
+description: Report a bug in Porta
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug. Please fill out the sections below so we can reproduce and fix the issue.
+
+        > **Security vulnerabilities:** If this is a security issue, **do not** use this form. See [SECURITY.md](../SECURITY.md) for private reporting instructions.
+
+  - type: input
+    id: version
+    attributes:
+      label: Porta version
+      description: Which version or commit SHA are you running?
+      placeholder: e.g. 0.1.0-alpha or commit abc1234
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      description: Which part of Porta is affected?
+      options:
+        - API server
+        - Web dashboard
+        - Background worker
+        - Self-hosting / deployment
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug description
+      description: A clear description of what happened and what you expected to happen.
+      placeholder: |
+        What happened:
+        What I expected:
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Step-by-step instructions to reproduce the bug.
+      placeholder: |
+        1. Go to ...
+        2. Click on ...
+        3. See error ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Any relevant environment details.
+      placeholder: |
+        OS: macOS 15.2
+        Browser: Chrome 131
+        Deployment: Docker / Railway / local dev
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or screenshots
+      description: Paste error logs, console output, or attach screenshots.
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I searched existing issues and this bug has not been reported
+          required: true
+        - label: This is not a security vulnerability (those go to [SECURITY.md](../SECURITY.md))
+          required: true

@@ -1,5 +1,5 @@
 {
-  "name": "@founder-control-plane/shared",
+  "name": "@porta/shared",
   "private": true,
   "type": "module",
   "exports": {

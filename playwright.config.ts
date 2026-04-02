@@ -9,10 +9,9 @@ const sharedRuntimeEnv = {
   VITE_API_URL: "http://localhost:3000",
   BETTER_AUTH_URL: "http://localhost:3000",
   BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
-  DATABASE_URL:
-    "postgres://postgres:postgres@127.0.0.1:5432/founder_control_plane",
+  DATABASE_URL: "postgres://postgres:postgres@127.0.0.1:5432/porta",
   REDIS_URL: "redis://127.0.0.1:6379",
-  MAGIC_LINK_SENDER_EMAIL: "dev@founder-control-plane.local",
+  MAGIC_LINK_SENDER_EMAIL: "dev@porta.local",
   AUTH_CONTEXT_TIMEOUT_MS: "4000",
   DATABASE_CONNECT_TIMEOUT_MS: "30000",
   DATABASE_POOL_MAX: "10",

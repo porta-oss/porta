@@ -514,6 +514,18 @@ export async function createApiApp(
       return {
         status: "ok" as const,
         service: "api",
+        edition: env.edition,
+        release: {
+          product: "porta",
+          maturity: "alpha" as const,
+          license: "AGPL-3.0",
+          support: "community",
+        },
+        runtime: {
+          nodeEnv: env.nodeEnv,
+          founderProofMode: env.founderProofMode,
+          apiHost: env.apiHost,
+        },
         founderProofMode: env.founderProofMode,
         startupRoutes,
         auth: {

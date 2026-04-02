@@ -31,7 +31,7 @@ function RootLayout() {
       <header className="flex items-center justify-between border-border border-b px-6 py-4">
         <div>
           <p className="text-muted-foreground text-xs uppercase tracking-wider">
-            Founder Control Plane
+            Porta
           </p>
           <strong>Portfolio Dashboard</strong>
         </div>

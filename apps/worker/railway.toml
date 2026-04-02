@@ -1,0 +1,13 @@
+# Porta Worker — Railway service config
+# Builds with Bun, runs with Node for native module compatibility (pg, ioredis, bullmq).
+# Requires Postgres and Redis services provisioned in the same project.
+# No public port — this is a background job processor.
+
+[build]
+builder = "nixpacks"
+buildCommand = "bun install --frozen-lockfile && cd apps/worker && bun run build"
+
+[deploy]
+startCommand = "node apps/worker/dist/index.js"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 5

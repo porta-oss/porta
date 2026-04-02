@@ -58,7 +58,7 @@ export function createAuthRuntime(
   const providers = summarizeAuthProviders(env);
 
   const auth = betterAuth({
-    appName: "Founder Control Plane",
+    appName: "Porta",
     baseURL: env.betterAuthUrl,
     basePath: "/api/auth",
     secret: env.betterAuthSecret,

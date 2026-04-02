@@ -1,0 +1,53 @@
+title: "[Q&A]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ask a question about Porta — setup, configuration, usage, or anything else.
+
+        > **Porta is community-supported (alpha).** Answers come from maintainers and other community members on a best-effort basis. For real-time help, join [Discord](https://discord.gg/porta).
+
+        > **Bug reports** belong in [Issues](../../../issues/new?template=bug_report.yml), not here.
+        > **Security issues** go to [SECURITY.md](../../SECURITY.md) — never post them publicly.
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      description: What area does your question relate to?
+      options:
+        - Local development setup
+        - Self-hosting / deployment
+        - Connectors and integrations
+        - API usage
+        - Dashboard / web app
+        - Contributing
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: Describe what you need help with. Include any error messages, logs, or context.
+      placeholder: |
+        What I'm trying to do:
+        What I've tried:
+        What happened:
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment (if relevant)
+      description: Share your setup details if the question is about running Porta.
+      placeholder: |
+        OS: macOS 15.2
+        Porta version: 0.1.0-alpha
+        Deployment: Docker / Railway / local dev
+      render: text
+    validations:
+      required: false

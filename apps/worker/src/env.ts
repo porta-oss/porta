@@ -26,8 +26,7 @@ export interface WorkerEnv {
 
 const DEFAULTS = {
   NODE_ENV: "development",
-  DATABASE_URL:
-    "postgres://postgres:postgres@127.0.0.1:5432/founder_control_plane",
+  DATABASE_URL: "postgres://postgres:postgres@127.0.0.1:5432/porta",
   REDIS_URL: "redis://127.0.0.1:6379",
   WORKER_CONCURRENCY: "3",
   JOB_TIMEOUT_MS: "30000",

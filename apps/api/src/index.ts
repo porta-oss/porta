@@ -5,9 +5,11 @@ try {
   const env = readApiEnv(process.env, { strict: true });
   const app = await createApiApp(process.env, { env });
 
-  app.listen(env.apiPort);
+  app.listen({ port: env.apiPort, hostname: env.apiHost });
 
   console.info("[api] bootstrap ready", {
+    edition: env.edition,
+    apiHost: env.apiHost,
     apiPort: env.apiPort,
     apiUrl: env.apiUrl,
     webUrl: env.webUrl,

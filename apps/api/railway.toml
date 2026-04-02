@@ -1,0 +1,14 @@
+# Porta API — Railway service config
+# Deploys the Elysia API server using Bun.
+# Requires Postgres and Redis services provisioned in the same project.
+# Health check: GET /api/health → { "status": "ok" }
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "bun src/index.ts"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 5

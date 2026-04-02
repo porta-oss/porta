@@ -1,7 +1,7 @@
-## PRD — Founder Control Plane
+## PRD — Porta
 
 **Working title**
-Founder Control Plane
+Porta
 
 **Product vision**
 A multi-startup operating system for founders, indie hackers, and small teams that connects product, growth, revenue, and execution data into one place, then uses AI to explain what matters, why it matters, and what to do next.

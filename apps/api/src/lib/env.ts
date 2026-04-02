@@ -1,6 +1,9 @@
+import { type PortaEdition, parseEdition } from "@shared/edition";
+
 export type RuntimeMode = "development" | "test" | "production";
 
 export interface ApiEnv {
+  apiHost: string;
   apiPort: number;
   apiUrl: string;
   authContextTimeoutMs: number;
@@ -10,6 +13,7 @@ export interface ApiEnv {
   databaseConnectTimeoutMs: number;
   databasePoolMax: number;
   databaseUrl: string;
+  edition: PortaEdition;
   founderProofMode: boolean;
   googleClientId?: string;
   googleClientSecret?: string;
@@ -21,14 +25,14 @@ export interface ApiEnv {
 
 const DEFAULTS = {
   NODE_ENV: "development",
+  API_HOST: "0.0.0.0",
   API_PORT: "3000",
   API_URL: "http://localhost:3000",
   WEB_URL: "http://localhost:5173",
-  DATABASE_URL:
-    "postgres://postgres:postgres@127.0.0.1:5432/founder_control_plane",
+  DATABASE_URL: "postgres://postgres:postgres@127.0.0.1:5432/porta",
   REDIS_URL: "redis://127.0.0.1:6379",
   BETTER_AUTH_URL: "http://localhost:3000",
-  MAGIC_LINK_SENDER_EMAIL: "dev@founder-control-plane.local",
+  MAGIC_LINK_SENDER_EMAIL: "dev@porta.local",
   AUTH_CONTEXT_TIMEOUT_MS: "2000",
   DATABASE_CONNECT_TIMEOUT_MS: "5000",
   DATABASE_POOL_MAX: "10",
@@ -155,7 +159,9 @@ export function readApiEnv(
   }
 
   return {
+    edition: parseEdition(source.PORTA_EDITION),
     nodeEnv: parseRuntimeMode(source.NODE_ENV),
+    apiHost: (source.API_HOST ?? DEFAULTS.API_HOST).trim() || DEFAULTS.API_HOST,
     apiPort: parseInteger(
       "API_PORT",
       source.API_PORT ?? DEFAULTS.API_PORT,
@@ -236,6 +242,7 @@ export function createBootstrapDiagnostics(
 
   return {
     message,
+    edition: source.PORTA_EDITION ?? "community",
     nodeEnv: source.NODE_ENV ?? DEFAULTS.NODE_ENV,
     founderProofMode: source.FOUNDER_PROOF_MODE ?? "absent",
     config: {

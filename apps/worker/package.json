@@ -1,10 +1,12 @@
 {
-  "name": "@founder-control-plane/worker",
+  "name": "@porta/worker",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "bun src/index.ts",
+    "start:node": "node dist/index.js",
     "dev": "bun --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target node --format esm --sourcemap=external",
     "test": "bun test"
   },
   "dependencies": {
