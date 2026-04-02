@@ -1,5 +1,15 @@
 import type { StartupRecord } from "@shared/types";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+
 export interface StartupListProps {
   error?: string | null;
   onRetry?: () => void | Promise<void>;
@@ -18,102 +28,86 @@ export function StartupList({
   const isBusy = status === "loading" || status === "refreshing";
 
   return (
-    <section
-      aria-label="startup list"
-      style={{
-        display: "grid",
-        gap: "0.875rem",
-        padding: "1rem",
-        border: "1px solid #e5e7eb",
-        borderRadius: "1rem",
-        background: "#fff",
-      }}
-    >
-      <div>
-        <p
-          style={{
-            margin: 0,
-            fontSize: "0.75rem",
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            color: "#6b7280",
-          }}
-        >
-          Startup scope
-        </p>
-        <h2 style={{ margin: "0.35rem 0 0", fontSize: "1.125rem" }}>
+    <Card aria-label="startup list">
+      <CardHeader>
+        <CardDescription className="text-xs uppercase tracking-wider">
+          Startups
+        </CardDescription>
+        <CardTitle className="text-lg">
           {workspaceName ? `${workspaceName} startups` : "Portfolio navigation"}
-        </h2>
-      </div>
+        </CardTitle>
+      </CardHeader>
 
-      {status === "loading" ? (
-        <p role="status">
-          Loading startup navigation for the active workspace…
-        </p>
-      ) : null}
-      {status === "refreshing" ? (
-        <p role="status">
-          Refreshing startup navigation for the active workspace…
-        </p>
-      ) : null}
-
-      {status === "error" ? (
-        <div style={{ display: "grid", gap: "0.75rem" }}>
-          <p role="alert" style={{ margin: 0, color: "#991b1b" }}>
-            {error ?? "The startup navigation could not be loaded."}
+      <CardContent className="grid gap-3">
+        {status === "loading" ? (
+          <p className="text-muted-foreground text-sm" role="status">
+            Loading startups…
           </p>
-          <button onClick={() => void onRetry?.()} type="button">
-            Retry startup load
-          </button>
-        </div>
-      ) : null}
-
-      {status !== "error" && !workspaceName ? (
-        <div style={{ display: "grid", gap: "0.5rem" }}>
-          <p style={{ margin: 0 }}>
-            The dashboard shell is ready, but startup navigation stays locked
-            until a workspace becomes active.
+        ) : null}
+        {status === "refreshing" ? (
+          <p className="text-muted-foreground text-sm" role="status">
+            Refreshing startups…
           </p>
-          <a href="/app/onboarding">
-            Create or select a workspace in onboarding
-          </a>
-        </div>
-      ) : null}
+        ) : null}
 
-      {status !== "error" &&
-      workspaceName &&
-      startups.length === 0 &&
-      !isBusy ? (
-        <div style={{ display: "grid", gap: "0.5rem" }}>
-          <p style={{ margin: 0 }}>
-            No startups are attached to this workspace yet.
-          </p>
-          <a href="/app/onboarding">Add the first startup profile</a>
-        </div>
-      ) : null}
+        {status === "error" ? (
+          <div className="grid gap-3">
+            <Alert variant="destructive">
+              <AlertDescription>
+                {error ?? "Startups could not be loaded."}
+              </AlertDescription>
+            </Alert>
+            <Button onClick={() => void onRetry?.()} variant="outline">
+              Try again
+            </Button>
+          </div>
+        ) : null}
 
-      {startups.length > 0 ? (
-        <ul
-          style={{
-            margin: 0,
-            paddingLeft: "1rem",
-            display: "grid",
-            gap: "0.75rem",
-          }}
-        >
-          {startups.map((startup, index) => (
-            <li key={startup.id}>
-              <strong>{startup.name}</strong>
-              <div style={{ color: "#4b5563" }}>
-                {index === 0 ? "Primary startup" : "Startup"} ·{" "}
-                {startup.stage.replace("_", " ")} ·{" "}
-                {startup.type.replace("_", " ")} · {startup.timezone} ·{" "}
-                {startup.currency}
-              </div>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </section>
+        {status !== "error" && !workspaceName ? (
+          <div className="grid gap-2">
+            <p className="text-sm">Select a workspace to see your startups.</p>
+            <a
+              className="text-primary text-sm underline underline-offset-4"
+              href="/app/onboarding"
+            >
+              Set up a workspace
+            </a>
+          </div>
+        ) : null}
+
+        {status !== "error" &&
+        workspaceName &&
+        startups.length === 0 &&
+        !isBusy ? (
+          <div className="grid gap-2">
+            <p className="text-sm">
+              No startups are attached to this workspace yet.
+            </p>
+            <a
+              className="text-primary text-sm underline underline-offset-4"
+              href="/app/onboarding"
+            >
+              Add the first startup profile
+            </a>
+          </div>
+        ) : null}
+
+        {startups.length > 0 ? (
+          <ul className="m-0 grid gap-3 pl-4">
+            {startups.map((startup, index) => (
+              <li key={startup.id}>
+                <strong>{startup.name}</strong>
+                <div className="text-muted-foreground text-sm">
+                  {index === 0 ? "Primary startup" : "Startup"} ·{" "}
+                  {startup.stage.replace("_", " ")} ·{" "}
+                  {startup.type.replace("_", " ")} · {startup.timezone} ·{" "}
+                  {startup.currency}
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
