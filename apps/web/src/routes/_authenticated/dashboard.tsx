@@ -24,7 +24,9 @@ import {
 import type { StartupRecord, WorkspaceSummary } from "@shared/types";
 import { createRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { AppShell } from "../../components/app-shell";
 import { ConnectorSetupCard } from "../../components/connector-setup-card";
 import { ConnectorStatusPanel } from "../../components/connector-status-panel";
@@ -239,7 +241,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
         reject(
           new DashboardApiError(
             "REQUEST_TIMEOUT",
-            "The dashboard shell timed out while loading. Retry the bootstrap."
+            "The request timed out. Please try again."
           )
         ),
       timeoutMs
@@ -276,7 +278,7 @@ async function requestJson(path: string, init?: RequestInit) {
   } catch {
     throw new DashboardApiError(
       "MALFORMED_RESPONSE",
-      "The dashboard shell received a malformed response. Retry the bootstrap."
+      "Something went wrong loading the dashboard. Please try again."
     );
   }
 
@@ -291,11 +293,11 @@ async function requestJson(path: string, init?: RequestInit) {
             message:
               typeof payload.error.message === "string"
                 ? payload.error.message
-                : "The dashboard shell request could not be completed.",
+                : "The request could not be completed. Please try again.",
           } satisfies DashboardApiErrorShape)
         : {
             code: `HTTP_${response.status}`,
-            message: "The dashboard shell request could not be completed.",
+            message: "The request could not be completed. Please try again.",
           };
 
     throw new DashboardApiError(error.code, error.message);
@@ -322,7 +324,7 @@ function createDefaultDashboardApi(): DashboardApi {
       ) {
         throw new DashboardApiError(
           "MALFORMED_WORKSPACE_CONTEXT",
-          "The dashboard shell could not parse the workspace context."
+          "Could not load workspace data. Please try again."
         );
       }
 
@@ -346,7 +348,7 @@ function createDefaultDashboardApi(): DashboardApi {
       ) {
         throw new DashboardApiError(
           "MALFORMED_WORKSPACE_SWITCH",
-          "Workspace selection returned an unexpected shell payload."
+          "Workspace switch failed. Please try again."
         );
       }
 
@@ -368,7 +370,7 @@ function createDefaultDashboardApi(): DashboardApi {
       ) {
         throw new DashboardApiError(
           "MALFORMED_STARTUP_LIST",
-          "The dashboard shell could not parse the startup list."
+          "Could not load startups. Please try again."
         );
       }
 
@@ -391,7 +393,7 @@ function createDefaultDashboardApi(): DashboardApi {
       ) {
         throw new DashboardApiError(
           "MALFORMED_CONNECTOR_LIST",
-          "The dashboard shell could not parse the connector list."
+          "Could not load connectors. Please try again."
         );
       }
 
@@ -406,7 +408,7 @@ function createDefaultDashboardApi(): DashboardApi {
       if (!(isRecord(payload) && isConnectorSummary(payload.connector))) {
         throw new DashboardApiError(
           "MALFORMED_CONNECTOR_CREATE",
-          "Connector creation returned an unexpected response."
+          "Could not save connector. Please try again."
         );
       }
 
@@ -430,7 +432,7 @@ function createDefaultDashboardApi(): DashboardApi {
       if (!isRecord(payload)) {
         throw new DashboardApiError(
           "MALFORMED_HEALTH",
-          "Health response is not an object."
+          "Could not load health data. Please try again."
         );
       }
 
@@ -469,7 +471,7 @@ function createDefaultDashboardApi(): DashboardApi {
         if (metricsError || funnelError) {
           throw new DashboardApiError(
             "MALFORMED_HEALTH_SNAPSHOT",
-            `Health snapshot contains invalid data: ${metricsError ?? funnelError ?? "unknown"}.`
+            "Health data is incomplete. Please try again."
           );
         }
 
@@ -546,7 +548,7 @@ function createDefaultDashboardApi(): DashboardApi {
       if (!isRecord(payload)) {
         throw new DashboardApiError(
           "MALFORMED_INSIGHT",
-          "Insight response is not an object."
+          "Could not load insight data. Please try again."
         );
       }
 
@@ -576,7 +578,7 @@ function createDefaultDashboardApi(): DashboardApi {
         ) {
           throw new DashboardApiError(
             "MALFORMED_INSIGHT",
-            `Invalid condition code in insight: ${String(ins.conditionCode)}`
+            "Insight data is incomplete. Please try again."
           );
         }
 
@@ -585,7 +587,7 @@ function createDefaultDashboardApi(): DashboardApi {
         if (evidenceErr) {
           throw new DashboardApiError(
             "MALFORMED_INSIGHT",
-            `Invalid evidence in insight: ${evidenceErr}`
+            "Insight data is incomplete. Please try again."
           );
         }
 
@@ -977,7 +979,7 @@ export function DashboardPage({
       if (startupState.workspace.id !== workspaceId) {
         throw new DashboardApiError(
           "WORKSPACE_SCOPE_MISMATCH",
-          "The dashboard shell received startup data for the wrong workspace."
+          "Startup data does not match the active workspace. Please try again."
         );
       }
 
@@ -996,7 +998,7 @@ export function DashboardPage({
       setStartupError(
         getDashboardErrorMessage(
           error,
-          "Startup navigation failed to load. Retry from the shell."
+          "Startups could not be loaded. Please try again."
         )
       );
       setStartupStatus("error");
@@ -1018,7 +1020,7 @@ export function DashboardPage({
       setShellError(
         getDashboardErrorMessage(
           error,
-          "The dashboard shell could not be bootstrapped. Retry the workspace lookup."
+          "Could not load the dashboard. Please try again."
         )
       );
       setStartupStatus("idle");
@@ -1043,7 +1045,7 @@ export function DashboardPage({
       setWorkspaceError(
         getDashboardErrorMessage(
           error,
-          "Workspace switching failed. Retry from the shell."
+          "Could not switch workspace. Please try again."
         )
       );
     } finally {
@@ -1129,21 +1131,13 @@ export function DashboardPage({
       workspaceError={workspaceError}
       workspaces={workspaces}
     >
-      <div style={{ display: "grid", gap: "1.5rem" }}>
+      <div className="grid gap-6">
         {/* ── Portfolio prioritization surface ── */}
         <div>
-          <p
-            style={{
-              margin: 0,
-              fontSize: "0.75rem",
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "#6b7280",
-            }}
-          >
+          <p className="text-muted-foreground text-xs uppercase tracking-wider">
             Portfolio
           </p>
-          <h2 style={{ margin: "0.35rem 0 0" }}>Startup prioritization</h2>
+          <h2 className="mt-1">Startup prioritization</h2>
         </div>
 
         {activeWorkspace && startups.length > 0 ? (
@@ -1166,47 +1160,41 @@ export function DashboardPage({
               />
             ) : null}
             {healthStatus === "loading" && primaryStartup ? (
-              <section
+              <Card
                 aria-label="portfolio startup card"
                 data-testid="portfolio-startup-card"
-                style={{
-                  display: "grid",
-                  gap: "0.75rem",
-                  padding: "1.25rem",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "1rem",
-                  background: "#ffffff",
-                }}
               >
-                <p role="status" style={{ margin: 0, color: "#6b7280" }}>
-                  Loading portfolio…
-                </p>
-              </section>
+                <CardContent className="grid gap-3 pt-5">
+                  <p className="text-muted-foreground text-sm" role="status">
+                    Loading portfolio…
+                  </p>
+                </CardContent>
+              </Card>
             ) : null}
 
             {/* Health error banner — preserves connector panel and shell */}
             {healthStatus === "error" ? (
-              <section
+              <Card
                 aria-label="health error"
-                style={{
-                  display: "grid",
-                  gap: "0.5rem",
-                  padding: "1rem",
-                  border: "1px solid #fecaca",
-                  borderRadius: "0.75rem",
-                  background: "#fef2f2",
-                }}
+                className="border-danger-border bg-danger-bg"
               >
-                <p role="alert" style={{ margin: 0, color: "#991b1b" }}>
-                  {healthError ?? "Failed to load startup health data."}
-                </p>
-                <button
-                  onClick={() => void refreshHealth(primaryStartup?.id ?? null)}
-                  type="button"
-                >
-                  Retry health load
-                </button>
-              </section>
+                <CardContent className="grid gap-2 pt-4">
+                  <Alert variant="destructive">
+                    <AlertDescription>
+                      {healthError ?? "Failed to load startup health data."}
+                    </AlertDescription>
+                  </Alert>
+                  <Button
+                    onClick={() =>
+                      void refreshHealth(primaryStartup?.id ?? null)
+                    }
+                    type="button"
+                    variant="outline"
+                  >
+                    Retry health load
+                  </Button>
+                </CardContent>
+              </Card>
             ) : null}
 
             {/* ── Grounded Insight ── */}
@@ -1223,32 +1211,30 @@ export function DashboardPage({
               />
             ) : null}
             {insightStatus === "error" ? (
-              <section
+              <Card
                 aria-label="insight error"
-                style={{
-                  display: "grid",
-                  gap: "0.5rem",
-                  padding: "1rem",
-                  border: "1px solid #fecaca",
-                  borderRadius: "0.75rem",
-                  background: "#fef2f2",
-                }}
+                className="border-danger-border bg-danger-bg"
               >
-                <p role="alert" style={{ margin: 0, color: "#991b1b" }}>
-                  {insightError ?? "Failed to load insight data."}
-                </p>
-                <button
-                  onClick={() =>
-                    void refreshInsight(primaryStartup?.id ?? null)
-                  }
-                  type="button"
-                >
-                  Retry insight load
-                </button>
-              </section>
+                <CardContent className="grid gap-2 pt-4">
+                  <Alert variant="destructive">
+                    <AlertDescription>
+                      {insightError ?? "Failed to load insight data."}
+                    </AlertDescription>
+                  </Alert>
+                  <Button
+                    onClick={() =>
+                      void refreshInsight(primaryStartup?.id ?? null)
+                    }
+                    type="button"
+                    variant="outline"
+                  >
+                    Retry insight load
+                  </Button>
+                </CardContent>
+              </Card>
             ) : null}
             {insightStatus === "loading" ? (
-              <p role="status" style={{ margin: 0, color: "#6b7280" }}>
+              <p className="text-muted-foreground text-sm" role="status">
                 Loading insight…
               </p>
             ) : null}
@@ -1262,18 +1248,8 @@ export function DashboardPage({
             />
 
             {/* ── Health & connector drill-down ── */}
-            <div
-              style={{ borderTop: "1px solid #e5e7eb", paddingTop: "1.25rem" }}
-            >
-              <p
-                style={{
-                  margin: "0 0 0.75rem",
-                  fontSize: "0.75rem",
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: "#6b7280",
-                }}
-              >
+            <div className="border-border border-t pt-5">
+              <p className="mb-3 text-muted-foreground text-xs uppercase tracking-wider">
                 Health detail
               </p>
             </div>
@@ -1314,9 +1290,7 @@ export function DashboardPage({
 
                 {/* Stale state guidance */}
                 {healthPayload.status === "stale" ? (
-                  <p
-                    style={{ margin: 0, fontSize: "0.85rem", color: "#92400e" }}
-                  >
+                  <p className="text-sm text-warning">
                     Health data is stale. Resync your connectors below to
                     refresh metrics.
                   </p>
@@ -1340,7 +1314,7 @@ export function DashboardPage({
 
             {/* Loading state */}
             {healthStatus === "loading" ? (
-              <p role="status" style={{ margin: 0, color: "#6b7280" }}>
+              <p className="text-muted-foreground text-sm" role="status">
                 Loading health data…
               </p>
             ) : null}
@@ -1393,21 +1367,31 @@ export function DashboardPage({
         {activeWorkspace &&
         startups.length === 0 &&
         startupStatus === "ready" ? (
-          <div style={{ display: "grid", gap: "0.5rem" }}>
-            <p style={{ margin: 0 }}>
+          <div className="grid gap-2">
+            <p className="text-sm">
               No startups are attached to this workspace yet.
             </p>
-            <a href="/app/onboarding">Complete onboarding</a>
+            <a
+              className="text-primary text-sm underline-offset-4 hover:underline"
+              href="/app/onboarding"
+            >
+              Complete onboarding
+            </a>
           </div>
         ) : null}
 
         {!activeWorkspace && shellStatus === "ready" ? (
-          <div style={{ display: "grid", gap: "0.5rem" }}>
-            <p style={{ margin: 0 }}>
+          <div className="grid gap-2">
+            <p className="text-sm">
               Create or select a workspace before the dashboard can load scoped
               product data.
             </p>
-            <a href="/app/onboarding">Open workspace onboarding</a>
+            <a
+              className="text-primary text-sm underline-offset-4 hover:underline"
+              href="/app/onboarding"
+            >
+              Open workspace onboarding
+            </a>
           </div>
         ) : null}
       </div>
