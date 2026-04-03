@@ -28,6 +28,7 @@ import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { AppShell } from "../../components/app-shell";
 import { ConnectorSetupCard } from "../../components/connector-setup-card";
 import { ConnectorStatusPanel } from "../../components/connector-status-panel";
@@ -1082,6 +1083,11 @@ function DashboardHealthSection({
           Startup health detail
         </h3>
       </div>
+
+      <Separator
+        className="bg-border/60"
+        data-testid="health-detail-separator"
+      />
 
       {healthStatus === "ready" && healthPayload ? (
         <FadeIn className="grid gap-4">

@@ -218,7 +218,7 @@ function createHealthyPayload(): StartupHealthPayload {
   };
 }
 
-function _createBlockedPayload(): StartupHealthPayload {
+function createBlockedPayload(): StartupHealthPayload {
   return {
     health: null,
     connectors: [],
@@ -356,6 +356,46 @@ describe("dashboard route", () => {
     expect(
       view.container.querySelector('[data-health-summary-count="3"]')
     ).toBeTruthy();
+  });
+
+  test("renders blocked rows with a solid marker and error rows with a ring marker", async () => {
+    const api = createApi({
+      fetchHealth: mock(async (startupId: string) => {
+        if (startupId.endsWith("Beta Billing")) {
+          throw new Error("connector timeout");
+        }
+
+        return startupId.endsWith("Gamma Growth")
+          ? createBlockedPayload()
+          : createHealthyPayload();
+      }),
+      listStartups: mock(async () => ({
+        workspace: WORKSPACE_A,
+        startups: [
+          createStartup(WORKSPACE_A.id, "Acme Analytics"),
+          createStartup(WORKSPACE_A.id, "Beta Billing"),
+          createStartup(WORKSPACE_A.id, "Gamma Growth"),
+        ],
+      })),
+    });
+    const view = render(
+      <DashboardPage
+        api={api}
+        authState={createAuthenticatedSnapshot()}
+        routeStartupId={`${WORKSPACE_A.id}_Acme Analytics`}
+      />
+    );
+
+    const activeRow = await view.findByRole("button", {
+      name: /Acme Analytics/i,
+    });
+    const blockedRow = view.getByRole("button", { name: /Gamma Growth/i });
+    const errorRow = view.getByRole("button", { name: /Beta Billing/i });
+
+    expect(activeRow.getAttribute("data-health-tone")).toBe("healthy");
+    expect(activeRow.className).toContain("bg-success-bg/55");
+    expect(blockedRow.getAttribute("data-health-indicator")).toBe("solid");
+    expect(errorRow.getAttribute("data-health-indicator")).toBe("ring");
   });
 
   test("replaces a stale route startup after switching workspaces", async () => {
