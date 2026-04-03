@@ -5,6 +5,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 
 import { readWorkerEnv } from "./env";
+import { createWorkerHealthServer } from "./health-server";
 import {
   createAnthropicExplainer,
   createFounderProofExplainer,
@@ -51,10 +52,26 @@ const log = {
   },
 };
 
+function createOptionalWorkerHealthServer() {
+  const port = Number.parseInt(process.env.PORT ?? "", 10);
+  if (!Number.isInteger(port)) {
+    return null;
+  }
+
+  const healthServer = createWorkerHealthServer({ port });
+  log.info("worker health server listening", {
+    path: "/health",
+    port,
+  });
+
+  return healthServer;
+}
+
 async function main() {
   log.info("starting worker process");
 
   const env = readWorkerEnv(process.env as Record<string, string | undefined>);
+  const healthServer = createOptionalWorkerHealthServer();
 
   // Postgres pool
   const pool = new Pool({
@@ -218,6 +235,10 @@ async function main() {
   // Graceful shutdown
   const shutdown = async (signal: string) => {
     log.info(`received ${signal}, shutting down`);
+    if (healthServer) {
+      healthServer.setReady(false);
+      await healthServer.close();
+    }
     await worker.close();
     if (taskSyncWorker) {
       await taskSyncWorker.close();
@@ -230,6 +251,7 @@ async function main() {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
   process.on("SIGINT", () => void shutdown("SIGINT"));
 
+  healthServer?.setReady(true);
   log.info("worker bootstrap complete", {
     nodeEnv: env.nodeEnv,
     founderProofMode: env.founderProofMode,

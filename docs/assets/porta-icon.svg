@@ -1,0 +1,10 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="portaGradient" x1="96" y1="64" x2="416" y2="448" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F766E"/>
+      <stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+  </defs>
+  <path d="M96 128C96 92.6538 124.654 64 160 64H272C360.366 64 432 135.634 432 224C432 312.366 360.366 384 272 384H192V448H96V128Z" fill="url(#portaGradient)"/>
+  <path d="M192 160V288H272C307.346 288 336 259.346 336 224C336 188.654 307.346 160 272 160H192Z" fill="white"/>
+</svg>
