@@ -24,8 +24,7 @@ import {
   validateInsightExplanation,
 } from "@shared/startup-insight";
 import type { StartupRecord, WorkspaceSummary } from "@shared/types";
-import { createRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -58,7 +57,6 @@ import {
   buildPortfolioCardViewModel,
   buildPortfolioErrorViewModel,
 } from "../../lib/portfolio-card";
-import { authenticatedRoute } from "../_authenticated";
 
 // ------------------------------------------------------------------
 // API interface
@@ -141,6 +139,11 @@ export interface DashboardApi {
 export interface DashboardPageProps {
   api?: DashboardApi;
   authState: AuthSnapshot;
+  navigateToStartup?: (
+    startupId: string,
+    replace?: boolean
+  ) => void | Promise<void>;
+  routeStartupId?: string | null;
 }
 
 type DashboardContentView = "overview" | "health-connectors";
@@ -1327,31 +1330,11 @@ function DashboardHealthConnectorsPanel({
   );
 }
 
-// ------------------------------------------------------------------
-// Route
-// ------------------------------------------------------------------
-
-export const dashboardRoute = createRoute({
-  getParentRoute: () => authenticatedRoute,
-  path: "app",
-  component: DashboardRouteComponent,
-});
-
-function DashboardRouteComponent() {
-  const authState = dashboardRoute.useRouteContext({
-    select: (context) => context.authState as AuthSnapshot,
-  });
-
-  return <DashboardPage authState={authState} />;
-}
-
-// ------------------------------------------------------------------
-// Page component
-// ------------------------------------------------------------------
-
 export function DashboardPage({
   authState,
   api = createDefaultDashboardApi(),
+  navigateToStartup,
+  routeStartupId = null,
 }: DashboardPageProps) {
   const [shellStatus, setShellStatus] = useState<"loading" | "ready" | "error">(
     "loading"
@@ -1416,16 +1399,46 @@ export function DashboardPage({
     [activeWorkspaceId, workspaces]
   );
 
-  const primaryStartup = startups[0] ?? null;
-  const primaryStartupId = primaryStartup?.id ?? null;
+  const selectedStartup =
+    startups.find((startup) => startup.id === routeStartupId) ??
+    startups[0] ??
+    null;
+  const selectedStartupId = selectedStartup?.id ?? null;
+  const hasMatchingRouteStartup =
+    routeStartupId !== null &&
+    startups.some((startup) => startup.id === routeStartupId);
 
   useEffect(() => {
-    if (!primaryStartupId) {
+    if (!selectedStartupId) {
       setContentView(null);
       return;
     }
     setContentView(null);
-  }, [primaryStartupId]);
+  }, [selectedStartupId]);
+
+  useEffect(() => {
+    if (
+      !navigateToStartup ||
+      startupStatus !== "ready" ||
+      startups.length === 0 ||
+      (routeStartupId !== null && hasMatchingRouteStartup)
+    ) {
+      return;
+    }
+
+    const fallbackStartupId = startups[0]?.id;
+    if (!fallbackStartupId) {
+      return;
+    }
+
+    void navigateToStartup(fallbackStartupId, true);
+  }, [
+    hasMatchingRouteStartup,
+    navigateToStartup,
+    routeStartupId,
+    startupStatus,
+    startups,
+  ]);
 
   // Determine which providers already have a connector
   const posthogConnector =
@@ -1533,7 +1546,7 @@ export function DashboardPage({
   }
 
   async function handleCreateTaskFromAction(actionIndex: number) {
-    if (!primaryStartup || creatingActionIndex !== null) {
+    if (!selectedStartup || creatingActionIndex !== null) {
       return;
     }
 
@@ -1541,7 +1554,7 @@ export function DashboardPage({
     setTaskCreateError(null);
 
     try {
-      const result = await api.createTask(primaryStartup.id, actionIndex);
+      const result = await api.createTask(selectedStartup.id, actionIndex);
       setTasks((currentTasks) => mergeTask(currentTasks, result.task));
     } catch (error) {
       setTaskCreateError(
@@ -1579,13 +1592,6 @@ export function DashboardPage({
 
       setStartups(startupState.startups);
       setStartupStatus("ready");
-
-      // Load connectors and health for the primary startup
-      const primaryId = startupState.startups[0]?.id ?? null;
-      await refreshConnectors(primaryId);
-      await refreshHealth(primaryId);
-      await refreshInsight(primaryId);
-      await refreshTasks(primaryId);
     } catch (error) {
       setStartups([]);
       setConnectors([]);
@@ -1651,11 +1657,11 @@ export function DashboardPage({
     provider: ConnectorProvider,
     config: Record<string, string>
   ) {
-    if (!primaryStartup) {
+    if (!selectedStartup) {
       return;
     }
     const result = await api.createConnector(
-      primaryStartup.id,
+      selectedStartup.id,
       provider,
       config
     );
@@ -1667,21 +1673,21 @@ export function DashboardPage({
   async function handleResync(connectorId: string) {
     await api.triggerSync(connectorId);
     // Refresh connectors to show updated status
-    if (primaryStartup) {
-      await refreshConnectors(primaryStartup.id);
+    if (selectedStartup) {
+      await refreshConnectors(selectedStartup.id);
     }
   }
 
   async function handleDisconnect(connectorId: string) {
     await api.deleteConnector(connectorId);
     // Refresh connectors to reflect disconnected state
-    if (primaryStartup) {
-      await refreshConnectors(primaryStartup.id);
+    if (selectedStartup) {
+      await refreshConnectors(selectedStartup.id);
     }
   }
 
   async function handlePostgresSetup(values: PostgresSetupFormValues) {
-    if (!primaryStartup) {
+    if (!selectedStartup) {
       return;
     }
 
@@ -1689,7 +1695,7 @@ export function DashboardPage({
     setPgSetupSubmitting(true);
 
     try {
-      const result = await api.createPostgresMetric(primaryStartup.id, values);
+      const result = await api.createPostgresMetric(selectedStartup.id, values);
       setConnectors((currentConnectors) =>
         replaceConnectorByProvider(
           currentConnectors,
@@ -1702,6 +1708,19 @@ export function DashboardPage({
       setPgSetupSubmitting(false);
     }
   }
+
+  const refreshSelectedStartupData = useEffectEvent(
+    (startupId: string | null) => {
+      void refreshConnectors(startupId);
+      void refreshHealth(startupId);
+      void refreshInsight(startupId);
+      void refreshTasks(startupId);
+    }
+  );
+
+  useEffect(() => {
+    refreshSelectedStartupData(selectedStartupId);
+  }, [selectedStartupId]);
 
   // Filter active connectors for the status panel
   const activeConnectors = connectors.filter(
@@ -1757,12 +1776,12 @@ export function DashboardPage({
                 insightStatus={insightStatus}
                 onCreateTask={handleCreateTaskFromAction}
                 onRetryInsight={() => {
-                  void refreshInsight(primaryStartup?.id ?? null);
+                  void refreshInsight(selectedStartupId);
                 }}
                 onRetryTasks={() => {
-                  void refreshTasks(primaryStartup?.id ?? null);
+                  void refreshTasks(selectedStartupId);
                 }}
-                primaryStartup={primaryStartup}
+                primaryStartup={selectedStartup}
                 taskCreateError={taskCreateError}
                 taskListError={taskListError}
                 taskListStatus={taskListStatus}
@@ -1780,11 +1799,11 @@ export function DashboardPage({
                 onDisconnect={handleDisconnect}
                 onPostgresSetup={handlePostgresSetup}
                 onRefreshConnectors={() => {
-                  void refreshConnectors(primaryStartup?.id ?? null);
+                  void refreshConnectors(selectedStartupId);
                 }}
                 onResync={handleResync}
                 onRetryHealth={() => {
-                  void refreshHealth(primaryStartup?.id ?? null);
+                  void refreshHealth(selectedStartupId);
                 }}
                 pgSetupSubmitting={pgSetupSubmitting}
                 postgresConnector={postgresConnector}

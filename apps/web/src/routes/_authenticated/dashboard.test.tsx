@@ -240,6 +240,37 @@ afterEach(() => {
 });
 
 describe("dashboard route", () => {
+  test("normalizes a missing route startup id to the first startup in the workspace", async () => {
+    const navigateToStartup = mock(async () => {
+      /* noop */
+    });
+    const api = createApi({
+      listStartups: mock(async () => ({
+        workspace: WORKSPACE_A,
+        startups: [
+          createStartup(WORKSPACE_A.id, "Acme Analytics"),
+          createStartup(WORKSPACE_A.id, "Beta Billing"),
+        ],
+      })),
+    });
+
+    render(
+      <DashboardPage
+        api={api}
+        authState={createAuthenticatedSnapshot()}
+        navigateToStartup={navigateToStartup}
+        routeStartupId={null}
+      />
+    );
+
+    await waitFor(() => {
+      expect(navigateToStartup).toHaveBeenCalledWith(
+        `${WORKSPACE_A.id}_Acme Analytics`,
+        true
+      );
+    });
+  });
+
   test("shows the mounted workspace and startup context after bootstrap", async () => {
     const api = createApi();
     const view = render(
@@ -252,9 +283,11 @@ describe("dashboard route", () => {
     expect(
       view.getByRole("heading", { name: "Portfolio overview" })
     ).toBeTruthy();
-    expect(
-      (await view.findAllByText("Acme Analytics")).length
-    ).toBeGreaterThanOrEqual(2);
+    await waitFor(() => {
+      expect(view.getAllByText("Acme Analytics").length).toBeGreaterThanOrEqual(
+        2
+      );
+    });
   });
 
   test("keeps the shell chrome visible and points back to onboarding when the active workspace has no startups", async () => {
@@ -315,9 +348,11 @@ describe("dashboard route", () => {
     await waitFor(() => {
       expect(listStartups).toHaveBeenCalledTimes(2);
     });
-    expect(
-      (await view.findAllByText("Acme Analytics")).length
-    ).toBeGreaterThanOrEqual(2);
+    await waitFor(() => {
+      expect(view.getAllByText("Acme Analytics").length).toBeGreaterThanOrEqual(
+        2
+      );
+    });
   });
 
   test("shows a loading failure when workspace context cannot be parsed", async () => {
@@ -381,9 +416,11 @@ describe("dashboard route", () => {
         workspaceId: WORKSPACE_B.id,
       });
     });
-    expect(
-      (await view.findAllByText("Beta Analytics")).length
-    ).toBeGreaterThanOrEqual(2);
+    await waitFor(() => {
+      expect(view.getAllByText("Beta Analytics").length).toBeGreaterThanOrEqual(
+        2
+      );
+    });
   });
 
   // ---------------------------------------------------------------
