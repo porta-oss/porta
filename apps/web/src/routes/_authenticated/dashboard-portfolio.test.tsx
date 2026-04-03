@@ -267,8 +267,11 @@ describe("portfolio startup card", () => {
     );
 
     // Card should appear
-    const card = await view.findByTestId("portfolio-startup-card");
+    await view.findByTestId("portfolio-badge");
+    const card = view.getByLabelText("portfolio startup card");
     expect(card).toBeTruthy();
+    expect(card.getAttribute("data-health-tone")).toBe("healthy");
+    expect(card.className).toContain("bg-success-bg/50");
 
     // Name
     expect(view.getByTestId("portfolio-startup-name").textContent).toContain(

@@ -1,5 +1,10 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  portfolioCardToneClass,
+  toStartupHealthTone,
+} from "@/lib/startup-health-tone";
+import { cn } from "@/lib/utils";
 import type {
   PortfolioBadge,
   PortfolioCardViewModel,
@@ -37,9 +42,13 @@ export interface PortfolioStartupCardProps {
 }
 
 export function PortfolioStartupCard({ viewModel }: PortfolioStartupCardProps) {
+  const tone = toStartupHealthTone(viewModel.healthState);
+
   return (
     <Card
       aria-label="portfolio startup card"
+      className={cn(portfolioCardToneClass(tone))}
+      data-health-tone={tone}
       data-testid="portfolio-startup-card"
     >
       <CardContent className="grid gap-3 pt-5">
