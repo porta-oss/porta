@@ -33,6 +33,16 @@ function baseEnv(overrides: Record<string, string> = {}) {
   };
 }
 
+const noopAsync = async () => {
+  /* intentionally empty test stub */
+  await Promise.resolve();
+};
+
+const noop = () => {
+  /* intentionally empty test stub */
+  return;
+};
+
 // ===========================================================================
 // Edition contract: shared helpers
 // ===========================================================================
@@ -121,9 +131,9 @@ describe("readApiEnv edition and host", () => {
 describe("/api/health edition metadata", () => {
   const minimalDb = {
     db: {} as unknown,
-    bootstrap: async () => {},
-    close: async () => {},
-    resetAuthTables: async () => {},
+    bootstrap: noopAsync,
+    close: noopAsync,
+    resetAuthTables: noopAsync,
     getSchemaDiagnostics: () => ({
       tables: {
         user: true,
@@ -159,7 +169,7 @@ describe("/api/health edition metadata", () => {
       magicLinkTransport: "log",
     },
     listMagicLinks: () => [],
-    resetMagicLinks: () => {},
+    resetMagicLinks: noop,
   };
 
   test("health response contains edition and runtime metadata", async () => {

@@ -192,6 +192,214 @@ async function recomputeSnapshot(
   }
 }
 
+function getSyncDurationMs(startedAt: Date, completedAt: Date): number {
+  return completedAt.getTime() - startedAt.getTime();
+}
+
+async function failSyncJob(
+  deps: SyncProcessorDeps,
+  syncJobId: string,
+  connectorId: string,
+  startedAt: Date,
+  error: string
+) {
+  const completedAt = new Date();
+  await deps.repo.markSyncJobFailed(
+    syncJobId,
+    connectorId,
+    error,
+    completedAt,
+    getSyncDurationMs(startedAt, completedAt)
+  );
+}
+
+async function loadConnectorOrFail(
+  deps: SyncProcessorDeps,
+  connectorId: string,
+  syncJobId: string,
+  startedAt: Date,
+  logCtx: Record<string, unknown>
+): Promise<ConnectorRow> {
+  const connectorRow = await deps.repo.findConnector(connectorId);
+  if (connectorRow) {
+    return connectorRow;
+  }
+
+  const error = `Connector ${connectorId} not found — may have been deleted.`;
+  await failSyncJob(deps, syncJobId, connectorId, startedAt, error);
+  deps.log.error("connector not found", { ...logCtx, error });
+  throw new Error(error);
+}
+
+async function decryptConnectorConfigOrFail(
+  deps: SyncProcessorDeps,
+  connectorRow: ConnectorRow,
+  connectorId: string,
+  keyBuffer: Buffer,
+  syncJobId: string,
+  startedAt: Date,
+  logCtx: Record<string, unknown>
+) {
+  try {
+    return decryptConnectorConfig(
+      {
+        ciphertext: connectorRow.encryptedConfig,
+        iv: connectorRow.encryptionIv,
+        authTag: connectorRow.encryptionAuthTag,
+      },
+      keyBuffer
+    );
+  } catch (decryptError) {
+    const error = `Decryption failed for connector ${connectorId}: ${decryptError instanceof Error ? decryptError.message : "unknown"}`;
+    await failSyncJob(deps, syncJobId, connectorId, startedAt, error);
+    deps.log.error("decryption failed", {
+      ...logCtx,
+      error:
+        decryptError instanceof Error
+          ? decryptError.message
+          : String(decryptError),
+    });
+    throw new Error(error);
+  }
+}
+
+async function validateProviderOrFail(
+  deps: SyncProcessorDeps,
+  provider: ConnectorProvider,
+  decryptedConfig: string,
+  syncJobId: string,
+  connectorId: string,
+  startedAt: Date,
+  logCtx: Record<string, unknown>
+) {
+  try {
+    return await deps.validateProvider(provider, decryptedConfig);
+  } catch (providerError) {
+    const error = `Provider validation threw for ${provider}: ${providerError instanceof Error ? providerError.message : "unknown"}`;
+    await failSyncJob(deps, syncJobId, connectorId, startedAt, error);
+    deps.log.error("provider validation threw", {
+      ...logCtx,
+      error:
+        providerError instanceof Error
+          ? providerError.message
+          : String(providerError),
+    });
+    throw new Error(error);
+  }
+}
+
+function canGenerateInsight(
+  deps: SyncProcessorDeps
+): deps is SyncProcessorDeps & {
+  explainer: ExplainerFn;
+  healthRepo: HealthSnapshotRepository;
+  insightRepo: InsightRepository;
+} {
+  return Boolean(deps.explainer && deps.healthRepo && deps.insightRepo);
+}
+
+async function maybeGenerateInsight(
+  deps: SyncProcessorDeps,
+  startupId: string,
+  syncJobId: string,
+  logCtx: Record<string, unknown>
+) {
+  if (!canGenerateInsight(deps)) {
+    return;
+  }
+
+  try {
+    const insightResult = await generateInsight(
+      {
+        healthRepo: deps.healthRepo,
+        insightRepo: deps.insightRepo,
+        explainer: deps.explainer,
+        log: deps.log,
+      },
+      startupId,
+      syncJobId
+    );
+    deps.log.info("insight generation result", {
+      ...logCtx,
+      insightGenerated: insightResult.generated,
+      conditionCode: insightResult.conditionCode,
+      insightStatus: insightResult.status,
+    });
+  } catch (err) {
+    deps.log.error(
+      "insight generation unexpected error — sync job unaffected",
+      {
+        ...logCtx,
+        error: err instanceof Error ? err.message : String(err),
+      }
+    );
+  }
+}
+
+async function maybeUpdatePostgresMetricOnSuccess(
+  deps: SyncProcessorDeps,
+  provider: ConnectorProvider,
+  result: ProviderValidationResult,
+  startupId: string,
+  logCtx: Record<string, unknown>
+) {
+  if (!(provider === "postgres" && deps.customMetricRepo)) {
+    return;
+  }
+
+  const pgResult = result as PostgresSyncResult;
+  if (!pgResult.customMetric) {
+    return;
+  }
+
+  try {
+    await deps.customMetricRepo.updateOnSyncSuccess({
+      startupId,
+      metricValue: pgResult.customMetric.metricValue,
+      previousValue: pgResult.customMetric.previousValue,
+      capturedAt: new Date(pgResult.customMetric.capturedAt),
+    });
+    deps.log.info("custom metric synced", {
+      ...logCtx,
+      metricValue: pgResult.customMetric.metricValue,
+      capturedAt: pgResult.customMetric.capturedAt,
+    });
+  } catch (err) {
+    deps.log.error("custom metric update failed — previous data preserved", {
+      ...logCtx,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+async function maybeUpdatePostgresMetricOnFailure(
+  deps: SyncProcessorDeps,
+  provider: ConnectorProvider,
+  startupId: string,
+  error: string,
+  logCtx: Record<string, unknown>
+) {
+  if (!(provider === "postgres" && deps.customMetricRepo)) {
+    return;
+  }
+
+  try {
+    await deps.customMetricRepo.updateOnSyncFailure({
+      startupId,
+      status: "error",
+    });
+    deps.log.warn("custom metric marked error — last-good data preserved", {
+      ...logCtx,
+      error,
+    });
+  } catch (err) {
+    deps.log.error("custom metric failure update failed", {
+      ...logCtx,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 /**
  * Create a BullMQ-compatible processor function for connector-sync jobs.
  *
@@ -230,80 +438,39 @@ export function createSyncProcessor(deps: SyncProcessorDeps) {
     await deps.repo.markSyncJobRunning(syncJobId, startedAt, attempt);
 
     // 2. Load connector row
-    const connectorRow = await deps.repo.findConnector(connectorId);
-
-    if (!connectorRow) {
-      const error = `Connector ${connectorId} not found — may have been deleted.`;
-      const completedAt = new Date();
-      await deps.repo.markSyncJobFailed(
-        syncJobId,
-        connectorId,
-        error,
-        completedAt,
-        completedAt.getTime() - startedAt.getTime()
-      );
-      deps.log.error("connector not found", { ...logCtx, error });
-      throw new Error(error);
-    }
+    const connectorRow = await loadConnectorOrFail(
+      deps,
+      connectorId,
+      syncJobId,
+      startedAt,
+      logCtx
+    );
 
     // 3. Decrypt config
-    let decryptedConfig: string;
-    try {
-      decryptedConfig = decryptConnectorConfig(
-        {
-          ciphertext: connectorRow.encryptedConfig,
-          iv: connectorRow.encryptionIv,
-          authTag: connectorRow.encryptionAuthTag,
-        },
-        keyBuffer
-      );
-    } catch (decryptError) {
-      const error = `Decryption failed for connector ${connectorId}: ${decryptError instanceof Error ? decryptError.message : "unknown"}`;
-      const completedAt = new Date();
-      await deps.repo.markSyncJobFailed(
-        syncJobId,
-        connectorId,
-        error,
-        completedAt,
-        completedAt.getTime() - startedAt.getTime()
-      );
-      deps.log.error("decryption failed", {
-        ...logCtx,
-        error:
-          decryptError instanceof Error
-            ? decryptError.message
-            : String(decryptError),
-      });
-      throw new Error(error);
-    }
+    const decryptedConfig = await decryptConnectorConfigOrFail(
+      deps,
+      connectorRow,
+      connectorId,
+      keyBuffer,
+      syncJobId,
+      startedAt,
+      logCtx
+    );
 
     // 4. Call provider adapter
-    let result: ProviderValidationResult;
-    try {
-      result = await deps.validateProvider(provider, decryptedConfig);
-    } catch (providerError) {
-      const error = `Provider validation threw for ${provider}: ${providerError instanceof Error ? providerError.message : "unknown"}`;
-      const completedAt = new Date();
-      await deps.repo.markSyncJobFailed(
-        syncJobId,
-        connectorId,
-        error,
-        completedAt,
-        completedAt.getTime() - startedAt.getTime()
-      );
-      deps.log.error("provider validation threw", {
-        ...logCtx,
-        error:
-          providerError instanceof Error
-            ? providerError.message
-            : String(providerError),
-      });
-      throw new Error(error);
-    }
+    const result = await validateProviderOrFail(
+      deps,
+      provider,
+      decryptedConfig,
+      syncJobId,
+      connectorId,
+      startedAt,
+      logCtx
+    );
 
     // 5. Persist outcome
     const completedAt = new Date();
-    const durationMs = completedAt.getTime() - startedAt.getTime();
+    const durationMs = getSyncDurationMs(startedAt, completedAt);
 
     if (result.valid) {
       // 5a. Success
@@ -325,68 +492,16 @@ export function createSyncProcessor(deps: SyncProcessorDeps) {
           syncResult,
           logCtx
         );
-
-        // Generate insight after successful snapshot recompute
-        if (deps.insightRepo && deps.explainer) {
-          try {
-            const insightResult = await generateInsight(
-              {
-                healthRepo: deps.healthRepo!,
-                insightRepo: deps.insightRepo,
-                explainer: deps.explainer,
-                log: deps.log,
-              },
-              job.data.startupId,
-              syncJobId
-            );
-            deps.log.info("insight generation result", {
-              ...logCtx,
-              insightGenerated: insightResult.generated,
-              conditionCode: insightResult.conditionCode,
-              insightStatus: insightResult.status,
-            });
-          } catch (err) {
-            // Insight generation failure must not fail the sync job.
-            deps.log.error(
-              "insight generation unexpected error — sync job unaffected",
-              {
-                ...logCtx,
-                error: err instanceof Error ? err.message : String(err),
-              }
-            );
-          }
-        }
+        await maybeGenerateInsight(deps, job.data.startupId, syncJobId, logCtx);
       }
 
-      // Update custom metric for Postgres provider syncs
-      if (provider === "postgres" && deps.customMetricRepo) {
-        const pgResult = result as PostgresSyncResult;
-        if (pgResult.customMetric) {
-          try {
-            await deps.customMetricRepo.updateOnSyncSuccess({
-              startupId: job.data.startupId,
-              metricValue: pgResult.customMetric.metricValue,
-              previousValue: pgResult.customMetric.previousValue,
-              capturedAt: new Date(pgResult.customMetric.capturedAt),
-            });
-            deps.log.info("custom metric synced", {
-              ...logCtx,
-              metricValue: pgResult.customMetric.metricValue,
-              capturedAt: pgResult.customMetric.capturedAt,
-            });
-          } catch (err) {
-            // Custom metric update failure must not fail the sync job.
-            // The previous custom metric data stays intact.
-            deps.log.error(
-              "custom metric update failed — previous data preserved",
-              {
-                ...logCtx,
-                error: err instanceof Error ? err.message : String(err),
-              }
-            );
-          }
-        }
-      }
+      await maybeUpdatePostgresMetricOnSuccess(
+        deps,
+        provider,
+        result,
+        job.data.startupId,
+        logCtx
+      );
     } else {
       // 5b. Failure
       const error =
@@ -399,27 +514,13 @@ export function createSyncProcessor(deps: SyncProcessorDeps) {
         durationMs
       );
 
-      // For Postgres failures, mark custom metric as error but preserve last-good data
-      if (provider === "postgres" && deps.customMetricRepo) {
-        try {
-          await deps.customMetricRepo.updateOnSyncFailure({
-            startupId: job.data.startupId,
-            status: "error",
-          });
-          deps.log.warn(
-            "custom metric marked error — last-good data preserved",
-            {
-              ...logCtx,
-              error,
-            }
-          );
-        } catch (err) {
-          deps.log.error("custom metric failure update failed", {
-            ...logCtx,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
+      await maybeUpdatePostgresMetricOnFailure(
+        deps,
+        provider,
+        job.data.startupId,
+        error,
+        logCtx
+      );
 
       if (result.retryable) {
         deps.log.warn("sync job failed (retryable)", {

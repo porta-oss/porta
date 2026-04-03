@@ -61,8 +61,11 @@ pnpm dev:worker
 Before submitting a PR, run these checks locally:
 
 ```bash
-# Type checking
+# Linting
 pnpm lint
+
+# Type checking
+pnpm typecheck
 
 # Unit and integration tests
 pnpm test

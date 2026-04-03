@@ -207,6 +207,19 @@ function toIsoString(value: string | Date | null | undefined): string | null {
   return new Date(value).toISOString();
 }
 
+function requireIsoString(
+  value: string | Date | null | undefined,
+  fieldName: string
+): string {
+  const isoString = toIsoString(value);
+
+  if (!isoString) {
+    throw new Error(`Expected ${fieldName} to be present.`);
+  }
+
+  return isoString;
+}
+
 function serializeFunnelRows(rows: FunnelRow[]): FunnelStageRow[] {
   const validated: FunnelStageRow[] = [];
   for (const row of rows) {
@@ -398,7 +411,7 @@ export async function loadStartupHealth(
     northStarPreviousValue: snapshot.north_star_previous_value,
     supportingMetrics,
     funnel,
-    computedAt: toIsoString(snapshot.computed_at)!,
+    computedAt: requireIsoString(snapshot.computed_at, "snapshot.computed_at"),
     syncJobId: snapshot.sync_job_id,
   };
 

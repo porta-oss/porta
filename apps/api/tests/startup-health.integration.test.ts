@@ -15,29 +15,15 @@ import {
 import type { StartupDraft } from "@shared/types";
 import { convertSetCookieToCookie } from "better-auth/test";
 
-import { type ApiApp, createApiApp } from "../src/app";
+import type { ApiApp } from "../src/app";
 import { createStubPostHogValidator } from "../src/lib/connectors/posthog";
 import { createStubQueueProducer } from "../src/lib/connectors/queue";
 import { createStubStripeValidator } from "../src/lib/connectors/stripe";
-
-const TEST_ENV = {
-  NODE_ENV: "test",
-  API_PORT: "3000",
-  API_URL: "http://localhost:3000",
-  WEB_URL: "http://localhost:5173",
-  DATABASE_URL: "postgres://postgres:postgres@127.0.0.1:5432/porta",
-  REDIS_URL: "redis://127.0.0.1:6379",
-  BETTER_AUTH_URL: "http://localhost:3000",
-  BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
-  GOOGLE_CLIENT_ID: "google-client-id",
-  GOOGLE_CLIENT_SECRET: "google-client-secret",
-  MAGIC_LINK_SENDER_EMAIL: "dev@porta.local",
-  CONNECTOR_ENCRYPTION_KEY:
-    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  AUTH_CONTEXT_TIMEOUT_MS: "2000",
-  DATABASE_CONNECT_TIMEOUT_MS: "5000",
-  DATABASE_POOL_MAX: "5",
-} as const;
+import {
+  closeTestApiApp,
+  createTestApiApp,
+  requireValue,
+} from "./helpers/test-app";
 
 const VALID_STARTUP: StartupDraft = {
   name: "Health Test Startup",
@@ -129,37 +115,42 @@ async function createStartup(
 // ------------------------------------------------------------------
 
 describe("startup health integration", () => {
-  let app: ApiApp;
+  let app: ApiApp | undefined;
   let cookie: string;
   let startupId: string;
+
+  function getApp() {
+    return requireValue(app, "Expected API test app to be initialized.");
+  }
 
   beforeAll(async () => {
     const queueProducer = createStubQueueProducer({
       success: true,
       jobId: "health-int-job",
     });
-    app = await createApiApp(TEST_ENV, {
+    app = await createTestApiApp({
       posthogValidator: createStubPostHogValidator({ valid: true }),
       stripeValidator: createStubStripeValidator({ valid: true }),
       queueProducer,
     });
 
     const runId = Date.now();
-    cookie = await signUp(app, `health-int-${runId}@test.local`);
-    await createWorkspace(app, cookie, `Health Workspace ${runId}`);
-    startupId = await createStartup(app, cookie, {
+    const testApp = getApp();
+    cookie = await signUp(testApp, `health-int-${runId}@test.local`);
+    await createWorkspace(testApp, cookie, `Health Workspace ${runId}`);
+    startupId = await createStartup(testApp, cookie, {
       ...VALID_STARTUP,
       name: `Health Startup ${runId}`,
     });
   });
 
   afterAll(async () => {
-    await app.runtime.db.close();
+    await closeTestApiApp(app);
   });
 
   test("health endpoint returns empty state when no snapshot exists", async () => {
     const res = await makeRequest(
-      app,
+      getApp(),
       `http://localhost:3000/api/startups/${startupId}/health`,
       {
         headers: { cookie },
@@ -183,7 +174,7 @@ describe("startup health integration", () => {
 
   test("health snapshot is readable after direct insertion", async () => {
     // Insert a snapshot directly via SQL to simulate worker output
-    const db = app.runtime.db.db;
+    const db = getApp().runtime.db.db;
     const { sql } = await import("drizzle-orm");
     const snapshotId = `snap-${Date.now()}`;
     const metrics = JSON.stringify(emptySupportingMetrics());
@@ -204,7 +195,7 @@ describe("startup health integration", () => {
 
     // Verify via API
     const res = await makeRequest(
-      app,
+      getApp(),
       `http://localhost:3000/api/startups/${startupId}/health`,
       {
         headers: { cookie },
@@ -237,7 +228,7 @@ describe("startup health integration", () => {
   });
 
   test("snapshot replacement preserves atomicity", async () => {
-    const db = app.runtime.db.db;
+    const db = getApp().runtime.db.db;
     const { sql } = await import("drizzle-orm");
 
     // First snapshot

@@ -24,5 +24,13 @@
         "noExportedImports": "off"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": [".bg-shell/manifest.json"],
+      "formatter": {
+        "trailingNewline": false
+      }
+    }
+  ]
 }

@@ -19,7 +19,6 @@ import { resolveApiBaseUrl, resolveWebBaseUrl } from "./auth-client";
 
 function setViteEnv(key: string, value: string | undefined) {
   if (value === undefined) {
-    // biome-ignore lint/performance/noDelete: test env patching
     delete (import.meta.env as Record<string, unknown>)[key];
   } else {
     (import.meta.env as Record<string, unknown>)[key] = value;

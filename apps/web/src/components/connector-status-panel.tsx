@@ -77,6 +77,54 @@ function formatSyncAge(isoDate: string | null): string {
   return `${String(days)}d ago`;
 }
 
+interface DisconnectControlsProps {
+  actionState: "idle" | "working" | "error";
+  confirmingDisconnect: string | null;
+  connectorId: string;
+  onCancel: () => void;
+  onConfirm: (connectorId: string) => Promise<void>;
+  onStart: (connectorId: string) => void;
+}
+
+function DisconnectControls({
+  actionState,
+  connectorId,
+  confirmingDisconnect,
+  onCancel,
+  onConfirm,
+  onStart,
+}: DisconnectControlsProps) {
+  if (confirmingDisconnect !== connectorId) {
+    return (
+      <Button
+        disabled={actionState === "working"}
+        onClick={() => onStart(connectorId)}
+        size="sm"
+        variant="destructive"
+      >
+        Disconnect
+      </Button>
+    );
+  }
+
+  return (
+    <>
+      <span className="text-danger text-sm">Disconnect?</span>
+      <Button
+        disabled={actionState === "working"}
+        onClick={() => void onConfirm(connectorId)}
+        size="sm"
+        variant="destructive"
+      >
+        Confirm
+      </Button>
+      <Button onClick={onCancel} size="sm" variant="outline">
+        Cancel
+      </Button>
+    </>
+  );
+}
+
 export function ConnectorStatusPanel({
   connectors,
   loading = false,
@@ -93,17 +141,21 @@ export function ConnectorStatusPanel({
     string | null
   >(null);
 
+  const clearActionError = (connectorId: string) => {
+    setActionErrors((current) => {
+      const next = { ...current };
+      delete next[connectorId];
+      return next;
+    });
+  };
+
   async function handleResync(connectorId: string) {
     if (!onResync) {
       return;
     }
 
     setActionStates((s) => ({ ...s, [connectorId]: "working" }));
-    setActionErrors((s) => {
-      const next = { ...s };
-      delete next[connectorId];
-      return next;
-    });
+    clearActionError(connectorId);
 
     try {
       await onResync(connectorId);
@@ -124,11 +176,7 @@ export function ConnectorStatusPanel({
 
     setConfirmingDisconnect(null);
     setActionStates((s) => ({ ...s, [connectorId]: "working" }));
-    setActionErrors((s) => {
-      const next = { ...s };
-      delete next[connectorId];
-      return next;
-    });
+    clearActionError(connectorId);
 
     try {
       await onDisconnect(connectorId);
@@ -232,35 +280,14 @@ export function ConnectorStatusPanel({
                   </Button>
                 ) : null}
                 {c.status !== "disconnected" && onDisconnect ? (
-                  confirmingDisconnect === c.id ? (
-                    <>
-                      <span className="text-danger text-sm">Disconnect?</span>
-                      <Button
-                        disabled={actionState === "working"}
-                        onClick={() => void handleDisconnect(c.id)}
-                        size="sm"
-                        variant="destructive"
-                      >
-                        Confirm
-                      </Button>
-                      <Button
-                        onClick={() => setConfirmingDisconnect(null)}
-                        size="sm"
-                        variant="outline"
-                      >
-                        Cancel
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      disabled={actionState === "working"}
-                      onClick={() => setConfirmingDisconnect(c.id)}
-                      size="sm"
-                      variant="destructive"
-                    >
-                      Disconnect
-                    </Button>
-                  )
+                  <DisconnectControls
+                    actionState={actionState}
+                    confirmingDisconnect={confirmingDisconnect}
+                    connectorId={c.id}
+                    onCancel={() => setConfirmingDisconnect(null)}
+                    onConfirm={handleDisconnect}
+                    onStart={setConfirmingDisconnect}
+                  />
                 ) : null}
               </div>
             </section>

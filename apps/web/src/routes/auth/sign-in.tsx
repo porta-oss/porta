@@ -116,7 +116,6 @@ function SessionStateNotice({ snapshot }: { snapshot: AuthSnapshot }) {
 
 export function SignInPage({ auth, search, navigateTo }: SignInPageProps) {
   const snapshot = useAuthSnapshot(auth);
-  const [email, setEmail] = useState("");
   const [pendingAction, setPendingAction] = useState<
     "google" | "magic-link" | null
   >(null);
@@ -172,12 +171,16 @@ export function SignInPage({ auth, search, navigateTo }: SignInPageProps) {
     }
   }
 
-  async function handleMagicLinkSubmit(event: { preventDefault: () => void }) {
+  async function handleMagicLinkSubmit(event: {
+    currentTarget: HTMLFormElement;
+    preventDefault: () => void;
+  }) {
     event.preventDefault();
     setInlineError(null);
     setMagicLinkSentTo(null);
 
-    const trimmedEmail = email.trim();
+    const formData = new FormData(event.currentTarget);
+    const trimmedEmail = String(formData.get("email") ?? "").trim();
 
     if (!trimmedEmail) {
       setInlineError("Enter your email address to receive a magic link.");
@@ -267,12 +270,11 @@ export function SignInPage({ auth, search, navigateTo }: SignInPageProps) {
               <Label htmlFor="magic-link-email">Work email</Label>
               <Input
                 autoComplete="email"
+                defaultValue=""
                 id="magic-link-email"
                 name="email"
-                onChange={(event) => setEmail(event.target.value)}
                 placeholder="founder@startup.com"
                 type="email"
-                value={email}
               />
             </div>
             <Button disabled={pendingAction !== null} type="submit">

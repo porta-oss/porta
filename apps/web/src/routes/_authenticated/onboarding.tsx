@@ -65,6 +65,13 @@ export interface OnboardingPageProps {
   navigateTo?: (to: "/app") => void;
 }
 
+type OnboardingViewState =
+  | "loading"
+  | "ready"
+  | "submitting-workspace"
+  | "submitting-startup"
+  | "error";
+
 // ------------------------------------------------------------------
 // Internal types
 // ------------------------------------------------------------------
@@ -411,6 +418,301 @@ function OnboardingRouteComponent() {
   );
 }
 
+interface OnboardingAlertsProps {
+  bootstrapError: string | null;
+  notice: string | null;
+  viewState: OnboardingViewState;
+}
+
+function OnboardingAlerts({
+  bootstrapError,
+  notice,
+  viewState,
+}: OnboardingAlertsProps) {
+  return (
+    <>
+      {viewState === "loading" ? (
+        <Alert>
+          <AlertDescription>
+            Loading workspace and startup context…
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {bootstrapError ? (
+        <Alert variant="destructive">
+          <AlertDescription>{bootstrapError}</AlertDescription>
+        </Alert>
+      ) : null}
+      {notice ? (
+        <Alert>
+          <AlertDescription>{notice}</AlertDescription>
+        </Alert>
+      ) : null}
+    </>
+  );
+}
+
+interface WorkspaceSetupSectionProps {
+  activeWorkspace: WorkspaceSummary | null;
+  bootstrapState: BootstrapState;
+  onCreateWorkspace: (name: string) => void;
+  onSelectWorkspace: () => void;
+  selectedWorkspaceId: string;
+  setSelectedWorkspaceId: (workspaceId: string) => void;
+  viewState: OnboardingViewState;
+  workspaceError: string | null;
+}
+
+function WorkspaceSetupSection({
+  activeWorkspace,
+  bootstrapState,
+  onCreateWorkspace,
+  onSelectWorkspace,
+  selectedWorkspaceId,
+  setSelectedWorkspaceId,
+  viewState,
+  workspaceError,
+}: WorkspaceSetupSectionProps) {
+  const isWorkspaceSubmitting = viewState === "submitting-workspace";
+  const isWorkspaceDisabled = viewState === "loading" || isWorkspaceSubmitting;
+
+  return (
+    <Card aria-label="workspace setup">
+      <CardContent className="grid gap-4 pt-6">
+        <div>
+          <h3 className="mb-2 font-semibold text-lg">
+            1. Pick the active workspace
+          </h3>
+          <p className="text-muted-foreground text-sm">
+            {activeWorkspace
+              ? `Active workspace: ${activeWorkspace.name}`
+              : "No active workspace yet. Create one or select an existing workspace to continue."}
+          </p>
+        </div>
+
+        <form
+          aria-label="workspace create form"
+          className="grid gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const formData = new FormData(event.currentTarget);
+            onCreateWorkspace(String(formData.get("workspaceName") ?? ""));
+          }}
+        >
+          <Label htmlFor="workspace-name">Workspace name</Label>
+          <Input
+            defaultValue=""
+            disabled={isWorkspaceDisabled}
+            id="workspace-name"
+            name="workspaceName"
+            placeholder="Acme Ventures"
+            type="text"
+          />
+          <Button disabled={isWorkspaceDisabled} type="submit">
+            {isWorkspaceSubmitting ? "Saving workspace…" : "Create workspace"}
+          </Button>
+        </form>
+
+        {bootstrapState.workspaces.length > 0 ? (
+          <form
+            aria-label="workspace select form"
+            className="grid gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onSelectWorkspace();
+            }}
+          >
+            <Label htmlFor="workspace-select">Existing workspaces</Label>
+            <Select
+              disabled={isWorkspaceDisabled}
+              onValueChange={setSelectedWorkspaceId}
+              value={selectedWorkspaceId}
+            >
+              <SelectTrigger id="workspace-select">
+                <SelectValue placeholder="Choose a workspace" />
+              </SelectTrigger>
+              <SelectContent>
+                {bootstrapState.workspaces.map((workspace) => (
+                  <SelectItem key={workspace.id} value={workspace.id}>
+                    {workspace.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button disabled={isWorkspaceDisabled} type="submit">
+              Use selected workspace
+            </Button>
+          </form>
+        ) : null}
+
+        {workspaceError ? (
+          <Alert variant="destructive">
+            <AlertDescription>{workspaceError}</AlertDescription>
+          </Alert>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+interface StartupSetupSectionProps {
+  activeWorkspace: WorkspaceSummary | null;
+  onCreateStartup: (name: string) => void;
+  primaryStartup: StartupRecord | null;
+  setStartupDraft: (draft: StartupDraft) => void;
+  startupDraft: StartupDraft;
+  startupError: string | null;
+  viewState: OnboardingViewState;
+}
+
+function StartupSetupSection({
+  activeWorkspace,
+  onCreateStartup,
+  primaryStartup,
+  setStartupDraft,
+  startupDraft,
+  startupError,
+  viewState,
+}: StartupSetupSectionProps) {
+  const isStartupDisabled =
+    !activeWorkspace ||
+    viewState === "loading" ||
+    viewState === "submitting-startup";
+
+  return (
+    <Card aria-label="startup setup">
+      <CardContent className="grid gap-4 pt-6">
+        <div>
+          <h3 className="mb-2 font-semibold text-lg">
+            2. Add the first startup
+          </h3>
+          <p className="text-muted-foreground text-sm">
+            {activeWorkspace
+              ? `The first startup will be created inside ${activeWorkspace.name}.`
+              : "Create a workspace first, then add your startup."}
+          </p>
+        </div>
+
+        {primaryStartup ? (
+          <Alert>
+            <AlertDescription>
+              Startup onboarding is complete. {primaryStartup.name} is attached
+              to {activeWorkspace?.name ?? "the active workspace"}.
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <StartupForm
+            disabled={isStartupDisabled}
+            error={startupError}
+            onChange={setStartupDraft}
+            onSubmit={onCreateStartup}
+            value={startupDraft}
+          />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+interface ConnectorSetupSectionProps {
+  allConnectorsDone: boolean;
+  bootstrapState: BootstrapState;
+  connectorError: string | null;
+  onConnectProvider: (
+    provider: ConnectorProvider,
+    config: Record<string, string>
+  ) => Promise<void>;
+  onFinishOnboarding: () => void;
+  onSkipProvider: (provider: ConnectorProvider) => void;
+  posthogConnector: ConnectorSummary | null;
+  primaryStartup: StartupRecord;
+  showConnectorStep: boolean;
+  skippedProviders: Set<ConnectorProvider>;
+  stripeConnector: ConnectorSummary | null;
+  viewState: OnboardingViewState;
+}
+
+function ConnectorSetupSection({
+  allConnectorsDone,
+  bootstrapState,
+  connectorError,
+  onConnectProvider,
+  onFinishOnboarding,
+  onSkipProvider,
+  posthogConnector,
+  primaryStartup,
+  showConnectorStep,
+  skippedProviders,
+  stripeConnector,
+  viewState,
+}: ConnectorSetupSectionProps) {
+  if (!showConnectorStep) {
+    return null;
+  }
+
+  return (
+    <Card aria-label="connector setup">
+      <CardContent className="grid gap-4 pt-6">
+        <div>
+          <h3 className="mb-2 font-semibold text-lg">
+            3. Connect data sources
+          </h3>
+          <p className="text-muted-foreground text-sm">
+            Connect PostHog and Stripe to start syncing product and revenue data
+            for {primaryStartup.name}. You can skip and add them later from the
+            dashboard.
+          </p>
+        </div>
+
+        {connectorError ? (
+          <Alert variant="destructive">
+            <AlertDescription>{connectorError}</AlertDescription>
+          </Alert>
+        ) : null}
+
+        {bootstrapState.connectors.length > 0 ? (
+          <ConnectorStatusPanel connectors={bootstrapState.connectors} />
+        ) : null}
+
+        {posthogConnector || skippedProviders.has("posthog") ? null : (
+          <ConnectorSetupCard
+            disabled={viewState === "loading"}
+            existing={posthogConnector}
+            onConnect={onConnectProvider}
+            onSkip={onSkipProvider}
+            provider="posthog"
+          />
+        )}
+
+        {stripeConnector || skippedProviders.has("stripe") ? null : (
+          <ConnectorSetupCard
+            disabled={viewState === "loading"}
+            existing={stripeConnector}
+            onConnect={onConnectProvider}
+            onSkip={onSkipProvider}
+            provider="stripe"
+          />
+        )}
+
+        {allConnectorsDone ? (
+          <div className="grid gap-2">
+            <Alert>
+              <AlertDescription>
+                {bootstrapState.connectors.length > 0
+                  ? "Data sources configured. You can proceed to the dashboard."
+                  : "Connectors skipped. You can add them later from the dashboard."}
+              </AlertDescription>
+            </Alert>
+            <Button onClick={onFinishOnboarding} type="button">
+              Continue to dashboard
+            </Button>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ------------------------------------------------------------------
 // Page component
 // ------------------------------------------------------------------
@@ -421,18 +723,11 @@ export function OnboardingPage({
 }: OnboardingPageProps) {
   const [bootstrapState, setBootstrapState] =
     useState<BootstrapState>(EMPTY_BOOTSTRAP);
-  const [workspaceName, setWorkspaceName] = useState("");
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
   const [startupDraft, setStartupDraft] = useState<StartupDraft>(
     DEFAULT_STARTUP_DRAFT
   );
-  const [viewState, setViewState] = useState<
-    | "loading"
-    | "ready"
-    | "submitting-workspace"
-    | "submitting-startup"
-    | "error"
-  >("loading");
+  const [viewState, setViewState] = useState<OnboardingViewState>("loading");
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [startupError, setStartupError] = useState<string | null>(null);
@@ -526,11 +821,11 @@ export function OnboardingPage({
     void loadBootstrap();
   }, []);
 
-  async function handleCreateWorkspace() {
+  async function handleCreateWorkspace(name: string) {
     setWorkspaceError(null);
     setNotice(null);
 
-    const trimmedName = workspaceName.trim();
+    const trimmedName = name.trim();
 
     if (!trimmedName) {
       setWorkspaceError("Workspace name cannot be blank.");
@@ -541,7 +836,6 @@ export function OnboardingPage({
 
     try {
       const response = await api.createWorkspace({ name: trimmedName });
-      setWorkspaceName("");
       setSelectedWorkspaceId(response.activeWorkspaceId);
       setNotice(
         `Workspace ${response.workspace.name} is active. Add the first startup profile next.`
@@ -588,11 +882,13 @@ export function OnboardingPage({
     }
   }
 
-  async function handleCreateStartup() {
+  async function handleCreateStartup(name: string) {
     setStartupError(null);
     setNotice(null);
 
-    if (!startupDraft.name.trim()) {
+    const trimmedName = name.trim();
+
+    if (!trimmedName) {
       setStartupError("Startup name cannot be blank.");
       return;
     }
@@ -602,7 +898,7 @@ export function OnboardingPage({
     try {
       const response = await api.createStartup({
         ...startupDraft,
-        name: startupDraft.name.trim(),
+        name: trimmedName,
       });
       setBootstrapState((current) => ({
         ...current,
@@ -654,6 +950,8 @@ export function OnboardingPage({
     navigateTo?.("/app");
   }
 
+  const showLegacyDashboardLink = primaryStartup !== null && !showConnectorStep;
+
   return (
     <main aria-label="startup onboarding" className="grid gap-6 p-6">
       <header>
@@ -664,224 +962,57 @@ export function OnboardingPage({
         </p>
       </header>
 
-      {viewState === "loading" ? (
-        <Alert>
-          <AlertDescription>
-            Loading workspace and startup context…
-          </AlertDescription>
-        </Alert>
-      ) : null}
-      {bootstrapError ? (
-        <Alert variant="destructive">
-          <AlertDescription>{bootstrapError}</AlertDescription>
-        </Alert>
-      ) : null}
-      {notice ? (
-        <Alert>
-          <AlertDescription>{notice}</AlertDescription>
-        </Alert>
-      ) : null}
+      <OnboardingAlerts
+        bootstrapError={bootstrapError}
+        notice={notice}
+        viewState={viewState}
+      />
 
-      {/* Step 1: Workspace */}
-      <Card aria-label="workspace setup">
-        <CardContent className="grid gap-4 pt-6">
-          <div>
-            <h3 className="mb-2 font-semibold text-lg">
-              1. Pick the active workspace
-            </h3>
-            <p className="text-muted-foreground text-sm">
-              {activeWorkspace
-                ? `Active workspace: ${activeWorkspace.name}`
-                : "No active workspace yet. Create one or select an existing workspace to continue."}
-            </p>
-          </div>
+      <WorkspaceSetupSection
+        activeWorkspace={activeWorkspace}
+        bootstrapState={bootstrapState}
+        onCreateWorkspace={(name) => {
+          void handleCreateWorkspace(name);
+        }}
+        onSelectWorkspace={() => {
+          void handleSelectWorkspace();
+        }}
+        selectedWorkspaceId={selectedWorkspaceId}
+        setSelectedWorkspaceId={setSelectedWorkspaceId}
+        viewState={viewState}
+        workspaceError={workspaceError}
+      />
 
-          <form
-            aria-label="workspace create form"
-            className="grid gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void handleCreateWorkspace();
-            }}
-          >
-            <Label htmlFor="workspace-name">Workspace name</Label>
-            <Input
-              disabled={
-                viewState === "loading" || viewState === "submitting-workspace"
-              }
-              id="workspace-name"
-              name="workspaceName"
-              onChange={(event) => setWorkspaceName(event.target.value)}
-              placeholder="Acme Ventures"
-              type="text"
-              value={workspaceName}
-            />
-            <Button
-              disabled={
-                viewState === "loading" || viewState === "submitting-workspace"
-              }
-              type="submit"
-            >
-              {viewState === "submitting-workspace"
-                ? "Saving workspace…"
-                : "Create workspace"}
-            </Button>
-          </form>
+      <StartupSetupSection
+        activeWorkspace={activeWorkspace}
+        onCreateStartup={(name) => {
+          void handleCreateStartup(name);
+        }}
+        primaryStartup={primaryStartup}
+        setStartupDraft={setStartupDraft}
+        startupDraft={startupDraft}
+        startupError={startupError}
+        viewState={viewState}
+      />
 
-          {bootstrapState.workspaces.length > 0 ? (
-            <form
-              aria-label="workspace select form"
-              className="grid gap-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void handleSelectWorkspace();
-              }}
-            >
-              <Label htmlFor="workspace-select">Existing workspaces</Label>
-              <Select
-                disabled={
-                  viewState === "loading" ||
-                  viewState === "submitting-workspace"
-                }
-                onValueChange={setSelectedWorkspaceId}
-                value={selectedWorkspaceId}
-              >
-                <SelectTrigger id="workspace-select">
-                  <SelectValue placeholder="Choose a workspace" />
-                </SelectTrigger>
-                <SelectContent>
-                  {bootstrapState.workspaces.map((workspace) => (
-                    <SelectItem key={workspace.id} value={workspace.id}>
-                      {workspace.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                disabled={
-                  viewState === "loading" ||
-                  viewState === "submitting-workspace"
-                }
-                type="submit"
-              >
-                Use selected workspace
-              </Button>
-            </form>
-          ) : null}
-
-          {workspaceError ? (
-            <Alert variant="destructive">
-              <AlertDescription>{workspaceError}</AlertDescription>
-            </Alert>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      {/* Step 2: Startup */}
-      <Card aria-label="startup setup">
-        <CardContent className="grid gap-4 pt-6">
-          <div>
-            <h3 className="mb-2 font-semibold text-lg">
-              2. Add the first startup
-            </h3>
-            <p className="text-muted-foreground text-sm">
-              {activeWorkspace
-                ? `The first startup will be created inside ${activeWorkspace.name}.`
-                : "Create a workspace first, then add your startup."}
-            </p>
-          </div>
-
-          {primaryStartup ? (
-            <Alert>
-              <AlertDescription>
-                Startup onboarding is complete. {primaryStartup.name} is
-                attached to {activeWorkspace?.name ?? "the active workspace"}.
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <StartupForm
-              disabled={
-                !activeWorkspace ||
-                viewState === "loading" ||
-                viewState === "submitting-startup"
-              }
-              error={startupError}
-              onChange={setStartupDraft}
-              onSubmit={handleCreateStartup}
-              value={startupDraft}
-            />
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Step 3: Connectors */}
-      {showConnectorStep ? (
-        <Card aria-label="connector setup">
-          <CardContent className="grid gap-4 pt-6">
-            <div>
-              <h3 className="mb-2 font-semibold text-lg">
-                3. Connect data sources
-              </h3>
-              <p className="text-muted-foreground text-sm">
-                Connect PostHog and Stripe to start syncing product and revenue
-                data for {primaryStartup.name}. You can skip and add them later
-                from the dashboard.
-              </p>
-            </div>
-
-            {connectorError ? (
-              <Alert variant="destructive">
-                <AlertDescription>{connectorError}</AlertDescription>
-              </Alert>
-            ) : null}
-
-            {/* Show already-connected connectors */}
-            {bootstrapState.connectors.length > 0 ? (
-              <ConnectorStatusPanel connectors={bootstrapState.connectors} />
-            ) : null}
-
-            {/* PostHog setup card (unless connected or skipped) */}
-            {posthogConnector || skippedProviders.has("posthog") ? null : (
-              <ConnectorSetupCard
-                disabled={viewState === "loading"}
-                existing={posthogConnector}
-                onConnect={handleConnectProvider}
-                onSkip={handleSkipProvider}
-                provider="posthog"
-              />
-            )}
-
-            {/* Stripe setup card (unless connected or skipped) */}
-            {stripeConnector || skippedProviders.has("stripe") ? null : (
-              <ConnectorSetupCard
-                disabled={viewState === "loading"}
-                existing={stripeConnector}
-                onConnect={handleConnectProvider}
-                onSkip={handleSkipProvider}
-                provider="stripe"
-              />
-            )}
-
-            {allConnectorsDone ? (
-              <div className="grid gap-2">
-                <Alert>
-                  <AlertDescription>
-                    {bootstrapState.connectors.length > 0
-                      ? "Data sources configured. You can proceed to the dashboard."
-                      : "Connectors skipped. You can add them later from the dashboard."}
-                  </AlertDescription>
-                </Alert>
-                <Button onClick={handleFinishOnboarding} type="button">
-                  Continue to dashboard
-                </Button>
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
+      {primaryStartup ? (
+        <ConnectorSetupSection
+          allConnectorsDone={allConnectorsDone}
+          bootstrapState={bootstrapState}
+          connectorError={connectorError}
+          onConnectProvider={handleConnectProvider}
+          onFinishOnboarding={handleFinishOnboarding}
+          onSkipProvider={handleSkipProvider}
+          posthogConnector={posthogConnector}
+          primaryStartup={primaryStartup}
+          showConnectorStep={showConnectorStep}
+          skippedProviders={skippedProviders}
+          stripeConnector={stripeConnector}
+          viewState={viewState}
+        />
       ) : null}
 
-      {/* Legacy: if startup exists but no connector step, still show dashboard nav */}
-      {primaryStartup && !showConnectorStep ? (
+      {showLegacyDashboardLink ? (
         <Button onClick={() => navigateTo?.("/app")} type="button">
           Go to dashboard
         </Button>

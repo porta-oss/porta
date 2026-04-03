@@ -20,42 +20,29 @@ import {
 } from "@shared/crypto";
 import { eq } from "drizzle-orm";
 
-import { type ApiApp, createApiApp } from "../src/app";
+import type { ApiApp } from "../src/app";
 import { connector, syncJob } from "../src/db/schema/connector";
+import {
+  API_TEST_ENV,
+  closeTestApiApp,
+  createTestApiApp,
+  requireValue,
+} from "./helpers/test-app";
 
 // ---------------------------------------------------------------------------
 // Test environment
 // ---------------------------------------------------------------------------
 
-const VALID_HEX_KEY =
-  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const VALID_HEX_KEY = API_TEST_ENV.CONNECTOR_ENCRYPTION_KEY;
 
-const TEST_ENV = {
-  NODE_ENV: "test",
-  API_PORT: "3000",
-  API_URL: "http://localhost:3000",
-  WEB_URL: "http://localhost:5173",
-  DATABASE_URL: "postgres://postgres:postgres@127.0.0.1:5432/porta",
-  REDIS_URL: "redis://127.0.0.1:6379",
-  BETTER_AUTH_URL: "http://localhost:3000",
-  BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
-  GOOGLE_CLIENT_ID: "google-client-id",
-  GOOGLE_CLIENT_SECRET: "google-client-secret",
-  MAGIC_LINK_SENDER_EMAIL: "dev@porta.local",
-  CONNECTOR_ENCRYPTION_KEY: VALID_HEX_KEY,
-  AUTH_CONTEXT_TIMEOUT_MS: "2000",
-  DATABASE_CONNECT_TIMEOUT_MS: "5000",
-  DATABASE_POOL_MAX: "5",
-} as const;
-
-let app: ApiApp;
+let app: ApiApp | undefined;
 
 beforeAll(async () => {
-  app = await createApiApp(TEST_ENV);
+  app = await createTestApiApp();
 });
 
 afterAll(async () => {
-  await app.runtime.db.close();
+  await closeTestApiApp(app);
 });
 
 // ---------------------------------------------------------------------------
@@ -67,7 +54,8 @@ async function parseJson(response: Response) {
 }
 
 async function send(path: string) {
-  return app.handle(new Request(`http://localhost${path}`));
+  const testApp = requireValue(app, "Expected API test app to be initialized.");
+  return testApp.handle(new Request(`http://localhost${path}`));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -93,27 +81,28 @@ async function seedStartup(): Promise<{
   workspaceId: string;
   startupId: string;
 }> {
+  const testApp = requireValue(app, "Expected API test app to be initialized.");
   const workspaceId = randomUUID();
   const startupId = randomUUID();
   const userId = randomUUID();
   const _now = new Date();
 
-  await app.runtime.db.pool.query(
+  await testApp.runtime.db.pool.query(
     `INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at)
      VALUES ('${userId}', 'Test User', 'test-${userId}@example.com', true, NOW(), NOW())
      ON CONFLICT (id) DO NOTHING`
   );
-  await app.runtime.db.pool.query(
+  await testApp.runtime.db.pool.query(
     `INSERT INTO "workspace" (id, name, slug, created_at)
      VALUES ('${workspaceId}', 'Test WS', 'test-ws-${workspaceId.slice(0, 8)}', NOW())
      ON CONFLICT (id) DO NOTHING`
   );
-  await app.runtime.db.pool.query(
+  await testApp.runtime.db.pool.query(
     `INSERT INTO "member" (id, organization_id, user_id, role, created_at)
      VALUES ('${randomUUID()}', '${workspaceId}', '${userId}', 'owner', NOW())
      ON CONFLICT (id) DO NOTHING`
   );
-  await app.runtime.db.pool.query(
+  await testApp.runtime.db.pool.query(
     `INSERT INTO "startup" (id, workspace_id, name, type, stage, timezone, currency, created_at, updated_at)
      VALUES ('${startupId}', '${workspaceId}', 'Test Startup', 'b2b_saas', 'mvp', 'UTC', 'USD', NOW(), NOW())
      ON CONFLICT (id) DO NOTHING`
@@ -128,7 +117,10 @@ async function seedStartup(): Promise<{
 
 describe("migration and bootstrap", () => {
   test("connector and sync_job tables exist after bootstrap", async () => {
-    const result = (await app.runtime.db.pool.query(
+    const result = (await requireValue(
+      app,
+      "Expected API test app to be initialized."
+    ).runtime.db.pool.query(
       `SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'public' AND table_name IN ('connector', 'sync_job')`
     )) as { rows?: Array<{ table_name: string }> };
@@ -145,7 +137,9 @@ describe("migration and bootstrap", () => {
     expect(res.status).toBe(200);
     expect(body.connectors).toEqual({
       encryptionKeyConfigured: true,
+      supportedProviders: CONNECTOR_PROVIDERS,
       tablesReady: true,
+      validationMode: "live",
     });
 
     const database = body.database as { tables: string[] };
@@ -172,7 +166,7 @@ describe("CONNECTOR_ENCRYPTION_KEY validation", () => {
     const { readApiEnv } = require("../src/lib/env");
     expect(() =>
       readApiEnv(
-        { ...TEST_ENV, CONNECTOR_ENCRYPTION_KEY: undefined },
+        { ...API_TEST_ENV, CONNECTOR_ENCRYPTION_KEY: undefined },
         { strict: true }
       )
     ).toThrow("CONNECTOR_ENCRYPTION_KEY is required in strict mode");
@@ -182,7 +176,7 @@ describe("CONNECTOR_ENCRYPTION_KEY validation", () => {
     const { readApiEnv } = require("../src/lib/env");
     expect(() =>
       readApiEnv(
-        { ...TEST_ENV, CONNECTOR_ENCRYPTION_KEY: "abcdef" },
+        { ...API_TEST_ENV, CONNECTOR_ENCRYPTION_KEY: "abcdef" },
         { strict: true }
       )
     ).toThrow("exactly 64 hex characters");
@@ -193,7 +187,7 @@ describe("CONNECTOR_ENCRYPTION_KEY validation", () => {
     expect(() =>
       readApiEnv(
         {
-          ...TEST_ENV,
+          ...API_TEST_ENV,
           CONNECTOR_ENCRYPTION_KEY:
             "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
         },
@@ -205,7 +199,7 @@ describe("CONNECTOR_ENCRYPTION_KEY validation", () => {
   test("accepts valid 64-char hex key", () => {
     const { readApiEnv } = require("../src/lib/env");
     const env = readApiEnv(
-      { ...TEST_ENV, CONNECTOR_ENCRYPTION_KEY: VALID_HEX_KEY },
+      { ...API_TEST_ENV, CONNECTOR_ENCRYPTION_KEY: VALID_HEX_KEY },
       { strict: true }
     );
     expect(env.connectorEncryptionKey).toBe(VALID_HEX_KEY);
@@ -368,20 +362,28 @@ describe("connector table constraints", () => {
   });
 
   beforeEach(async () => {
+    const testApp = requireValue(
+      app,
+      "Expected API test app to be initialized."
+    );
     // Clean connector/sync_job rows between tests (cascade will remove sync_jobs too)
-    await app.runtime.db.pool.query(
+    await testApp.runtime.db.pool.query(
       `DELETE FROM "connector" WHERE startup_id = '${startupId}'`
     );
   });
 
   test("can insert a connector with encrypted config", async () => {
+    const testApp = requireValue(
+      app,
+      "Expected API test app to be initialized."
+    );
     const connectorId = randomUUID();
     const blob = encryptConnectorConfig(
       JSON.stringify({ apiKey: "test" }),
       key
     );
 
-    await app.runtime.db.db.insert(connector).values({
+    await testApp.runtime.db.db.insert(connector).values({
       id: connectorId,
       startupId,
       provider: "posthog",
@@ -391,12 +393,12 @@ describe("connector table constraints", () => {
       encryptionAuthTag: blob.authTag,
     });
 
-    const rows = await app.runtime.db.db
+    const rows = await testApp.runtime.db.db
       .select()
       .from(connector)
       .where(eq(connector.id, connectorId));
     expect(rows).toHaveLength(1);
-    const row = rows[0]!;
+    const row = requireValue(rows[0], "Expected connector row to exist.");
     expect(row.provider).toBe("posthog");
     expect(row.encryptedConfig).toBe(blob.ciphertext);
 
@@ -413,9 +415,13 @@ describe("connector table constraints", () => {
   });
 
   test("enforces unique provider per startup", async () => {
+    const testApp = requireValue(
+      app,
+      "Expected API test app to be initialized."
+    );
     const blob = encryptConnectorConfig("{}", key);
 
-    await app.runtime.db.db.insert(connector).values({
+    await testApp.runtime.db.db.insert(connector).values({
       id: randomUUID(),
       startupId,
       provider: "stripe",
@@ -427,7 +433,7 @@ describe("connector table constraints", () => {
 
     // Second insert with same startup + provider should fail
     try {
-      await app.runtime.db.db.insert(connector).values({
+      await testApp.runtime.db.db.insert(connector).values({
         id: randomUUID(),
         startupId,
         provider: "stripe",
@@ -445,10 +451,14 @@ describe("connector table constraints", () => {
   });
 
   test("rejects unsupported provider via CHECK constraint", async () => {
+    const testApp = requireValue(
+      app,
+      "Expected API test app to be initialized."
+    );
     const blob = encryptConnectorConfig("{}", key);
 
     try {
-      await app.runtime.db.db.insert(connector).values({
+      await testApp.runtime.db.db.insert(connector).values({
         id: randomUUID(),
         startupId,
         provider: "unknown_provider",
@@ -465,10 +475,14 @@ describe("connector table constraints", () => {
   });
 
   test("null sync timestamps on freshly created connector", async () => {
+    const testApp = requireValue(
+      app,
+      "Expected API test app to be initialized."
+    );
     const connectorId = randomUUID();
     const blob = encryptConnectorConfig("{}", key);
 
-    await app.runtime.db.db.insert(connector).values({
+    await testApp.runtime.db.db.insert(connector).values({
       id: connectorId,
       startupId,
       provider: "posthog",
@@ -478,22 +492,27 @@ describe("connector table constraints", () => {
       encryptionAuthTag: blob.authTag,
     });
 
-    const rows = await app.runtime.db.db
+    const rows = await testApp.runtime.db.db
       .select()
       .from(connector)
       .where(eq(connector.id, connectorId));
-    const row = rows[0]!;
+    expect(rows).toHaveLength(1);
+    const row = requireValue(rows[0], "Expected connector row to exist.");
     expect(row.lastSyncAt).toBeNull();
     expect(row.lastSyncDurationMs).toBeNull();
     expect(row.lastSyncError).toBeNull();
   });
 
   test("can insert and read sync_job rows", async () => {
+    const testApp = requireValue(
+      app,
+      "Expected API test app to be initialized."
+    );
     const connectorId = randomUUID();
     const syncJobId = randomUUID();
     const blob = encryptConnectorConfig("{}", key);
 
-    await app.runtime.db.db.insert(connector).values({
+    await testApp.runtime.db.db.insert(connector).values({
       id: connectorId,
       startupId,
       provider: "posthog",
@@ -503,7 +522,7 @@ describe("connector table constraints", () => {
       encryptionAuthTag: blob.authTag,
     });
 
-    await app.runtime.db.db.insert(syncJob).values({
+    await testApp.runtime.db.db.insert(syncJob).values({
       id: syncJobId,
       connectorId,
       status: "queued",
@@ -511,7 +530,7 @@ describe("connector table constraints", () => {
       attempt: 1,
     });
 
-    const rows = await app.runtime.db.db
+    const rows = await testApp.runtime.db.db
       .select()
       .from(syncJob)
       .where(eq(syncJob.connectorId, connectorId));
@@ -523,11 +542,15 @@ describe("connector table constraints", () => {
   });
 
   test("cascade deletes sync_jobs when connector is deleted", async () => {
+    const testApp = requireValue(
+      app,
+      "Expected API test app to be initialized."
+    );
     const connectorId = randomUUID();
     const syncJobId = randomUUID();
     const blob = encryptConnectorConfig("{}", key);
 
-    await app.runtime.db.db.insert(connector).values({
+    await testApp.runtime.db.db.insert(connector).values({
       id: connectorId,
       startupId,
       provider: "stripe",
@@ -537,7 +560,7 @@ describe("connector table constraints", () => {
       encryptionAuthTag: blob.authTag,
     });
 
-    await app.runtime.db.db.insert(syncJob).values({
+    await testApp.runtime.db.db.insert(syncJob).values({
       id: syncJobId,
       connectorId,
       status: "completed",
@@ -546,12 +569,12 @@ describe("connector table constraints", () => {
     });
 
     // Delete the connector
-    await app.runtime.db.db
+    await testApp.runtime.db.db
       .delete(connector)
       .where(eq(connector.id, connectorId));
 
     // sync_job should be gone too
-    const orphanedJobs = await app.runtime.db.db
+    const orphanedJobs = await testApp.runtime.db.db
       .select()
       .from(syncJob)
       .where(eq(syncJob.id, syncJobId));

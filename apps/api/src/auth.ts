@@ -50,6 +50,13 @@ export function createWorkspaceSlug(name: string) {
     .slice(0, 63);
 }
 
+function hasGoogleProviderConfig(env: ApiEnv): env is ApiEnv & {
+  googleClientId: string;
+  googleClientSecret: string;
+} {
+  return Boolean(env.googleClientId && env.googleClientSecret);
+}
+
 export function createAuthRuntime(
   env: ApiEnv,
   database: ApiDatabase
@@ -85,11 +92,11 @@ export function createAuthRuntime(
         workspaceRelations,
       },
     }),
-    socialProviders: providers.google.configured
+    socialProviders: hasGoogleProviderConfig(env)
       ? {
           google: {
-            clientId: env.googleClientId!,
-            clientSecret: env.googleClientSecret!,
+            clientId: env.googleClientId,
+            clientSecret: env.googleClientSecret,
           },
         }
       : undefined,

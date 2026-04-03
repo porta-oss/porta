@@ -39,7 +39,7 @@ echo ""
 
 # Phase 6: Typecheck
 echo "[Phase 6] Full typecheck"
-pnpm lint
+bun run typecheck
 echo "✅ Phase 6 passed"
 echo ""
 

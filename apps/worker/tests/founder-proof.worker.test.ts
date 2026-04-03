@@ -48,6 +48,14 @@ import type {
 const TEST_ENCRYPTION_KEY = randomBytes(32).toString("hex");
 const keyBuffer = parseEncryptionKey(TEST_ENCRYPTION_KEY);
 
+function requireValue<T>(value: T | null | undefined, message: string): T {
+  if (value === null || value === undefined) {
+    throw new Error(message);
+  }
+
+  return value;
+}
+
 function silentLog() {
   return {
     info: () => {
@@ -658,7 +666,10 @@ describe("proof-mode full sync pipeline", () => {
 
     // Snapshot was written
     expect(healthRepo.snapshots.size).toBe(1);
-    const snapshot = healthRepo.snapshots.get("startup-1")!;
+    const snapshot = requireValue(
+      healthRepo.snapshots.get("startup-1"),
+      "Expected founder-proof snapshot to be written."
+    );
     expect(snapshot.healthState).toBe("ready");
     expect(snapshot.northStarValue).toBe(12_400);
     expect(snapshot.northStarKey).toBe("mrr");
@@ -696,7 +707,10 @@ describe("proof-mode full sync pipeline", () => {
     );
 
     expect(healthRepo.snapshots.size).toBe(1);
-    const snapshot = healthRepo.snapshots.get("startup-1")!;
+    const snapshot = requireValue(
+      healthRepo.snapshots.get("startup-1"),
+      "Expected founder-proof PostHog snapshot to be written."
+    );
     expect(snapshot.healthState).toBe("ready");
     // PostHog doesn't set MRR — it defaults to 0 from carry-forward
     expect(snapshot.northStarValue).toBe(0);
@@ -744,7 +758,10 @@ describe("proof-mode full sync pipeline", () => {
 
     // Insight was generated
     expect(insightRepo.insights.size).toBe(1);
-    const insight = insightRepo.insights.get("startup-1")!;
+    const insight = requireValue(
+      insightRepo.insights.get("startup-1"),
+      "Expected founder-proof insight to be written."
+    );
     expect(insight.generationStatus).toBe("success");
     expect(insight.model).toBe("founder-proof-deterministic");
     expect(insight.explanation).toBeDefined();
@@ -780,7 +797,10 @@ describe("proof-mode full sync pipeline", () => {
     }
 
     // All syncs should produce the same MRR
-    const snapshot = healthRepo.snapshots.get("startup-1")!;
+    const snapshot = requireValue(
+      healthRepo.snapshots.get("startup-1"),
+      "Expected repeated founder-proof syncs to leave a snapshot."
+    );
     expect(snapshot.northStarValue).toBe(12_400);
   });
 });
@@ -811,7 +831,10 @@ describe("proof-mode task sync", () => {
     expect(taskRepo.failedCalls).toHaveLength(0);
 
     // Task status in repository is synced
-    const task = taskRepo.tasks.get("task-1")!;
+    const task = requireValue(
+      taskRepo.tasks.get("task-1"),
+      "Expected synced task to remain in the repository."
+    );
     expect(task.syncStatus).toBe("synced");
     expect(task.linearIssueId).toBe("FP-task-1");
   });

@@ -85,6 +85,53 @@ function parseRuntimeMode(value: string | undefined): RuntimeMode {
 }
 
 const VALID_FOUNDER_PROOF_VALUES = new Set(["true", "false", "1", "0", ""]);
+const CONNECTOR_ENCRYPTION_KEY_PATTERN = /^[0-9a-fA-F]+$/;
+
+function readOptionalTrimmed(
+  source: Record<string, string | undefined>,
+  key: string
+): string | undefined {
+  return source[key]?.trim() || undefined;
+}
+
+function validateStrictApiEnv(
+  source: Record<string, string | undefined>,
+  values: { betterAuthSecret: string; connectorEncryptionKey: string }
+): void {
+  if (!source.DATABASE_URL) {
+    throw new Error(
+      "DATABASE_URL is required in strict mode. Copy .env.example to .env before running runtime-only commands."
+    );
+  }
+
+  if (values.betterAuthSecret.length < 32) {
+    throw new Error(
+      "BETTER_AUTH_SECRET must be at least 32 characters in strict mode."
+    );
+  }
+
+  if (!values.connectorEncryptionKey) {
+    throw new Error(
+      "CONNECTOR_ENCRYPTION_KEY is required in strict mode. Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\""
+    );
+  }
+}
+
+function validateConnectorEncryptionKey(connectorEncryptionKey: string): void {
+  if (!connectorEncryptionKey) {
+    return;
+  }
+
+  if (connectorEncryptionKey.length !== 64) {
+    throw new Error(
+      `CONNECTOR_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes). Received length: ${connectorEncryptionKey.length}.`
+    );
+  }
+
+  if (!CONNECTOR_ENCRYPTION_KEY_PATTERN.test(connectorEncryptionKey)) {
+    throw new Error("CONNECTOR_ENCRYPTION_KEY contains non-hex characters.");
+  }
+}
 
 function parseFounderProofMode(value: string | undefined): boolean {
   const raw = (value ?? "").trim().toLowerCase();
@@ -123,40 +170,21 @@ export function readApiEnv(
   const betterAuthSecret = source.BETTER_AUTH_SECRET ?? "";
   const databaseUrl = source.DATABASE_URL ?? DEFAULTS.DATABASE_URL;
   const redisUrl = source.REDIS_URL ?? DEFAULTS.REDIS_URL;
-  const googleClientId = source.GOOGLE_CLIENT_ID?.trim() || undefined;
-  const googleClientSecret = source.GOOGLE_CLIENT_SECRET?.trim() || undefined;
+  const googleClientId = readOptionalTrimmed(source, "GOOGLE_CLIENT_ID");
+  const googleClientSecret = readOptionalTrimmed(
+    source,
+    "GOOGLE_CLIENT_SECRET"
+  );
   const connectorEncryptionKey = source.CONNECTOR_ENCRYPTION_KEY?.trim() ?? "";
 
-  if (strict && !source.DATABASE_URL) {
-    throw new Error(
-      "DATABASE_URL is required in strict mode. Copy .env.example to .env before running runtime-only commands."
-    );
+  if (strict) {
+    validateStrictApiEnv(source, {
+      betterAuthSecret,
+      connectorEncryptionKey,
+    });
   }
 
-  if (strict && betterAuthSecret.length < 32) {
-    throw new Error(
-      "BETTER_AUTH_SECRET must be at least 32 characters in strict mode."
-    );
-  }
-
-  if (strict && !connectorEncryptionKey) {
-    throw new Error(
-      "CONNECTOR_ENCRYPTION_KEY is required in strict mode. Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\""
-    );
-  }
-
-  if (connectorEncryptionKey && connectorEncryptionKey.length !== 64) {
-    throw new Error(
-      `CONNECTOR_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes). Received length: ${connectorEncryptionKey.length}.`
-    );
-  }
-
-  if (
-    connectorEncryptionKey &&
-    !/^[0-9a-fA-F]+$/.test(connectorEncryptionKey)
-  ) {
-    throw new Error("CONNECTOR_ENCRYPTION_KEY contains non-hex characters.");
-  }
+  validateConnectorEncryptionKey(connectorEncryptionKey);
 
   return {
     edition: parseEdition(source.PORTA_EDITION),

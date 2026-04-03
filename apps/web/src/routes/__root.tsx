@@ -3,7 +3,7 @@ import {
   Link,
   Outlet,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { type ReactNode, useEffect } from "react";
 
 import {
   type AuthController,
@@ -36,6 +36,24 @@ function RootLayout() {
     return () => mq.removeEventListener("change", apply);
   }, []);
 
+  let navContent: ReactNode = null;
+  if (snapshot.status === "authenticated" && snapshot.session?.user) {
+    navContent = (
+      <span className="text-muted-foreground text-sm">
+        {snapshot.session.user.name ?? snapshot.session.user.email}
+      </span>
+    );
+  } else if (snapshot.status === "signed-out" || snapshot.status === "error") {
+    navContent = (
+      <Link
+        className="text-primary text-sm underline-offset-4 hover:underline"
+        to="/auth/sign-in"
+      >
+        Sign in
+      </Link>
+    );
+  }
+
   return (
     <div className="min-h-screen" data-auth-state={snapshot.status}>
       <header className="flex items-center justify-between border-border border-b px-6 py-4">
@@ -45,21 +63,7 @@ function RootLayout() {
           </p>
           <strong>Portfolio Dashboard</strong>
         </div>
-        <nav>
-          {snapshot.status === "authenticated" && snapshot.session?.user ? (
-            <span className="text-muted-foreground text-sm">
-              {snapshot.session.user.name ?? snapshot.session.user.email}
-            </span>
-          ) : snapshot.status === "signed-out" ||
-            snapshot.status === "error" ? (
-            <Link
-              className="text-primary text-sm underline-offset-4 hover:underline"
-              to="/auth/sign-in"
-            >
-              Sign in
-            </Link>
-          ) : null}
-        </nav>
+        <nav>{navContent}</nav>
       </header>
 
       <Outlet />

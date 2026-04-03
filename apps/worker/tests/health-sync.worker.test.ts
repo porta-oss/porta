@@ -36,6 +36,14 @@ import type {
 const TEST_ENCRYPTION_KEY = randomBytes(32).toString("hex");
 const keyBuffer = parseEncryptionKey(TEST_ENCRYPTION_KEY);
 
+function requireValue<T>(value: T | null | undefined, message: string): T {
+  if (value === null || value === undefined) {
+    throw new Error(message);
+  }
+
+  return value;
+}
+
 function makeConnectorRow(overrides?: Partial<ConnectorRow>): ConnectorRow {
   const config = JSON.stringify({
     apiKey: "phc_test",
@@ -277,7 +285,10 @@ describe("health snapshot recompute", () => {
       await processor(makeJob(makePayload()));
 
       expect(healthRepo.replaceCalls.length).toBe(1);
-      const snap = healthRepo.replaceCalls[0]!;
+      const snap = requireValue(
+        healthRepo.replaceCalls[0],
+        "Expected health snapshot write on first sync."
+      );
       expect(snap.startupId).toBe("startup-1");
       expect(snap.northStarKey).toBe("mrr");
       expect(snap.northStarValue).toBe(4200);
@@ -321,7 +332,10 @@ describe("health snapshot recompute", () => {
 
       await processor(makeJob(makePayload()));
 
-      const snap = healthRepo.replaceCalls[0]!;
+      const snap = requireValue(
+        healthRepo.replaceCalls[0],
+        "Expected carried-forward snapshot write."
+      );
       expect(snap.northStarValue).toBe(3000); // Carried forward from previous
       expect(snap.northStarPreviousValue).toBe(3000); // Previous was the old value
     });
@@ -364,7 +378,10 @@ describe("health snapshot recompute", () => {
       );
 
       expect(healthRepo.replaceCalls.length).toBe(1);
-      const snap = healthRepo.replaceCalls[0]!;
+      const snap = requireValue(
+        healthRepo.replaceCalls[0],
+        "Expected snapshot write on manual resync."
+      );
       expect(snap.northStarValue).toBe(2000);
       expect(snap.northStarPreviousValue).toBe(1000);
       expect(snap.syncJobId).toBe("sjob-resync");
@@ -389,14 +406,23 @@ describe("health snapshot recompute", () => {
 
       await processor(makeJob(makePayload()));
 
-      const snap = healthRepo.replaceCalls[0]!;
+      const snap = requireValue(
+        healthRepo.replaceCalls[0],
+        "Expected snapshot write with funnel stages."
+      );
       expect(snap.funnel.length).toBe(4);
 
-      const visitor = snap.funnel.find((f) => f.stage === "visitor")!;
+      const visitor = requireValue(
+        snap.funnel.find((f) => f.stage === "visitor"),
+        "Expected visitor funnel stage."
+      );
       expect(visitor.value).toBe(500);
       expect(visitor.position).toBe(0);
 
-      const paying = snap.funnel.find((f) => f.stage === "paying_customer")!;
+      const paying = requireValue(
+        snap.funnel.find((f) => f.stage === "paying_customer"),
+        "Expected paying customer funnel stage."
+      );
       expect(paying.value).toBe(20);
       expect(paying.position).toBe(3);
     });
@@ -435,7 +461,10 @@ describe("health snapshot recompute", () => {
 
       // Snapshot should NOT have been replaced
       expect(healthRepo.replaceCalls.length).toBe(0);
-      const preserved = healthRepo.snapshots.get("startup-1")!;
+      const preserved = requireValue(
+        healthRepo.snapshots.get("startup-1"),
+        "Expected preserved snapshot after provider failure."
+      );
       expect(preserved.snapshotId).toBe("preserved-snap");
       expect(preserved.northStarValue).toBe(5000);
     });
@@ -649,11 +678,17 @@ describe("funnel merging", () => {
   test("mergeFunnel preserves stage positions and labels", () => {
     const result = mergeFunnel({ visitor: 10 });
 
-    const visitor = result.find((r) => r.stage === "visitor")!;
+    const visitor = requireValue(
+      result.find((r) => r.stage === "visitor"),
+      "Expected visitor stage in merged funnel."
+    );
     expect(visitor.position).toBe(0);
     expect(visitor.label).toBe("Visitors");
 
-    const paying = result.find((r) => r.stage === "paying_customer")!;
+    const paying = requireValue(
+      result.find((r) => r.stage === "paying_customer"),
+      "Expected paying customer stage in merged funnel."
+    );
     expect(paying.position).toBe(3);
     expect(paying.label).toBe("Paying Customers");
   });
@@ -746,7 +781,10 @@ describe("boundary conditions", () => {
     await processor(makeJob(makePayload({ trigger: "initial" })));
 
     expect(healthRepo.replaceCalls.length).toBe(1);
-    const snap = healthRepo.replaceCalls[0]!;
+    const snap = requireValue(
+      healthRepo.replaceCalls[0],
+      "Expected initial sync snapshot write."
+    );
     expect(snap.northStarPreviousValue).toBeNull(); // No previous on initial sync
     expect(snap.northStarValue).toBe(1000);
   });
@@ -788,7 +826,10 @@ describe("boundary conditions", () => {
 
     await processor(makeJob(makePayload()));
 
-    const snap = healthRepo.replaceCalls[0]!;
+    const snap = requireValue(
+      healthRepo.replaceCalls[0],
+      "Expected snapshot write when one provider stays healthy."
+    );
     // MRR carried from previous (Stripe data)
     expect(snap.northStarValue).toBe(2000);
     // Active users updated from PostHog

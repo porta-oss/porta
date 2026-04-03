@@ -60,6 +60,58 @@ export type ExplainerFn = (input: ExplainerInput) => Promise<ExplainerOutput>;
 const ANTHROPIC_TIMEOUT_MS = 15_000;
 const ANTHROPIC_MODEL = "claude-sonnet-4-20250514";
 
+function getRetryableError(message: string): Error & { retryable: boolean } {
+  const error = new Error(message) as Error & { retryable: boolean };
+  error.retryable = true;
+  return error;
+}
+
+function getAnthropicStatusError(status: number): Error | null {
+  if (status === 401) {
+    return new Error("Anthropic API key is invalid or revoked.");
+  }
+  if (status === 429) {
+    return getRetryableError("Anthropic rate limit exceeded.");
+  }
+  if (status >= 500) {
+    return getRetryableError(`Anthropic server error (${status}).`);
+  }
+  if (status >= 400) {
+    return new Error(`Anthropic API returned status ${status}.`);
+  }
+
+  return null;
+}
+
+function extractAnthropicTextBlock(body: {
+  content?: Array<{ type: string; text?: string }>;
+}): string {
+  const textBlock = body.content?.find((block) => block.type === "text");
+  if (!textBlock?.text) {
+    throw new Error("Anthropic response contained no text block.");
+  }
+
+  return textBlock.text;
+}
+
+function parseAnthropicResponseText(text: string) {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("Anthropic response was not valid JSON.");
+  }
+
+  const payload = parsed as Record<string, unknown>;
+  return {
+    observation: String(payload.observation ?? ""),
+    hypothesis: String(payload.hypothesis ?? ""),
+    actions: (Array.isArray(payload.actions)
+      ? payload.actions
+      : []) as InsightAction[],
+  };
+}
+
 /**
  * Create an Anthropic-backed explainer.
  * Calls the Messages API to generate an explanation from evidence data.
@@ -110,57 +162,30 @@ Snapshot computed at: ${input.evidence.snapshotComputedAt}`;
       clearTimeout(timer);
       const latencyMs = Date.now() - start;
 
-      if (response.status === 401) {
-        throw new Error("Anthropic API key is invalid or revoked.");
-      }
-      if (response.status === 429) {
-        const err = new Error("Anthropic rate limit exceeded.");
-        (err as Error & { retryable: boolean }).retryable = true;
-        throw err;
-      }
-      if (response.status >= 500) {
-        const err = new Error(`Anthropic server error (${response.status}).`);
-        (err as Error & { retryable: boolean }).retryable = true;
-        throw err;
-      }
-      if (!response.ok) {
-        throw new Error(`Anthropic API returned status ${response.status}.`);
+      const statusError = getAnthropicStatusError(response.status);
+      if (statusError) {
+        throw statusError;
       }
 
       const body = (await response.json()) as {
         content?: Array<{ type: string; text?: string }>;
       };
-
-      const textBlock = body.content?.find((b) => b.type === "text");
-      if (!textBlock?.text) {
-        throw new Error("Anthropic response contained no text block.");
-      }
-
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(textBlock.text);
-      } catch {
-        throw new Error("Anthropic response was not valid JSON.");
-      }
-
-      const obj = parsed as Record<string, unknown>;
+      const parsed = parseAnthropicResponseText(
+        extractAnthropicTextBlock(body)
+      );
       return {
-        observation: String(obj.observation ?? ""),
-        hypothesis: String(obj.hypothesis ?? ""),
-        actions: (Array.isArray(obj.actions)
-          ? obj.actions
-          : []) as InsightAction[],
+        observation: parsed.observation,
+        hypothesis: parsed.hypothesis,
+        actions: parsed.actions,
         model: ANTHROPIC_MODEL,
         latencyMs,
       };
     } catch (err) {
       clearTimeout(timer);
       if (err instanceof DOMException && err.name === "AbortError") {
-        const timeoutErr = new Error(
+        throw getRetryableError(
           `Anthropic explainer timed out after ${ANTHROPIC_TIMEOUT_MS}ms.`
         );
-        (timeoutErr as Error & { retryable: boolean }).retryable = true;
-        throw timeoutErr;
       }
       throw err;
     }
@@ -232,7 +257,7 @@ export function createFailingExplainer(
 export function createFounderProofExplainer(): ExplainerFn {
   return async (input: ExplainerInput): Promise<ExplainerOutput> => {
     const conditionLabels: Record<
-      string,
+      Exclude<InsightConditionCode, "funnel_bottleneck">,
       { observation: string; hypothesis: string; actions: InsightAction[] }
     > = {
       mrr_declining: {
@@ -305,8 +330,9 @@ export function createFounderProofExplainer(): ExplainerFn {
     };
 
     const template =
-      conditionLabels[input.conditionCode] ??
-      conditionLabels.no_condition_detected!;
+      input.conditionCode === "funnel_bottleneck"
+        ? conditionLabels.no_condition_detected
+        : conditionLabels[input.conditionCode];
 
     return {
       observation: template.observation,
@@ -511,195 +537,156 @@ export interface InsightGenerationResult {
   status: string;
 }
 
-/**
- * Generate one grounded insight from the latest health snapshot.
- *
- * Pipeline:
- *   1. Read the latest snapshot — skip if none exists or data is stale/blocked.
- *   2. Detect one deterministic condition.
- *   3. If a real condition exists, call the explainer.
- *   4. Validate explainer output — reject malformed responses.
- *   5. Persist the insight with evidence + explanation.
- *   6. On explainer failure, update diagnostics only (preserve-last-good).
- */
-export async function generateInsight(
+async function skipInsightGeneration(
   deps: InsightGenerationDeps,
   startupId: string,
-  syncJobId: string
+  status: import("@shared/startup-insight").InsightGenerationStatus,
+  reason: string,
+  conditionCode: InsightConditionCode = "no_condition_detected",
+  error?: string
 ): Promise<InsightGenerationResult> {
-  const logCtx = { startupId, syncJobId, component: "insight-generation" };
+  await safeUpdateDiagnostics(deps, startupId, status, reason);
+  return {
+    generated: false,
+    conditionCode,
+    status,
+    error,
+  };
+}
 
-  deps.log.info("insight generation started", logCtx);
-  const generationStart = Date.now();
+function parseSupportingMetricsSnapshot(
+  snapshot: HealthSnapshotRow
+): SupportingMetricsSnapshot {
+  const supportingMetrics =
+    snapshot.supportingMetrics as SupportingMetricsSnapshot;
+  if (typeof supportingMetrics !== "object" || supportingMetrics === null) {
+    throw new Error("Supporting metrics is not an object.");
+  }
 
-  // 1. Read latest snapshot
-  let snapshot: HealthSnapshotRow | undefined;
+  return supportingMetrics;
+}
+
+async function persistNoConditionInsight(
+  deps: InsightGenerationDeps,
+  startupId: string,
+  detection: DetectionResult
+): Promise<void> {
+  await deps.insightRepo.replaceInsight({
+    insightId: randomUUID(),
+    startupId,
+    conditionCode: detection.conditionCode,
+    evidence: detection.evidence,
+    explanation: null,
+    generationStatus: "skipped_no_condition",
+    lastError: null,
+    model: null,
+    explainerLatencyMs: null,
+    generatedAt: new Date(),
+  });
+}
+
+async function readInsightSnapshotOrSkip(
+  deps: InsightGenerationDeps,
+  startupId: string,
+  logCtx: Record<string, unknown>
+): Promise<HealthSnapshotRow | InsightGenerationResult> {
   try {
-    snapshot = await deps.healthRepo.findSnapshot(startupId);
+    const snapshot = await deps.healthRepo.findSnapshot(startupId);
+    if (snapshot) {
+      return snapshot;
+    }
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     deps.log.error("failed to read health snapshot", { ...logCtx, error });
-    await safeUpdateDiagnostics(
+    return skipInsightGeneration(
       deps,
       startupId,
       "skipped_stale",
-      `Snapshot read failed: ${error}`
+      `Snapshot read failed: ${error}`,
+      "no_condition_detected",
+      error
     );
-    return {
-      generated: false,
-      conditionCode: "no_condition_detected",
-      status: "skipped_stale",
-      error,
-    };
   }
 
-  if (!snapshot) {
-    deps.log.warn(
-      "no health snapshot exists — skipping insight generation",
-      logCtx
-    );
-    return {
-      generated: false,
-      conditionCode: "no_condition_detected",
-      status: "skipped_stale",
-    };
-  }
+  deps.log.warn(
+    "no health snapshot exists — skipping insight generation",
+    logCtx
+  );
+  return {
+    generated: false,
+    conditionCode: "no_condition_detected",
+    status: "skipped_stale",
+  };
+}
 
-  // Check connector freshness
-  const healthState = snapshot.healthState as HealthState;
+async function skipInsightForHealthState(
+  deps: InsightGenerationDeps,
+  startupId: string,
+  healthState: HealthState,
+  logCtx: Record<string, unknown>
+): Promise<InsightGenerationResult | null> {
   if (healthState === "blocked") {
     deps.log.warn("connector is blocked — skipping insight generation", {
       ...logCtx,
       healthState,
     });
-    await safeUpdateDiagnostics(
+    return skipInsightGeneration(
       deps,
       startupId,
       "skipped_blocked",
       "Connector is blocked."
     );
-    return {
-      generated: false,
-      conditionCode: "no_condition_detected",
-      status: "skipped_blocked",
-    };
   }
+
   if (healthState === "error") {
     deps.log.warn("connector in error state — skipping insight generation", {
       ...logCtx,
       healthState,
     });
-    await safeUpdateDiagnostics(
+    return skipInsightGeneration(
       deps,
       startupId,
       "skipped_stale",
       "Connector in error state."
     );
-    return {
-      generated: false,
-      conditionCode: "no_condition_detected",
-      status: "skipped_stale",
-    };
   }
 
-  // Parse supporting metrics
-  let supportingMetrics: SupportingMetricsSnapshot;
+  return null;
+}
+
+async function parseInsightSupportingMetricsOrSkip(
+  deps: InsightGenerationDeps,
+  startupId: string,
+  snapshot: HealthSnapshotRow,
+  logCtx: Record<string, unknown>
+): Promise<SupportingMetricsSnapshot | InsightGenerationResult> {
   try {
-    supportingMetrics = snapshot.supportingMetrics as SupportingMetricsSnapshot;
-    if (typeof supportingMetrics !== "object" || supportingMetrics === null) {
-      throw new Error("Supporting metrics is not an object.");
-    }
+    return parseSupportingMetricsSnapshot(snapshot);
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     deps.log.error("malformed supporting metrics in snapshot", {
       ...logCtx,
       error,
     });
-    await safeUpdateDiagnostics(
+    return skipInsightGeneration(
       deps,
       startupId,
       "skipped_stale",
-      `Malformed metrics: ${error}`
+      `Malformed metrics: ${error}`,
+      "no_condition_detected",
+      error
     );
-    return {
-      generated: false,
-      conditionCode: "no_condition_detected",
-      status: "skipped_stale",
-      error,
-    };
   }
+}
 
-  // 2. Detect condition
-  const detection = detectCondition({
-    snapshot,
-    supportingMetrics,
-    healthState,
-  });
-
-  deps.log.info("condition detected", {
-    ...logCtx,
-    conditionCode: detection.conditionCode,
-    evidenceItems: detection.evidence.items.length,
-  });
-
-  // Validate evidence packet before proceeding
-  const evidenceError = validateEvidencePacket(detection.evidence);
-  if (evidenceError !== null) {
-    deps.log.error("evidence packet validation failed", {
-      ...logCtx,
-      error: evidenceError,
-    });
-    await safeUpdateDiagnostics(
-      deps,
-      startupId,
-      "skipped_stale",
-      `Invalid evidence: ${evidenceError}`
-    );
-    return {
-      generated: false,
-      conditionCode: detection.conditionCode,
-      status: "skipped_stale",
-      error: evidenceError,
-    };
-  }
-
-  // 3. If no real condition, persist evidence-only insight
-  if (detection.conditionCode === "no_condition_detected") {
-    deps.log.info(
-      "no condition detected — persisting evidence-only insight",
-      logCtx
-    );
-    try {
-      await deps.insightRepo.replaceInsight({
-        insightId: randomUUID(),
-        startupId,
-        conditionCode: detection.conditionCode,
-        evidence: detection.evidence,
-        explanation: null,
-        generationStatus: "skipped_no_condition",
-        lastError: null,
-        model: null,
-        explainerLatencyMs: null,
-        generatedAt: new Date(),
-      });
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      deps.log.error("failed to persist no-condition insight", {
-        ...logCtx,
-        error,
-      });
-    }
-    return {
-      generated: false,
-      conditionCode: detection.conditionCode,
-      status: "skipped_no_condition",
-    };
-  }
-
-  // 4. Call explainer
-  let explainerOutput: ExplainerOutput;
+async function callExplainerOrSkip(
+  deps: InsightGenerationDeps,
+  startupId: string,
+  detection: DetectionResult,
+  logCtx: Record<string, unknown>
+): Promise<ExplainerOutput | InsightGenerationResult> {
   try {
-    explainerOutput = await deps.explainer({
+    return await deps.explainer({
       conditionCode: detection.conditionCode,
       evidence: detection.evidence,
     });
@@ -708,16 +695,25 @@ export async function generateInsight(
     const retryable =
       (err as Error & { retryable?: boolean }).retryable === true;
     deps.log.error("explainer call failed", { ...logCtx, error, retryable });
-    await safeUpdateDiagnostics(deps, startupId, "failed_explainer", error);
-    return {
-      generated: false,
-      conditionCode: detection.conditionCode,
-      status: "failed_explainer",
+    return skipInsightGeneration(
+      deps,
+      startupId,
+      "failed_explainer",
       error,
-    };
+      detection.conditionCode,
+      error
+    );
   }
+}
 
-  // 5. Build and validate explanation
+async function persistInsightOrSkip(
+  deps: InsightGenerationDeps,
+  startupId: string,
+  detection: DetectionResult,
+  explainerOutput: ExplainerOutput,
+  generationStart: number,
+  logCtx: Record<string, unknown>
+): Promise<InsightGenerationResult> {
   const explanation: InsightExplanation = {
     observation: explainerOutput.observation,
     hypothesis: explainerOutput.hypothesis,
@@ -732,21 +728,16 @@ export async function generateInsight(
       ...logCtx,
       error: explanationError,
     });
-    await safeUpdateDiagnostics(
+    return skipInsightGeneration(
       deps,
       startupId,
       "failed_explainer",
-      `Malformed explainer output: ${explanationError}`
+      `Malformed explainer output: ${explanationError}`,
+      detection.conditionCode,
+      explanationError
     );
-    return {
-      generated: false,
-      conditionCode: detection.conditionCode,
-      status: "failed_explainer",
-      error: explanationError,
-    };
   }
 
-  // 6. Persist full insight
   const generatedAt = new Date();
   const totalLatencyMs = Date.now() - generationStart;
   try {
@@ -792,6 +783,127 @@ export async function generateInsight(
     conditionCode: detection.conditionCode,
     status: "success",
   };
+}
+
+/**
+ * Generate one grounded insight from the latest health snapshot.
+ *
+ * Pipeline:
+ *   1. Read the latest snapshot — skip if none exists or data is stale/blocked.
+ *   2. Detect one deterministic condition.
+ *   3. If a real condition exists, call the explainer.
+ *   4. Validate explainer output — reject malformed responses.
+ *   5. Persist the insight with evidence + explanation.
+ *   6. On explainer failure, update diagnostics only (preserve-last-good).
+ */
+export async function generateInsight(
+  deps: InsightGenerationDeps,
+  startupId: string,
+  syncJobId: string
+): Promise<InsightGenerationResult> {
+  const logCtx = { startupId, syncJobId, component: "insight-generation" };
+
+  deps.log.info("insight generation started", logCtx);
+  const generationStart = Date.now();
+
+  const snapshotResult = await readInsightSnapshotOrSkip(
+    deps,
+    startupId,
+    logCtx
+  );
+  if ("generated" in snapshotResult) {
+    return snapshotResult;
+  }
+  const snapshot = snapshotResult;
+
+  const healthState = snapshot.healthState as HealthState;
+  const healthStateSkip = await skipInsightForHealthState(
+    deps,
+    startupId,
+    healthState,
+    logCtx
+  );
+  if (healthStateSkip) {
+    return healthStateSkip;
+  }
+
+  const supportingMetricsResult = await parseInsightSupportingMetricsOrSkip(
+    deps,
+    startupId,
+    snapshot,
+    logCtx
+  );
+  if ("generated" in supportingMetricsResult) {
+    return supportingMetricsResult;
+  }
+  const supportingMetrics = supportingMetricsResult;
+
+  const detection = detectCondition({
+    snapshot,
+    supportingMetrics,
+    healthState,
+  });
+
+  deps.log.info("condition detected", {
+    ...logCtx,
+    conditionCode: detection.conditionCode,
+    evidenceItems: detection.evidence.items.length,
+  });
+
+  const evidenceError = validateEvidencePacket(detection.evidence);
+  if (evidenceError !== null) {
+    deps.log.error("evidence packet validation failed", {
+      ...logCtx,
+      error: evidenceError,
+    });
+    return skipInsightGeneration(
+      deps,
+      startupId,
+      "skipped_stale",
+      `Invalid evidence: ${evidenceError}`,
+      detection.conditionCode,
+      evidenceError
+    );
+  }
+
+  if (detection.conditionCode === "no_condition_detected") {
+    deps.log.info(
+      "no condition detected — persisting evidence-only insight",
+      logCtx
+    );
+    try {
+      await persistNoConditionInsight(deps, startupId, detection);
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      deps.log.error("failed to persist no-condition insight", {
+        ...logCtx,
+        error,
+      });
+    }
+    return {
+      generated: false,
+      conditionCode: detection.conditionCode,
+      status: "skipped_no_condition",
+    };
+  }
+
+  const explainerResult = await callExplainerOrSkip(
+    deps,
+    startupId,
+    detection,
+    logCtx
+  );
+  if ("generated" in explainerResult) {
+    return explainerResult;
+  }
+  return persistInsightOrSkip(
+    deps,
+    startupId,
+    detection,
+    explainerResult,
+    generationStart,
+    logCtx
+  );
 }
 
 // ---------------------------------------------------------------------------

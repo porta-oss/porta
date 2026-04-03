@@ -14,34 +14,16 @@ import type { StartupDraft } from "@shared/types";
 import { convertSetCookieToCookie } from "better-auth/test";
 import { sql } from "drizzle-orm";
 
-import { type ApiApp, createApiApp } from "../src/app";
+import type { ApiApp } from "../src/app";
 import { createStubPostHogValidator } from "../src/lib/connectors/posthog";
 import { createStubQueueProducer } from "../src/lib/connectors/queue";
 import { createStubStripeValidator } from "../src/lib/connectors/stripe";
 import { createStubTaskSyncQueueProducer } from "../src/lib/tasks/queue";
-
-// ---------------------------------------------------------------------------
-// Environment
-// ---------------------------------------------------------------------------
-
-const TEST_ENV = {
-  NODE_ENV: "test",
-  API_PORT: "3000",
-  API_URL: "http://localhost:3000",
-  WEB_URL: "http://localhost:5173",
-  DATABASE_URL: "postgres://postgres:postgres@127.0.0.1:5432/porta",
-  REDIS_URL: "redis://127.0.0.1:6379",
-  BETTER_AUTH_URL: "http://localhost:3000",
-  BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
-  GOOGLE_CLIENT_ID: "google-client-id",
-  GOOGLE_CLIENT_SECRET: "google-client-secret",
-  MAGIC_LINK_SENDER_EMAIL: "dev@porta.local",
-  CONNECTOR_ENCRYPTION_KEY:
-    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  AUTH_CONTEXT_TIMEOUT_MS: "2000",
-  DATABASE_CONNECT_TIMEOUT_MS: "5000",
-  DATABASE_POOL_MAX: "5",
-} as const;
+import {
+  closeTestApiApp,
+  createTestApiApp,
+  requireValue,
+} from "./helpers/test-app";
 
 const VALID_STARTUP: StartupDraft = {
   name: "Task Route Test",
@@ -219,13 +201,17 @@ async function cleanupTasks(
 // Suite setup
 // ---------------------------------------------------------------------------
 
-let app: ApiApp;
+let app: ApiApp | undefined;
 let cookie: string;
 let startupId: string;
 let insightId: string;
 
+function getApp() {
+  return requireValue(app, "Expected API test app to be initialized.");
+}
+
 beforeAll(async () => {
-  app = await createApiApp(TEST_ENV, {
+  app = await createTestApiApp({
     posthogValidator: createStubPostHogValidator(),
     stripeValidator: createStubStripeValidator(),
     queueProducer: createStubQueueProducer(),
@@ -233,16 +219,15 @@ beforeAll(async () => {
   });
 
   const runId = Date.now();
-  cookie = await signUp(app, `task-rt-${runId}@example.com`);
-  await createWorkspace(app, cookie, `Task RT WS ${runId}`);
-  startupId = await createStartup(app, cookie, VALID_STARTUP);
-  insightId = await insertInsight(app.runtime.db.db, startupId);
+  const testApp = getApp();
+  cookie = await signUp(testApp, `task-rt-${runId}@example.com`);
+  await createWorkspace(testApp, cookie, `Task RT WS ${runId}`);
+  startupId = await createStartup(testApp, cookie, VALID_STARTUP);
+  insightId = await insertInsight(testApp.runtime.db.db, startupId);
 });
 
 afterAll(async () => {
-  if (app) {
-    await app.runtime.db.close();
-  }
+  await closeTestApiApp(app);
 });
 
 // ---------------------------------------------------------------------------
@@ -252,7 +237,7 @@ afterAll(async () => {
 describe("POST /api/tasks", () => {
   // ── Auth rejection ──
   test("rejects unauthenticated requests with 401", async () => {
-    const res = await makeRequest(app, "http://localhost:3000/api/tasks", {
+    const res = await makeRequest(getApp(), "http://localhost:3000/api/tasks", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ startupId, actionIndex: 0 }),
@@ -264,9 +249,9 @@ describe("POST /api/tasks", () => {
 
   // ── Successful task creation ──
   test("creates a task from the first insight action", async () => {
-    await cleanupTasks(app.runtime.db.db, startupId);
+    await cleanupTasks(getApp().runtime.db.db, startupId);
 
-    const res = await makeRequest(app, "http://localhost:3000/api/tasks", {
+    const res = await makeRequest(getApp(), "http://localhost:3000/api/tasks", {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({ startupId, actionIndex: 0 }),
@@ -298,7 +283,7 @@ describe("POST /api/tasks", () => {
 
   // ── Creates task from second action ──
   test("creates a task from the second insight action", async () => {
-    const res = await makeRequest(app, "http://localhost:3000/api/tasks", {
+    const res = await makeRequest(getApp(), "http://localhost:3000/api/tasks", {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({ startupId, actionIndex: 1 }),
@@ -319,7 +304,7 @@ describe("POST /api/tasks", () => {
   // ── Idempotent duplicate retry ──
   test("returns existing task on duplicate create (same startup + insight + actionIndex)", async () => {
     // Try to create the same task again (actionIndex 0 already exists)
-    const res = await makeRequest(app, "http://localhost:3000/api/tasks", {
+    const res = await makeRequest(getApp(), "http://localhost:3000/api/tasks", {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({ startupId, actionIndex: 0 }),
@@ -338,7 +323,7 @@ describe("POST /api/tasks", () => {
 
   // ── actionIndex out of bounds ──
   test("rejects actionIndex that exceeds available actions", async () => {
-    const res = await makeRequest(app, "http://localhost:3000/api/tasks", {
+    const res = await makeRequest(getApp(), "http://localhost:3000/api/tasks", {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({ startupId, actionIndex: 99 }),
@@ -354,7 +339,7 @@ describe("POST /api/tasks", () => {
 
   // ── Negative actionIndex ──
   test("rejects negative actionIndex", async () => {
-    const res = await makeRequest(app, "http://localhost:3000/api/tasks", {
+    const res = await makeRequest(getApp(), "http://localhost:3000/api/tasks", {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({ startupId, actionIndex: -1 }),
@@ -368,12 +353,12 @@ describe("POST /api/tasks", () => {
   // ── No insight for startup ──
   test("rejects task creation when no insight exists", async () => {
     // Create a fresh startup with no insight
-    const freshId = await createStartup(app, cookie, {
+    const freshId = await createStartup(getApp(), cookie, {
       ...VALID_STARTUP,
       name: `No Insight ${Date.now()}`,
     });
 
-    const res = await makeRequest(app, "http://localhost:3000/api/tasks", {
+    const res = await makeRequest(getApp(), "http://localhost:3000/api/tasks", {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({ startupId: freshId, actionIndex: 0 }),
@@ -386,13 +371,15 @@ describe("POST /api/tasks", () => {
 
   // ── Insight with null explanation ──
   test("rejects task creation when insight has null explanation", async () => {
-    const noExplId = await createStartup(app, cookie, {
+    const noExplId = await createStartup(getApp(), cookie, {
       ...VALID_STARTUP,
       name: `Null Expl ${Date.now()}`,
     });
-    await insertInsight(app.runtime.db.db, noExplId, { explanation: null });
+    await insertInsight(getApp().runtime.db.db, noExplId, {
+      explanation: null,
+    });
 
-    const res = await makeRequest(app, "http://localhost:3000/api/tasks", {
+    const res = await makeRequest(getApp(), "http://localhost:3000/api/tasks", {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({ startupId: noExplId, actionIndex: 0 }),
@@ -405,7 +392,7 @@ describe("POST /api/tasks", () => {
 
   // ── Startup not found ──
   test("returns 404 for non-existent startup", async () => {
-    const res = await makeRequest(app, "http://localhost:3000/api/tasks", {
+    const res = await makeRequest(getApp(), "http://localhost:3000/api/tasks", {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({ startupId: "nonexistent-id", actionIndex: 0 }),
@@ -419,10 +406,14 @@ describe("POST /api/tasks", () => {
   // ── Workspace mismatch ──
   test("returns 403 when startup belongs to a different workspace", async () => {
     const runId2 = Date.now();
-    const cookie2 = await signUp(app, `other-task-user-${runId2}@example.com`);
-    await createWorkspace(app, cookie2, `Other Task WS ${runId2}`);
+    const testApp = getApp();
+    const cookie2 = await signUp(
+      testApp,
+      `other-task-user-${runId2}@example.com`
+    );
+    await createWorkspace(testApp, cookie2, `Other Task WS ${runId2}`);
 
-    const res = await makeRequest(app, "http://localhost:3000/api/tasks", {
+    const res = await makeRequest(testApp, "http://localhost:3000/api/tasks", {
       method: "POST",
       headers: { "content-type": "application/json", cookie: cookie2 },
       body: JSON.stringify({ startupId, actionIndex: 0 }),
@@ -442,7 +433,7 @@ describe("GET /api/tasks", () => {
   // ── Auth rejection ──
   test("rejects unauthenticated requests with 401", async () => {
     const res = await makeRequest(
-      app,
+      getApp(),
       `http://localhost:3000/api/tasks?startupId=${startupId}`
     );
     expect(res.status).toBe(401);
@@ -453,7 +444,7 @@ describe("GET /api/tasks", () => {
   // ── List tasks with results ──
   test("lists tasks for a startup with correct payload shape", async () => {
     const res = await makeRequest(
-      app,
+      getApp(),
       `http://localhost:3000/api/tasks?startupId=${startupId}`,
       {
         headers: { cookie },
@@ -472,7 +463,8 @@ describe("GET /api/tasks", () => {
     expect(body.tasks.length).toBe(body.count);
 
     // Verify task payload shape
-    const task = body.tasks[0]!;
+    expect(body.tasks.length).toBeGreaterThan(0);
+    const task = requireValue(body.tasks[0], "Expected listed task.");
     expect(task.id).toBeTruthy();
     expect(task.startupId).toBe(startupId);
     expect(task.sourceInsightId).toBeTruthy();
@@ -486,13 +478,13 @@ describe("GET /api/tasks", () => {
 
   // ── Empty list for startup with no tasks ──
   test("returns empty list when startup has no tasks", async () => {
-    const freshId = await createStartup(app, cookie, {
+    const freshId = await createStartup(getApp(), cookie, {
       ...VALID_STARTUP,
       name: `No Tasks ${Date.now()}`,
     });
 
     const res = await makeRequest(
-      app,
+      getApp(),
       `http://localhost:3000/api/tasks?startupId=${freshId}`,
       {
         headers: { cookie },
@@ -511,7 +503,7 @@ describe("GET /api/tasks", () => {
 
   // ── Missing startupId query param ──
   test("rejects request without startupId query parameter", async () => {
-    const res = await makeRequest(app, "http://localhost:3000/api/tasks", {
+    const res = await makeRequest(getApp(), "http://localhost:3000/api/tasks", {
       headers: { cookie },
     });
     expect(res.status).toBe(400);
@@ -523,7 +515,7 @@ describe("GET /api/tasks", () => {
   // ── Startup not found ──
   test("returns 404 for non-existent startup", async () => {
     const res = await makeRequest(
-      app,
+      getApp(),
       "http://localhost:3000/api/tasks?startupId=nonexistent",
       {
         headers: { cookie },
@@ -538,11 +530,12 @@ describe("GET /api/tasks", () => {
   // ── Workspace mismatch ──
   test("returns 403 when startup belongs to a different workspace", async () => {
     const runId3 = Date.now();
-    const cookie3 = await signUp(app, `list-other-${runId3}@example.com`);
-    await createWorkspace(app, cookie3, `List Other WS ${runId3}`);
+    const testApp = getApp();
+    const cookie3 = await signUp(testApp, `list-other-${runId3}@example.com`);
+    await createWorkspace(testApp, cookie3, `List Other WS ${runId3}`);
 
     const res = await makeRequest(
-      app,
+      testApp,
       `http://localhost:3000/api/tasks?startupId=${startupId}`,
       {
         headers: { cookie: cookie3 },
@@ -557,7 +550,7 @@ describe("GET /api/tasks", () => {
   // ── Tasks ordered by createdAt ASC ──
   test("returns tasks ordered by creation time ascending", async () => {
     const res = await makeRequest(
-      app,
+      getApp(),
       `http://localhost:3000/api/tasks?startupId=${startupId}`,
       {
         headers: { cookie },

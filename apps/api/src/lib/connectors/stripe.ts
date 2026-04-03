@@ -20,6 +20,84 @@ function isValidStripeKeyFormat(key: string): boolean {
   return STRIPE_KEY_PATTERN.test(key.trim());
 }
 
+function validateStripeSecretKey(
+  secretKey: string
+): ProviderValidationResult | null {
+  const key = secretKey.trim();
+
+  if (!key) {
+    return { valid: false, error: "Stripe secret key is required." };
+  }
+
+  if (!isValidStripeKeyFormat(key)) {
+    return {
+      valid: false,
+      error:
+        "Stripe key format is invalid. Keys must start with sk_test_, sk_live_, rk_test_, or rk_live_.",
+    };
+  }
+
+  return null;
+}
+
+function mapStripeResponseStatus(status: number): ProviderValidationResult {
+  if (status === 200) {
+    return { valid: true };
+  }
+
+  if (status === 401) {
+    return {
+      valid: false,
+      error: "Stripe secret key is invalid or has been revoked.",
+    };
+  }
+
+  if (status === 403) {
+    return {
+      valid: false,
+      error: "Stripe key lacks the required permissions.",
+    };
+  }
+
+  if (status >= 500) {
+    return {
+      valid: false,
+      error: "Stripe API returned a server error. Try again shortly.",
+      retryable: true,
+    };
+  }
+
+  return {
+    valid: false,
+    error: `Stripe validation failed with status ${status}.`,
+  };
+}
+
+async function requestStripeValidation(
+  secretKey: string,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(`${STRIPE_API_BASE}/v1/balance`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${secretKey}`,
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function isDemoStripeKey(secretKey: string): boolean {
+  return secretKey.trim() === STRIPE_DEMO_SECRET_KEY;
+}
+
 /**
  * Production Stripe validator that calls the real Stripe balance endpoint.
  */
@@ -31,64 +109,14 @@ export function createStripeValidator(options?: {
   return {
     async validate(config: StripeConfig): Promise<ProviderValidationResult> {
       const key = config.secretKey.trim();
-
-      if (!key) {
-        return { valid: false, error: "Stripe secret key is required." };
-      }
-
-      if (!isValidStripeKeyFormat(key)) {
-        return {
-          valid: false,
-          error:
-            "Stripe key format is invalid. Keys must start with sk_test_, sk_live_, rk_test_, or rk_live_.",
-        };
+      const inputError = validateStripeSecretKey(key);
+      if (inputError) {
+        return inputError;
       }
 
       try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-        const response = await fetch(`${STRIPE_API_BASE}/v1/balance`, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${key}`,
-            Accept: "application/json",
-          },
-          signal: controller.signal,
-        });
-
-        clearTimeout(timer);
-
-        if (response.status === 200) {
-          return { valid: true };
-        }
-
-        if (response.status === 401) {
-          return {
-            valid: false,
-            error: "Stripe secret key is invalid or has been revoked.",
-          };
-        }
-
-        if (response.status === 403) {
-          return {
-            valid: false,
-            error: "Stripe key lacks the required permissions.",
-          };
-        }
-
-        if (response.status >= 500) {
-          return {
-            valid: false,
-            error: "Stripe API returned a server error. Try again shortly.",
-            retryable: true,
-          };
-        }
-
-        return {
-          valid: false,
-          error: `Stripe validation failed with status ${response.status}.`,
-        };
+        const response = await requestStripeValidation(key, timeoutMs);
+        return mapStripeResponseStatus(response.status);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
           return {
@@ -127,15 +155,9 @@ export function createStubStripeValidator(
       calls.push(config);
 
       const key = config.secretKey.trim();
-      if (!key) {
-        return { valid: false, error: "Stripe secret key is required." };
-      }
-      if (!isValidStripeKeyFormat(key)) {
-        return {
-          valid: false,
-          error:
-            "Stripe key format is invalid. Keys must start with sk_test_, sk_live_, rk_test_, or rk_live_.",
-        };
+      const inputError = validateStripeSecretKey(key);
+      if (inputError) {
+        return inputError;
       }
 
       return result;
@@ -153,21 +175,12 @@ export function createFounderProofStripeValidator(): StripeValidator {
   return {
     async validate(config: StripeConfig): Promise<ProviderValidationResult> {
       const key = config.secretKey.trim();
-
-      if (!key) {
-        return { valid: false, error: "Stripe secret key is required." };
+      const inputError = validateStripeSecretKey(key);
+      if (inputError) {
+        return inputError;
       }
 
-      if (!isValidStripeKeyFormat(key)) {
-        return {
-          valid: false,
-          error:
-            "Stripe key format is invalid. Keys must start with sk_test_, sk_live_, rk_test_, or rk_live_.",
-        };
-      }
-
-      // Accept only the deterministic demo key
-      if (key === STRIPE_DEMO_SECRET_KEY) {
+      if (isDemoStripeKey(key)) {
         return { valid: true };
       }
 

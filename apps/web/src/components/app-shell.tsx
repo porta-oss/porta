@@ -98,7 +98,7 @@ export function AppShell({
           />
         </aside>
 
-        <div aria-label="dashboard content" className="grid gap-4">
+        <section aria-label="dashboard content" className="grid gap-4">
           {children ?? (
             <>
               <h2>Workspace overview</h2>
@@ -107,7 +107,7 @@ export function AppShell({
               </p>
             </>
           )}
-        </div>
+        </section>
       </div>
     </main>
   );

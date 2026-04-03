@@ -1,6 +1,14 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
+const TASK_ROW_SKELETON_KEYS = ["task-row-1", "task-row-2"] as const;
+const METRIC_TILE_SKELETON_KEYS = [
+  "metric-tile-1",
+  "metric-tile-2",
+  "metric-tile-3",
+  "metric-tile-4",
+] as const;
+
 /**
  * Skeleton matching PortfolioStartupCard layout:
  * - Name + badge row
@@ -86,8 +94,8 @@ export function InsightCardSkeleton() {
 export function TaskListSkeleton() {
   return (
     <div className="grid gap-2">
-      {Array.from({ length: 2 }, (_, i) => (
-        <div className="grid gap-1 border-muted border-b py-3" key={i}>
+      {TASK_ROW_SKELETON_KEYS.map((key) => (
+        <div className="grid gap-1 border-muted border-b py-3" key={key}>
           <div className="flex items-center gap-2">
             <Skeleton className="h-4 w-40" />
             <Skeleton className="h-5 w-14 rounded-3xl" />
@@ -106,8 +114,8 @@ export function TaskListSkeleton() {
 export function MetricsGridSkeleton() {
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-3">
-      {Array.from({ length: 4 }, (_, i) => (
-        <div className="grid gap-1 rounded-lg bg-muted/50 p-3" key={i}>
+      {METRIC_TILE_SKELETON_KEYS.map((key) => (
+        <div className="grid gap-1 rounded-lg bg-muted/50 p-3" key={key}>
           <Skeleton className="h-3 w-16" />
           <Skeleton className="h-5 w-20" />
           <Skeleton className="h-3 w-10" />

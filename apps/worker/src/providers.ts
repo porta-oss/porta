@@ -53,6 +53,486 @@ export type ProviderSyncFn = (
   configJson: string
 ) => Promise<ProviderSyncResult>;
 
+const SQL_IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/;
+
+function invalidProviderSync(
+  error: string,
+  retryable?: boolean
+): ProviderSyncResult {
+  return {
+    valid: false,
+    error,
+    retryable,
+    mrr: null,
+    supportingMetrics: null,
+    funnelStages: null,
+  };
+}
+
+function invalidPostgresSync(
+  error: string,
+  retryable?: boolean
+): PostgresSyncResult {
+  return {
+    ...invalidProviderSync(error, retryable),
+    customMetric: null,
+  };
+}
+
+async function fetchWithTimeout(
+  url: string,
+  timeoutMs: number,
+  init: RequestInit
+) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function sumSeriesValues(values: number[] | undefined): number {
+  return values?.reduce((total, value) => total + value, 0) ?? 0;
+}
+
+function getTrendTotal(
+  result: {
+    aggregated_value?: number;
+    count?: number;
+    data?: number[];
+  } | null
+): number {
+  if (!result) {
+    return 0;
+  }
+
+  return (
+    result.aggregated_value ?? result.count ?? sumSeriesValues(result.data)
+  );
+}
+
+async function fetchPostHogTrendTotal(
+  baseUrl: string,
+  projectId: string,
+  apiKey: string,
+  eventQuery: string
+): Promise<number> {
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const response = await fetchWithTimeout(
+    `${baseUrl}/api/projects/${encodeURIComponent(projectId)}/insights/trend/?events=${eventQuery}&date_from=${thirtyDaysAgo.toISOString().split("T")[0]}&date_to=${now.toISOString().split("T")[0]}`,
+    POSTHOG_TIMEOUT_MS,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+    }
+  );
+
+  if (!response.ok) {
+    return 0;
+  }
+
+  const data = (await response.json()) as {
+    result?: Array<{
+      aggregated_value?: number;
+      count?: number;
+      data?: number[];
+    }>;
+  };
+
+  return getTrendTotal(data.result?.[0] ?? null);
+}
+
+async function validatePostHogConnection(
+  baseUrl: string,
+  projectId: string,
+  apiKey: string
+): Promise<ProviderSyncResult | null> {
+  try {
+    const response = await fetchWithTimeout(
+      `${baseUrl}/api/projects/${encodeURIComponent(projectId)}/`,
+      POSTHOG_TIMEOUT_MS,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: "application/json",
+        },
+      }
+    );
+
+    if (response.status === 401 || response.status === 403) {
+      return invalidProviderSync(
+        "PostHog API key is invalid or lacks access to the specified project."
+      );
+    }
+    if (response.status === 404) {
+      return invalidProviderSync(
+        "PostHog project not found. Verify the project ID and host."
+      );
+    }
+    if (response.status >= 500) {
+      return invalidProviderSync(
+        "PostHog API returned a server error. Try again shortly.",
+        true
+      );
+    }
+    if (response.status !== 200) {
+      return invalidProviderSync(
+        `PostHog validation failed with status ${response.status}.`
+      );
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      return invalidProviderSync(
+        "PostHog validation timed out. Check the host URL and try again.",
+        true
+      );
+    }
+
+    return invalidProviderSync(
+      "PostHog validation request failed. Check the host URL and network connectivity.",
+      true
+    );
+  }
+
+  return null;
+}
+
+async function fetchStripeBalanceValidation(
+  headers: Record<string, string>
+): Promise<ProviderSyncResult | null> {
+  try {
+    const response = await fetchWithTimeout(
+      "https://api.stripe.com/v1/balance",
+      STRIPE_TIMEOUT_MS,
+      {
+        method: "GET",
+        headers,
+      }
+    );
+
+    if (response.status === 401) {
+      return invalidProviderSync(
+        "Stripe secret key is invalid or has been revoked."
+      );
+    }
+    if (response.status === 403) {
+      return invalidProviderSync("Stripe key lacks the required permissions.");
+    }
+    if (response.status >= 500) {
+      return invalidProviderSync(
+        "Stripe API returned a server error. Try again shortly.",
+        true
+      );
+    }
+    if (response.status !== 200) {
+      return invalidProviderSync(
+        `Stripe validation failed with status ${response.status}.`
+      );
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      return invalidProviderSync(
+        "Stripe validation timed out. Try again.",
+        true
+      );
+    }
+
+    return invalidProviderSync(
+      "Stripe validation request failed. Check network connectivity.",
+      true
+    );
+  }
+
+  return null;
+}
+
+interface StripeRevenueMetrics {
+  customerCount: number;
+  mrr: number;
+  totalRevenue: number;
+}
+
+async function fetchStripeRevenueMetrics(
+  headers: Record<string, string>
+): Promise<StripeRevenueMetrics> {
+  let mrr = 0;
+  let totalRevenue = 0;
+  let customerCount = 0;
+
+  try {
+    const response = await fetchWithTimeout(
+      "https://api.stripe.com/v1/subscriptions?status=active&limit=100",
+      STRIPE_TIMEOUT_MS,
+      {
+        method: "GET",
+        headers,
+      }
+    );
+
+    if (response.ok) {
+      const data = (await response.json()) as {
+        data?: Array<{
+          items?: {
+            data?: Array<{
+              price?: {
+                unit_amount?: number;
+                recurring?: { interval?: string };
+              };
+            }>;
+          };
+          customer?: string;
+        }>;
+      };
+
+      const customers = new Set<string>();
+      for (const subscription of data.data ?? []) {
+        if (typeof subscription.customer === "string") {
+          customers.add(subscription.customer);
+        }
+        for (const item of subscription.items?.data ?? []) {
+          const amount = item.price?.unit_amount ?? 0;
+          const interval = item.price?.recurring?.interval ?? "month";
+          const monthlyAmount = interval === "year" ? amount / 12 : amount;
+          mrr += monthlyAmount;
+          totalRevenue += monthlyAmount;
+        }
+      }
+
+      customerCount = customers.size;
+    }
+  } catch {
+    // Non-fatal: metrics stay at 0
+  }
+
+  return {
+    customerCount,
+    mrr: Math.round(mrr) / 100,
+    totalRevenue: Math.round(totalRevenue) / 100,
+  };
+}
+
+async function fetchStripeChurnedCount(
+  headers: Record<string, string>
+): Promise<number> {
+  try {
+    const thirtyDaysAgo = Math.floor(
+      (Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000
+    );
+    const response = await fetchWithTimeout(
+      `https://api.stripe.com/v1/subscriptions?status=canceled&created[gte]=${thirtyDaysAgo}&limit=100`,
+      STRIPE_TIMEOUT_MS,
+      {
+        method: "GET",
+        headers,
+      }
+    );
+
+    if (!response.ok) {
+      return 0;
+    }
+
+    const data = (await response.json()) as { data?: unknown[] };
+    return data.data?.length ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+function buildStripeSyncResult(args: {
+  churnedCount: number;
+  customerCount: number;
+  mrr: number;
+  totalRevenue: number;
+}): ProviderSyncResult {
+  const totalCustomersForChurn = args.customerCount + args.churnedCount;
+  const churnRate =
+    totalCustomersForChurn > 0
+      ? (args.churnedCount / totalCustomersForChurn) * 100
+      : 0;
+  const arpu =
+    args.customerCount > 0 ? args.totalRevenue / args.customerCount : 0;
+
+  return {
+    valid: true,
+    mrr: args.mrr,
+    supportingMetrics: {
+      customer_count: { value: args.customerCount, previous: null },
+      churn_rate: { value: Math.round(churnRate * 100) / 100, previous: null },
+      arpu: { value: Math.round(arpu * 100) / 100, previous: null },
+    },
+    funnelStages: {
+      paying_customer: args.customerCount,
+    },
+  };
+}
+
+function parseNumericCell(value: unknown): number {
+  if (typeof value === "string") {
+    return Number.parseFloat(value);
+  }
+  if (typeof value === "number") {
+    return value;
+  }
+
+  return Number.NaN;
+}
+
+function parseRequiredNumericCell(value: unknown, fieldName: string): number {
+  const parsed = parseNumericCell(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${fieldName} is not a finite number: ${String(value)}`);
+  }
+
+  return parsed;
+}
+
+function parseOptionalNumericCell(
+  value: unknown,
+  fieldName: string
+): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return parseRequiredNumericCell(value, fieldName);
+}
+
+function parseCapturedAtCell(value: unknown): string {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (typeof value === "string") {
+    const parsedDate = new Date(value);
+    if (!Number.isNaN(parsedDate.getTime())) {
+      return parsedDate.toISOString();
+    }
+  }
+
+  throw new Error(`captured_at is missing or invalid: ${String(value)}`);
+}
+
+function parsePostgresSyncConfig(config: {
+  connectionUri?: string;
+  schema?: string;
+  view?: string;
+}):
+  | { connectionUri: string; schema: string; view: string }
+  | PostgresSyncResult {
+  const connectionUri = config.connectionUri?.trim() ?? "";
+  const schema = config.schema?.trim() ?? "";
+  const view = config.view?.trim() ?? "";
+
+  if (!connectionUri) {
+    return invalidPostgresSync("Postgres connection URI is required.");
+  }
+
+  if (!(schema && view)) {
+    return invalidPostgresSync("Postgres schema and view are required.");
+  }
+
+  if (!(SQL_IDENTIFIER_RE.test(schema) && SQL_IDENTIFIER_RE.test(view))) {
+    return invalidPostgresSync("Schema or view identifier is not SQL-safe.");
+  }
+
+  return {
+    connectionUri,
+    schema,
+    view,
+  };
+}
+
+async function connectPostgresReadonlyClient(connectionUri: string): Promise<
+  | {
+      client: {
+        end: () => Promise<void>;
+        query: (sql: string) => Promise<{ rows: unknown[] }>;
+      };
+    }
+  | { error: PostgresSyncResult }
+> {
+  const { default: pg } = await import("pg");
+  const client = new pg.Client({
+    connectionString: connectionUri,
+    connectionTimeoutMillis: POSTGRES_TIMEOUT_MS,
+    query_timeout: POSTGRES_TIMEOUT_MS,
+    application_name: "dashboard-worker-readonly",
+  });
+
+  try {
+    await client.connect();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const isAuthError =
+      message.includes("authentication") || message.includes("password");
+    return {
+      error: invalidPostgresSync(
+        isAuthError
+          ? `Postgres authentication failed: ${message}`
+          : `Postgres connection failed: ${message}`,
+        !isAuthError
+      ),
+    };
+  }
+
+  return { client };
+}
+
+async function queryPostgresCustomMetric(
+  client: { query: (sql: string) => Promise<{ rows: unknown[] }> },
+  schema: string,
+  view: string
+): Promise<PostgresSyncResult> {
+  await client.query("SET TRANSACTION READ ONLY");
+
+  const quotedSchema = `"${schema}"`;
+  const quotedView = `"${view}"`;
+  const queryText = `SELECT metric_value, previous_value, captured_at FROM ${quotedSchema}.${quotedView} LIMIT 1`;
+  const result = await client.query(queryText);
+
+  if (result.rows.length === 0) {
+    return invalidPostgresSync(
+      `Prepared view ${schema}.${view} returned no rows.`,
+      true
+    );
+  }
+
+  const row = result.rows[0] as Record<string, unknown>;
+
+  try {
+    return {
+      valid: true,
+      mrr: null,
+      supportingMetrics: null,
+      funnelStages: null,
+      customMetric: {
+        metricValue: parseRequiredNumericCell(
+          row.metric_value,
+          `metric_value from ${schema}.${view}`
+        ),
+        previousValue: parseOptionalNumericCell(
+          row.previous_value,
+          `previous_value from ${schema}.${view}`
+        ),
+        capturedAt: parseCapturedAtCell(row.captured_at),
+      },
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return invalidPostgresSync(message);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Metric merging helpers
 // ---------------------------------------------------------------------------
@@ -132,152 +612,38 @@ async function syncPostHog(config: {
   const host = config.host?.trim() ?? "";
 
   if (!apiKey) {
-    return {
-      valid: false,
-      error: "PostHog API key is required.",
-      mrr: null,
-      supportingMetrics: null,
-      funnelStages: null,
-    };
+    return invalidProviderSync("PostHog API key is required.");
   }
   if (!projectId) {
-    return {
-      valid: false,
-      error: "PostHog project ID is required.",
-      mrr: null,
-      supportingMetrics: null,
-      funnelStages: null,
-    };
+    return invalidProviderSync("PostHog project ID is required.");
   }
   if (!/^https?:\/\/.+/.test(host)) {
-    return {
-      valid: false,
-      error: "PostHog host must be a valid URL (e.g. https://app.posthog.com).",
-      mrr: null,
-      supportingMetrics: null,
-      funnelStages: null,
-    };
+    return invalidProviderSync(
+      "PostHog host must be a valid URL (e.g. https://app.posthog.com)."
+    );
   }
 
   const baseUrl = host.replace(/\/+$/, "");
 
   // 1. Validate connection by fetching project info
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), POSTHOG_TIMEOUT_MS);
-    const response = await fetch(
-      `${baseUrl}/api/projects/${encodeURIComponent(projectId)}/`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          Accept: "application/json",
-        },
-        signal: controller.signal,
-      }
-    );
-    clearTimeout(timer);
-
-    if (response.status === 401 || response.status === 403) {
-      return {
-        valid: false,
-        error:
-          "PostHog API key is invalid or lacks access to the specified project.",
-        mrr: null,
-        supportingMetrics: null,
-        funnelStages: null,
-      };
-    }
-    if (response.status === 404) {
-      return {
-        valid: false,
-        error: "PostHog project not found. Verify the project ID and host.",
-        mrr: null,
-        supportingMetrics: null,
-        funnelStages: null,
-      };
-    }
-    if (response.status >= 500) {
-      return {
-        valid: false,
-        error: "PostHog API returned a server error. Try again shortly.",
-        retryable: true,
-        mrr: null,
-        supportingMetrics: null,
-        funnelStages: null,
-      };
-    }
-    if (response.status !== 200) {
-      return {
-        valid: false,
-        error: `PostHog validation failed with status ${response.status}.`,
-        mrr: null,
-        supportingMetrics: null,
-        funnelStages: null,
-      };
-    }
-  } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") {
-      return {
-        valid: false,
-        error:
-          "PostHog validation timed out. Check the host URL and try again.",
-        retryable: true,
-        mrr: null,
-        supportingMetrics: null,
-        funnelStages: null,
-      };
-    }
-    return {
-      valid: false,
-      error:
-        "PostHog validation request failed. Check the host URL and network connectivity.",
-      retryable: true,
-      mrr: null,
-      supportingMetrics: null,
-      funnelStages: null,
-    };
+  const validationError = await validatePostHogConnection(
+    baseUrl,
+    projectId,
+    apiKey
+  );
+  if (validationError) {
+    return validationError;
   }
 
   // 2. Fetch active users (persons count or distinct IDs in last 30 days)
   let activeUsers = 0;
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), POSTHOG_TIMEOUT_MS);
-    const now = new Date();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const eventsUrl = `${baseUrl}/api/projects/${encodeURIComponent(projectId)}/insights/trend/?events=[{"id":"$pageview","type":"events","math":"dau"}]&date_from=${thirtyDaysAgo.toISOString().split("T")[0]}&date_to=${now.toISOString().split("T")[0]}`;
-
-    const response = await fetch(eventsUrl, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        Accept: "application/json",
-      },
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-
-    if (response.ok) {
-      const data = (await response.json()) as {
-        result?: Array<{
-          aggregated_value?: number;
-          count?: number;
-          data?: number[];
-        }>;
-      };
-      const firstResult = data.result?.[0];
-      if (firstResult) {
-        // Use aggregated_value, or sum the data array, or use count
-        activeUsers =
-          firstResult.aggregated_value ??
-          (firstResult.data
-            ? firstResult.data.reduce((a: number, b: number) => a + b, 0)
-            : 0) ??
-          firstResult.count ??
-          0;
-      }
-    }
+    activeUsers = await fetchPostHogTrendTotal(
+      baseUrl,
+      projectId,
+      apiKey,
+      '[{"id":"$pageview","type":"events","math":"dau"}]'
+    );
   } catch {
     // Non-fatal: metric stays at 0
   }
@@ -287,68 +653,18 @@ async function syncPostHog(config: {
   let signups = 0;
   let activations = 0;
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), POSTHOG_TIMEOUT_MS);
-    const now = new Date();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const eventsUrl = `${baseUrl}/api/projects/${encodeURIComponent(projectId)}/insights/trend/?events=[{"id":"$pageview","type":"events","math":"unique_session"}]&date_from=${thirtyDaysAgo.toISOString().split("T")[0]}&date_to=${now.toISOString().split("T")[0]}`;
-
-    const response = await fetch(eventsUrl, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        Accept: "application/json",
-      },
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-
-    if (response.ok) {
-      const data = (await response.json()) as {
-        result?: Array<{ aggregated_value?: number; data?: number[] }>;
-      };
-      const firstResult = data.result?.[0];
-      if (firstResult) {
-        visitors =
-          firstResult.aggregated_value ??
-          (firstResult.data
-            ? firstResult.data.reduce((a: number, b: number) => a + b, 0)
-            : 0) ??
-          0;
-      }
-    }
-
-    // Try to fetch signup events
-    const signupUrl = `${baseUrl}/api/projects/${encodeURIComponent(projectId)}/insights/trend/?events=[{"id":"$identify","type":"events","math":"total"}]&date_from=${thirtyDaysAgo.toISOString().split("T")[0]}&date_to=${now.toISOString().split("T")[0]}`;
-    const signupController = new AbortController();
-    const signupTimer = setTimeout(
-      () => signupController.abort(),
-      POSTHOG_TIMEOUT_MS
+    visitors = await fetchPostHogTrendTotal(
+      baseUrl,
+      projectId,
+      apiKey,
+      '[{"id":"$pageview","type":"events","math":"unique_session"}]'
     );
-    const signupResponse = await fetch(signupUrl, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        Accept: "application/json",
-      },
-      signal: signupController.signal,
-    });
-    clearTimeout(signupTimer);
-
-    if (signupResponse.ok) {
-      const data = (await signupResponse.json()) as {
-        result?: Array<{ aggregated_value?: number; data?: number[] }>;
-      };
-      const firstResult = data.result?.[0];
-      if (firstResult) {
-        signups =
-          firstResult.aggregated_value ??
-          (firstResult.data
-            ? firstResult.data.reduce((a: number, b: number) => a + b, 0)
-            : 0) ??
-          0;
-      }
-    }
+    signups = await fetchPostHogTrendTotal(
+      baseUrl,
+      projectId,
+      apiKey,
+      '[{"id":"$identify","type":"events","math":"total"}]'
+    );
 
     // Estimate activations as a fraction of signups for now
     activations = Math.floor(signups * 0.4);
@@ -380,25 +696,13 @@ async function syncStripe(config: {
   secretKey?: string;
 }): Promise<ProviderSyncResult> {
   const key = config.secretKey?.trim() ?? "";
-
   if (!key) {
-    return {
-      valid: false,
-      error: "Stripe secret key is required.",
-      mrr: null,
-      supportingMetrics: null,
-      funnelStages: null,
-    };
+    return invalidProviderSync("Stripe secret key is required.");
   }
   if (!/^(sk_test_|sk_live_|rk_test_|rk_live_)/.test(key)) {
-    return {
-      valid: false,
-      error:
-        "Stripe key format is invalid. Keys must start with sk_test_, sk_live_, rk_test_, or rk_live_.",
-      mrr: null,
-      supportingMetrics: null,
-      funnelStages: null,
-    };
+    return invalidProviderSync(
+      "Stripe key format is invalid. Keys must start with sk_test_, sk_live_, rk_test_, or rk_live_."
+    );
   }
 
   const headers = {
@@ -406,176 +710,20 @@ async function syncStripe(config: {
     Accept: "application/json",
   };
 
-  // 1. Validate connection via balance endpoint
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), STRIPE_TIMEOUT_MS);
-    const response = await fetch("https://api.stripe.com/v1/balance", {
-      method: "GET",
-      headers,
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-
-    if (response.status === 401) {
-      return {
-        valid: false,
-        error: "Stripe secret key is invalid or has been revoked.",
-        mrr: null,
-        supportingMetrics: null,
-        funnelStages: null,
-      };
-    }
-    if (response.status === 403) {
-      return {
-        valid: false,
-        error: "Stripe key lacks the required permissions.",
-        mrr: null,
-        supportingMetrics: null,
-        funnelStages: null,
-      };
-    }
-    if (response.status >= 500) {
-      return {
-        valid: false,
-        error: "Stripe API returned a server error. Try again shortly.",
-        retryable: true,
-        mrr: null,
-        supportingMetrics: null,
-        funnelStages: null,
-      };
-    }
-    if (response.status !== 200) {
-      return {
-        valid: false,
-        error: `Stripe validation failed with status ${response.status}.`,
-        mrr: null,
-        supportingMetrics: null,
-        funnelStages: null,
-      };
-    }
-  } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") {
-      return {
-        valid: false,
-        error: "Stripe validation timed out. Try again.",
-        retryable: true,
-        mrr: null,
-        supportingMetrics: null,
-        funnelStages: null,
-      };
-    }
-    return {
-      valid: false,
-      error: "Stripe validation request failed. Check network connectivity.",
-      retryable: true,
-      mrr: null,
-      supportingMetrics: null,
-      funnelStages: null,
-    };
+  const validationError = await fetchStripeBalanceValidation(headers);
+  if (validationError) {
+    return validationError;
   }
 
-  // 2. Fetch active subscriptions to compute MRR
-  let mrr = 0;
-  let customerCount = 0;
-  let churnedCount = 0;
-  let totalRevenue = 0;
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), STRIPE_TIMEOUT_MS);
-    const response = await fetch(
-      "https://api.stripe.com/v1/subscriptions?status=active&limit=100",
-      {
-        method: "GET",
-        headers,
-        signal: controller.signal,
-      }
-    );
-    clearTimeout(timer);
+  const revenueMetrics = await fetchStripeRevenueMetrics(headers);
+  const churnedCount = await fetchStripeChurnedCount(headers);
 
-    if (response.ok) {
-      const data = (await response.json()) as {
-        data?: Array<{
-          items?: {
-            data?: Array<{
-              price?: {
-                unit_amount?: number;
-                recurring?: { interval?: string };
-              };
-            }>;
-          };
-          customer?: string;
-        }>;
-      };
-
-      const customers = new Set<string>();
-      for (const sub of data.data ?? []) {
-        if (sub.customer) {
-          customers.add(typeof sub.customer === "string" ? sub.customer : "");
-        }
-        for (const item of sub.items?.data ?? []) {
-          const amount = item.price?.unit_amount ?? 0;
-          const interval = item.price?.recurring?.interval ?? "month";
-          // Normalize to monthly
-          const monthlyAmount = interval === "year" ? amount / 12 : amount;
-          mrr += monthlyAmount;
-          totalRevenue += monthlyAmount;
-        }
-      }
-      customerCount = customers.size;
-    }
-  } catch {
-    // Non-fatal: metrics stay at 0
-  }
-
-  // Convert from cents to dollars
-  mrr = Math.round(mrr) / 100;
-  totalRevenue = Math.round(totalRevenue) / 100;
-
-  // 3. Fetch canceled subscriptions for churn rate
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), STRIPE_TIMEOUT_MS);
-    const thirtyDaysAgo = Math.floor(
-      (Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000
-    );
-    const response = await fetch(
-      `https://api.stripe.com/v1/subscriptions?status=canceled&created[gte]=${thirtyDaysAgo}&limit=100`,
-      {
-        method: "GET",
-        headers,
-        signal: controller.signal,
-      }
-    );
-    clearTimeout(timer);
-
-    if (response.ok) {
-      const data = (await response.json()) as { data?: unknown[] };
-      churnedCount = data.data?.length ?? 0;
-    }
-  } catch {
-    // Non-fatal
-  }
-
-  const totalCustomersForChurn = customerCount + churnedCount;
-  const churnRate =
-    totalCustomersForChurn > 0
-      ? (churnedCount / totalCustomersForChurn) * 100
-      : 0;
-  const arpu = customerCount > 0 ? totalRevenue / customerCount : 0;
-
-  return {
-    valid: true,
-    mrr,
-    supportingMetrics: {
-      customer_count: { value: customerCount, previous: null },
-      churn_rate: { value: Math.round(churnRate * 100) / 100, previous: null },
-      arpu: { value: Math.round(arpu * 100) / 100, previous: null },
-    },
-    funnelStages: {
-      paying_customer: customerCount,
-    },
-  };
+  return buildStripeSyncResult({
+    churnedCount,
+    customerCount: revenueMetrics.customerCount,
+    mrr: revenueMetrics.mrr,
+    totalRevenue: revenueMetrics.totalRevenue,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -602,198 +750,28 @@ async function syncPostgres(config: {
   label?: string;
   unit?: string;
 }): Promise<PostgresSyncResult> {
-  const connectionUri = config.connectionUri?.trim() ?? "";
-  const schema = config.schema?.trim() ?? "";
-  const view = config.view?.trim() ?? "";
-
-  if (!connectionUri) {
-    return {
-      valid: false,
-      error: "Postgres connection URI is required.",
-      mrr: null,
-      supportingMetrics: null,
-      funnelStages: null,
-      customMetric: null,
-    };
+  const parsedConfig = parsePostgresSyncConfig(config);
+  if ("valid" in parsedConfig) {
+    return parsedConfig;
   }
-  if (!(schema && view)) {
-    return {
-      valid: false,
-      error: "Postgres schema and view are required.",
-      mrr: null,
-      supportingMetrics: null,
-      funnelStages: null,
-      customMetric: null,
-    };
-  }
+  const { connectionUri, schema, view } = parsedConfig;
 
-  // Validate identifiers are SQL-safe (re-enforce contract even though API already checked)
-  const SQL_IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/;
-  if (!(SQL_IDENTIFIER_RE.test(schema) && SQL_IDENTIFIER_RE.test(view))) {
-    return {
-      valid: false,
-      error: "Schema or view identifier is not SQL-safe.",
-      mrr: null,
-      supportingMetrics: null,
-      funnelStages: null,
-      customMetric: null,
-    };
+  const clientResult = await connectPostgresReadonlyClient(connectionUri);
+  if ("error" in clientResult) {
+    return clientResult.error;
   }
-
-  // Dynamic import of pg to keep the module lightweight for non-postgres paths
-  const { default: pg } = await import("pg");
-  const client = new pg.Client({
-    connectionString: connectionUri,
-    connectionTimeoutMillis: POSTGRES_TIMEOUT_MS,
-    query_timeout: POSTGRES_TIMEOUT_MS,
-    // Read-only transaction to enforce the contract
-    application_name: "dashboard-worker-readonly",
-  });
+  const { client } = clientResult;
 
   try {
-    await client.connect();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    const isAuthError =
-      message.includes("authentication") || message.includes("password");
-    return {
-      valid: false,
-      error: isAuthError
-        ? `Postgres authentication failed: ${message}`
-        : `Postgres connection failed: ${message}`,
-      retryable: !isAuthError,
-      mrr: null,
-      supportingMetrics: null,
-      funnelStages: null,
-      customMetric: null,
-    };
-  }
-
-  try {
-    // Set transaction to read-only to prevent accidental writes
-    await client.query("SET TRANSACTION READ ONLY");
-
-    // Query the prepared view with the fixed column contract
-    const quotedSchema = `"${schema}"`;
-    const quotedView = `"${view}"`;
-    const queryText = `SELECT metric_value, previous_value, captured_at FROM ${quotedSchema}.${quotedView} LIMIT 1`;
-
-    const result = await client.query(queryText);
-
-    if (result.rows.length === 0) {
-      return {
-        valid: false,
-        error: `Prepared view ${schema}.${view} returned no rows.`,
-        retryable: true,
-        mrr: null,
-        supportingMetrics: null,
-        funnelStages: null,
-        customMetric: null,
-      };
-    }
-
-    const row = result.rows[0] as Record<string, unknown>;
-
-    // Validate metric_value — must be a finite number
-    const rawMetricValue = row.metric_value;
-    let metricValue: number;
-    if (typeof rawMetricValue === "string") {
-      metricValue = Number.parseFloat(rawMetricValue);
-    } else if (typeof rawMetricValue === "number") {
-      metricValue = rawMetricValue;
-    } else {
-      metricValue = Number.NaN;
-    }
-
-    if (!Number.isFinite(metricValue)) {
-      return {
-        valid: false,
-        error: `metric_value from ${schema}.${view} is not a finite number: ${String(rawMetricValue)}`,
-        mrr: null,
-        supportingMetrics: null,
-        funnelStages: null,
-        customMetric: null,
-      };
-    }
-
-    // Validate previous_value — may be null, but if present must be finite
-    const rawPreviousValue = row.previous_value;
-    let previousValue: number | null = null;
-    if (rawPreviousValue !== null && rawPreviousValue !== undefined) {
-      let parsed: number;
-      if (typeof rawPreviousValue === "string") {
-        parsed = Number.parseFloat(rawPreviousValue);
-      } else if (typeof rawPreviousValue === "number") {
-        parsed = rawPreviousValue;
-      } else {
-        parsed = Number.NaN;
-      }
-      if (!Number.isFinite(parsed)) {
-        return {
-          valid: false,
-          error: `previous_value from ${schema}.${view} is not a finite number: ${String(rawPreviousValue)}`,
-          mrr: null,
-          supportingMetrics: null,
-          funnelStages: null,
-          customMetric: null,
-        };
-      }
-      previousValue = parsed;
-    }
-
-    // Validate captured_at — must be a valid date
-    const rawCapturedAt = row.captured_at;
-    let capturedAt: string;
-    if (rawCapturedAt instanceof Date) {
-      capturedAt = rawCapturedAt.toISOString();
-    } else if (typeof rawCapturedAt === "string") {
-      const d = new Date(rawCapturedAt);
-      if (Number.isNaN(d.getTime())) {
-        return {
-          valid: false,
-          error: `captured_at from ${schema}.${view} is not a valid timestamp: ${rawCapturedAt}`,
-          mrr: null,
-          supportingMetrics: null,
-          funnelStages: null,
-          customMetric: null,
-        };
-      }
-      capturedAt = d.toISOString();
-    } else {
-      return {
-        valid: false,
-        error: `captured_at from ${schema}.${view} is missing or invalid.`,
-        mrr: null,
-        supportingMetrics: null,
-        funnelStages: null,
-        customMetric: null,
-      };
-    }
-
-    return {
-      valid: true,
-      mrr: null,
-      supportingMetrics: null,
-      funnelStages: null,
-      customMetric: {
-        metricValue,
-        previousValue,
-        capturedAt,
-      },
-    };
+    return await queryPostgresCustomMetric(client, schema, view);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const isTimeout =
       message.includes("timeout") || message.includes("ETIMEDOUT");
-    return {
-      valid: false,
-      error: `Postgres query failed on ${schema}.${view}: ${message}`,
-      retryable: isTimeout,
-      mrr: null,
-      supportingMetrics: null,
-      funnelStages: null,
-      customMetric: null,
-    };
+    return invalidPostgresSync(
+      `Postgres query failed on ${schema}.${view}: ${message}`,
+      isTimeout
+    );
   } finally {
     try {
       await client.end();

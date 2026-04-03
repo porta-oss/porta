@@ -26,14 +26,24 @@ function baseEnv(overrides: Record<string, string> = {}) {
   };
 }
 
+const noopAsync = async () => {
+  /* intentionally empty test stub */
+  await Promise.resolve();
+};
+
+const noop = () => {
+  /* intentionally empty test stub */
+  return;
+};
+
 // ---------------------------------------------------------------------------
 // Shared test fixtures
 // ---------------------------------------------------------------------------
 const minimalDb = {
   db: {} as unknown,
-  bootstrap: async () => {},
-  close: async () => {},
-  resetAuthTables: async () => {},
+  bootstrap: noopAsync,
+  close: noopAsync,
+  resetAuthTables: noopAsync,
   getSchemaDiagnostics: () => ({
     tables: {
       user: true,
@@ -69,7 +79,7 @@ const minimalAuth = {
     magicLinkTransport: "log",
   },
   listMagicLinks: () => [],
-  resetMagicLinks: () => {},
+  resetMagicLinks: noop,
 };
 
 const minimalValidators = {
@@ -259,7 +269,7 @@ describe("/api/health alpha edge cases", () => {
     const body = (await response.json()) as Record<string, unknown>;
     const release = body.release as Record<string, unknown>;
 
-    for (const [key, value] of Object.entries(release)) {
+    for (const value of Object.values(release)) {
       expect(typeof value).toBe("string");
     }
   });

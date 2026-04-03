@@ -54,7 +54,7 @@ echo ""
 
 # Phase 5: Typecheck
 echo "── Phase 5: Typecheck ──"
-if pnpm run lint 2>&1; then
+if bun run typecheck 2>&1; then
   echo "✅ Typecheck passed"
 else
   echo "❌ Typecheck FAILED"

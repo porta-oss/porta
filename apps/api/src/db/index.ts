@@ -75,6 +75,14 @@ interface DatabasePool {
   query: (sql: string) => Promise<unknown>;
 }
 
+interface QueryResult<Row extends Record<string, unknown>> {
+  rows?: Row[];
+}
+
+interface DatabaseError {
+  code?: string;
+}
+
 export interface SchemaDiagnostics {
   authTablesReady: boolean;
   connectorTablesReady: boolean;
@@ -147,6 +155,85 @@ async function waitForDatabase(pool: DatabasePool, timeoutMs: number) {
 async function applyMigration(pool: DatabasePool, migrationUrl: URL) {
   const migrationSql = await readFile(migrationUrl, "utf8");
   await pool.query(migrationSql);
+}
+
+function escapeSqlLiteral(value: string) {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function escapeSqlIdentifier(value: string) {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
+function parseDatabaseUrlParts(databaseUrl: string) {
+  const url = new URL(databaseUrl);
+  const databaseName = url.pathname.replace(/^\/+/, "");
+
+  if (!databaseName) {
+    throw new Error("DATABASE_URL must include a database name.");
+  }
+
+  const adminUrl = new URL(databaseUrl);
+  adminUrl.pathname = "/postgres";
+  adminUrl.searchParams.delete("schema");
+
+  return {
+    adminConnectionString: adminUrl.toString(),
+    databaseName,
+  };
+}
+
+async function ensureTestDatabaseExists(env: ApiEnv) {
+  if (env.nodeEnv !== "test") {
+    return;
+  }
+
+  const { adminConnectionString, databaseName } = parseDatabaseUrlParts(
+    env.databaseUrl
+  );
+  const startedAt = Date.now();
+  let lastError: unknown;
+
+  while (Date.now() - startedAt < env.databaseConnectTimeoutMs) {
+    const adminPool = new Pool({
+      connectionString: adminConnectionString,
+      max: 1,
+      connectionTimeoutMillis: env.databaseConnectTimeoutMs,
+      idleTimeoutMillis: 1000,
+      allowExitOnIdle: true,
+    });
+
+    try {
+      const result = (await adminPool.query(
+        `select datname from pg_database where datname = ${escapeSqlLiteral(databaseName)}`
+      )) as QueryResult<{ datname: string }>;
+
+      if ((result.rows ?? []).length === 0) {
+        try {
+          await adminPool.query(
+            `create database ${escapeSqlIdentifier(databaseName)}`
+          );
+        } catch (error) {
+          const databaseError = error as DatabaseError;
+
+          if (databaseError.code !== "42P04") {
+            throw error;
+          }
+        }
+      }
+
+      return;
+    } catch (error) {
+      lastError = error;
+      await delay(250);
+    } finally {
+      await adminPool.end();
+    }
+  }
+
+  throw new Error(
+    `Database bootstrap timed out after ${env.databaseConnectTimeoutMs}ms while ensuring test database "${databaseName}" exists. Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`
+  );
 }
 
 async function listExistingTables(
@@ -277,6 +364,15 @@ export function createApiDatabase(env: ApiEnv): ApiDatabase {
     async bootstrap() {
       if (bootstrapped) {
         return;
+      }
+
+      try {
+        await ensureTestDatabaseExists(env);
+      } catch (error) {
+        const { databaseName } = parseDatabaseUrlParts(env.databaseUrl);
+        throw new Error(
+          `Test database bootstrap failed for database "${databaseName}": ${error instanceof Error ? error.message : String(error)}`
+        );
       }
 
       await waitForDatabase(pool, env.databaseConnectTimeoutMs);

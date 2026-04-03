@@ -9,32 +9,18 @@ import {
 import type { StartupDraft } from "@shared/types";
 import { convertSetCookieToCookie } from "better-auth/test";
 
-import { type ApiApp, createApiApp } from "../src/app";
+import type { ApiApp } from "../src/app";
 import { createStubPostHogValidator } from "../src/lib/connectors/posthog";
 import {
   createFailingQueueProducer,
   createStubQueueProducer,
 } from "../src/lib/connectors/queue";
 import { createStubStripeValidator } from "../src/lib/connectors/stripe";
-
-const TEST_ENV = {
-  NODE_ENV: "test",
-  API_PORT: "3000",
-  API_URL: "http://localhost:3000",
-  WEB_URL: "http://localhost:5173",
-  DATABASE_URL: "postgres://postgres:postgres@127.0.0.1:5432/porta",
-  REDIS_URL: "redis://127.0.0.1:6379",
-  BETTER_AUTH_URL: "http://localhost:3000",
-  BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
-  GOOGLE_CLIENT_ID: "google-client-id",
-  GOOGLE_CLIENT_SECRET: "google-client-secret",
-  MAGIC_LINK_SENDER_EMAIL: "dev@porta.local",
-  CONNECTOR_ENCRYPTION_KEY:
-    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  AUTH_CONTEXT_TIMEOUT_MS: "2000",
-  DATABASE_CONNECT_TIMEOUT_MS: "5000",
-  DATABASE_POOL_MAX: "5",
-} as const;
+import {
+  closeTestApiApp,
+  createTestApiApp,
+  requireValue,
+} from "./helpers/test-app";
 
 const VALID_STARTUP: StartupDraft = {
   name: "Connector Test Startup",
@@ -55,7 +41,7 @@ const STRIPE_CONFIG = {
 };
 
 // Shared test helpers
-let app: ApiApp;
+let app: ApiApp | undefined;
 let posthogValidator: ReturnType<typeof createStubPostHogValidator>;
 let stripeValidator: ReturnType<typeof createStubStripeValidator>;
 let queueProducer: ReturnType<typeof createStubQueueProducer>;
@@ -68,7 +54,7 @@ beforeAll(async () => {
     jobId: "stub-job-id",
   });
 
-  app = await createApiApp(TEST_ENV, {
+  app = await createTestApiApp({
     posthogValidator,
     stripeValidator,
     queueProducer,
@@ -76,15 +62,16 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  app.runtime.auth.resetMagicLinks();
-  await app.runtime.db.resetAuthTables();
+  const testApp = requireValue(app, "Expected API test app to be initialized.");
+  testApp.runtime.auth.resetMagicLinks();
+  await testApp.runtime.db.resetAuthTables();
   posthogValidator.calls.length = 0;
   stripeValidator.calls.length = 0;
   queueProducer.calls.length = 0;
 });
 
 afterAll(async () => {
-  await app.runtime.db.close();
+  await closeTestApiApp(app);
 });
 
 async function parseJson(response: Response) {
@@ -95,6 +82,7 @@ async function send(
   path: string,
   init?: { method?: string; body?: unknown; cookie?: string }
 ) {
+  const testApp = requireValue(app, "Expected API test app to be initialized.");
   const headers = new Headers();
 
   if (init?.body !== undefined) {
@@ -105,7 +93,7 @@ async function send(
     headers.set("cookie", init.cookie);
   }
 
-  return app.handle(
+  return testApp.handle(
     new Request(`http://localhost${path}`, {
       method: init?.method ?? "GET",
       headers,
@@ -115,16 +103,18 @@ async function send(
 }
 
 async function createAuthenticatedSession(email = "founder@example.com") {
+  const testApp = requireValue(app, "Expected API test app to be initialized.");
   const signInResponse = await send("/api/auth/sign-in/magic-link", {
     method: "POST",
     body: { email, name: "Founder" },
   });
   expect(signInResponse.status).toBe(200);
 
-  const magicLink = app.runtime.auth.getLatestMagicLink(email);
-  expect(magicLink).toBeDefined();
-
-  const verifyResponse = await app.handle(new Request(magicLink!.url));
+  const magicLink = requireValue(
+    testApp.runtime.auth.getLatestMagicLink(email),
+    `Expected magic link for ${email}.`
+  );
+  const verifyResponse = await testApp.handle(new Request(magicLink.url));
   const cookie =
     convertSetCookieToCookie(verifyResponse.headers).get("cookie") ?? "";
   expect(cookie.length).toBeGreaterThan(0);
@@ -517,7 +507,7 @@ describe("connector routes", () => {
           "PostHog API key is invalid or lacks access to the specified project.",
       });
 
-      const failApp = await createApiApp(TEST_ENV, {
+      const failApp = await createTestApiApp({
         posthogValidator: failingPosthog,
         stripeValidator: createStubStripeValidator({ valid: true }),
         queueProducer: createStubQueueProducer(),
@@ -567,7 +557,7 @@ describe("connector routes", () => {
         const listPayload = await parseJson(list);
         expect((listPayload.connectors as unknown[]).length).toBe(0);
       } finally {
-        await failApp.runtime.db.close();
+        await closeTestApiApp(failApp);
       }
     });
   });
@@ -609,7 +599,10 @@ describe("connector routes", () => {
 
       // Verify the queue received reference IDs only (no credentials)
       expect(queueProducer.calls.length).toBe(initialQueueCalls + 1);
-      const lastCall = queueProducer.calls.at(-1)!;
+      const lastCall = requireValue(
+        queueProducer.calls.at(-1),
+        "Expected queued sync call."
+      );
       expect(lastCall.connectorId).toBe(connectorId);
       expect(lastCall.trigger).toBe("manual");
       // No credential data in the queue payload
@@ -656,7 +649,7 @@ describe("connector routes", () => {
       const failingQueue = createFailingQueueProducer(
         "Redis connection refused"
       );
-      const failApp = await createApiApp(TEST_ENV, {
+      const failApp = await createTestApiApp({
         posthogValidator: createStubPostHogValidator({ valid: true }),
         stripeValidator: createStubStripeValidator({ valid: true }),
         queueProducer: failingQueue,
@@ -712,7 +705,7 @@ describe("connector routes", () => {
           retryable: true,
         });
       } finally {
-        await failApp.runtime.db.close();
+        await closeTestApiApp(failApp);
       }
     });
   });
@@ -847,9 +840,11 @@ async function createSessionOnApp(testApp: ApiApp, email: string) {
     })
   );
   expect(signInResponse.status).toBe(200);
-  const magicLink = testApp.runtime.auth.getLatestMagicLink(email);
-  expect(magicLink).toBeDefined();
-  const verifyResponse = await testApp.handle(new Request(magicLink!.url));
+  const magicLink = requireValue(
+    testApp.runtime.auth.getLatestMagicLink(email),
+    `Expected magic link for ${email}.`
+  );
+  const verifyResponse = await testApp.handle(new Request(magicLink.url));
   const cookie =
     convertSetCookieToCookie(verifyResponse.headers).get("cookie") ?? "";
   expect(cookie.length).toBeGreaterThan(0);

@@ -46,6 +46,72 @@ export interface TaskSyncProcessorDeps {
   taskRepo: InternalTaskRepository;
 }
 
+function getLinearHttpError(status: number): LinearIssueResult | null {
+  if (status === 401) {
+    return {
+      success: false,
+      error: "Linear API authentication failed (401). Check LINEAR_API_KEY.",
+      retryable: false,
+    };
+  }
+  if (status === 429) {
+    return {
+      success: false,
+      error: "Linear API rate limit exceeded (429). Retry later.",
+      retryable: true,
+    };
+  }
+  if (status >= 500) {
+    return {
+      success: false,
+      error: `Linear API server error (${status}).`,
+      retryable: true,
+    };
+  }
+
+  return null;
+}
+
+function parseLinearIssueResponse(body: unknown): LinearIssueResult {
+  const payload = body as {
+    data?: {
+      issueCreate?: {
+        success?: boolean;
+        issue?: { id?: string; url?: string };
+      };
+    };
+    errors?: Array<{ message?: string }>;
+  };
+
+  if (payload.errors && payload.errors.length > 0) {
+    const messages = payload.errors
+      .map((error) => error.message ?? "unknown")
+      .join("; ");
+    return {
+      success: false,
+      error: `Linear GraphQL errors: ${messages}`,
+      retryable: false,
+    };
+  }
+
+  const issueCreate = payload.data?.issueCreate;
+  if (
+    !(issueCreate?.success && issueCreate.issue?.id && issueCreate.issue?.url)
+  ) {
+    return {
+      success: false,
+      error: "Linear issue creation response missing issue id/url.",
+      retryable: false,
+    };
+  }
+
+  return {
+    success: true,
+    issueId: issueCreate.issue.id,
+    issueUrl: issueCreate.issue.url,
+  };
+}
+
 /**
  * Create a Linear issue via the GraphQL API.
  * Returns a structured result — never throws for API errors.
@@ -106,32 +172,11 @@ export function createLinearIssueClient(apiKey: string): LinearCreateIssueFn {
       };
     }
 
-    // Handle HTTP-level errors
-    if (response.status === 401) {
-      return {
-        success: false,
-        error: "Linear API authentication failed (401). Check LINEAR_API_KEY.",
-        retryable: false,
-      };
+    const httpError = getLinearHttpError(response.status);
+    if (httpError) {
+      return httpError;
     }
 
-    if (response.status === 429) {
-      return {
-        success: false,
-        error: "Linear API rate limit exceeded (429). Retry later.",
-        retryable: true,
-      };
-    }
-
-    if (response.status >= 500) {
-      return {
-        success: false,
-        error: `Linear API server error (${response.status}).`,
-        retryable: true,
-      };
-    }
-
-    // Parse response body
     let body: unknown;
     try {
       body = await response.json();
@@ -143,45 +188,72 @@ export function createLinearIssueClient(apiKey: string): LinearCreateIssueFn {
       };
     }
 
-    // Validate GraphQL response shape
-    const data = body as {
-      data?: {
-        issueCreate?: {
-          success?: boolean;
-          issue?: { id?: string; url?: string };
-        };
-      };
-      errors?: Array<{ message?: string }>;
-    };
-
-    if (data.errors && data.errors.length > 0) {
-      const messages = data.errors
-        .map((e) => e.message ?? "unknown")
-        .join("; ");
-      return {
-        success: false,
-        error: `Linear GraphQL errors: ${messages}`,
-        retryable: false,
-      };
-    }
-
-    const issueCreate = data.data?.issueCreate;
-    if (
-      !(issueCreate?.success && issueCreate.issue?.id && issueCreate.issue?.url)
-    ) {
-      return {
-        success: false,
-        error: "Linear issue creation response missing issue id/url.",
-        retryable: false,
-      };
-    }
-
-    return {
-      success: true,
-      issueId: issueCreate.issue.id,
-      issueUrl: issueCreate.issue.url,
-    };
+    return parseLinearIssueResponse(body);
   };
+}
+
+function getTaskSyncDurationMs(startedAt: Date, completedAt: Date): number {
+  return completedAt.getTime() - startedAt.getTime();
+}
+
+async function handleTaskSyncFailure(
+  deps: TaskSyncProcessorDeps,
+  taskId: string,
+  attemptAt: Date,
+  error: string
+) {
+  await deps.taskRepo.markTaskSyncFailed({
+    taskId,
+    error,
+    attemptAt,
+  });
+}
+
+async function syncTaskToLinear(
+  deps: TaskSyncProcessorDeps,
+  taskId: string,
+  task: InternalTaskRow,
+  logCtx: Record<string, unknown>
+): Promise<void> {
+  const attemptAt = new Date();
+  await deps.taskRepo.markTaskSyncing(taskId, attemptAt);
+
+  const result = await deps.createLinearIssue(task, deps.linearTeamId);
+
+  if (result.success && result.issueId && result.issueUrl) {
+    const syncedAt = new Date();
+    await deps.taskRepo.markTaskSynced({
+      taskId,
+      linearIssueId: result.issueId,
+      linearIssueUrl: result.issueUrl,
+      syncedAt,
+    });
+
+    deps.log.info("task synced to Linear", {
+      ...logCtx,
+      linearIssueId: result.issueId,
+      durationMs: getTaskSyncDurationMs(attemptAt, syncedAt),
+    });
+    return;
+  }
+
+  const failedAt = new Date();
+  const error = result.error ?? "Unknown Linear API error";
+
+  await handleTaskSyncFailure(deps, taskId, failedAt, error);
+
+  const failureLog = {
+    ...logCtx,
+    error,
+    durationMs: getTaskSyncDurationMs(attemptAt, failedAt),
+  };
+
+  if (result.retryable) {
+    deps.log.warn("task sync failed (retryable)", failureLog);
+    throw new Error(error);
+  }
+
+  deps.log.error("task sync failed (non-retryable)", failureLog);
 }
 
 /**
@@ -248,54 +320,6 @@ export function createTaskSyncProcessor(deps: TaskSyncProcessorDeps) {
       return;
     }
 
-    // 3. Mark as syncing
-    const attemptAt = new Date();
-    await deps.taskRepo.markTaskSyncing(taskId, attemptAt);
-
-    // 4. Create Linear issue
-    const result = await deps.createLinearIssue(task, deps.linearTeamId);
-
-    if (result.success && result.issueId && result.issueUrl) {
-      // 5a. Success — store reference THEN mark synced
-      const syncedAt = new Date();
-      await deps.taskRepo.markTaskSynced({
-        taskId,
-        linearIssueId: result.issueId,
-        linearIssueUrl: result.issueUrl,
-        syncedAt,
-      });
-
-      deps.log.info("task synced to Linear", {
-        ...logCtx,
-        linearIssueId: result.issueId,
-        durationMs: syncedAt.getTime() - attemptAt.getTime(),
-      });
-    } else {
-      // 5b. Failure — record error
-      const failedAt = new Date();
-      const error = result.error ?? "Unknown Linear API error";
-
-      await deps.taskRepo.markTaskSyncFailed({
-        taskId,
-        error,
-        attemptAt: failedAt,
-      });
-
-      if (result.retryable) {
-        deps.log.warn("task sync failed (retryable)", {
-          ...logCtx,
-          error,
-          durationMs: failedAt.getTime() - attemptAt.getTime(),
-        });
-        throw new Error(error); // BullMQ will retry
-      }
-
-      deps.log.error("task sync failed (non-retryable)", {
-        ...logCtx,
-        error,
-        durationMs: failedAt.getTime() - attemptAt.getTime(),
-      });
-      // Non-retryable: don't throw — we already recorded failure
-    }
+    await syncTaskToLinear(deps, taskId, task, logCtx);
   };
 }

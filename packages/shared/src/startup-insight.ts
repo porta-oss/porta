@@ -142,6 +142,7 @@ export interface LatestInsightPayload {
 export const MIN_INSIGHT_ACTIONS = 1;
 /** Maximum number of actions per insight. */
 export const MAX_INSIGHT_ACTIONS = 3;
+const VALID_EVIDENCE_DIRECTIONS = new Set(["up", "down", "flat"]);
 
 /**
  * Validate that an actions array has 1–3 entries with non-empty labels.
@@ -178,6 +179,48 @@ export function validateInsightActions(actions: unknown): string | null {
   return null;
 }
 
+function validateEvidenceItem(item: unknown, index: number): string | null {
+  if (typeof item !== "object" || item === null) {
+    return `Evidence item at index ${index} must be a non-null object.`;
+  }
+
+  const evidenceItem = item as Record<string, unknown>;
+
+  if (
+    typeof evidenceItem.metricKey !== "string" ||
+    evidenceItem.metricKey.trim().length === 0
+  ) {
+    return `Evidence item at index ${index} must have a non-empty metricKey.`;
+  }
+  if (
+    typeof evidenceItem.label !== "string" ||
+    evidenceItem.label.trim().length === 0
+  ) {
+    return `Evidence item at index ${index} must have a non-empty label.`;
+  }
+  if (
+    typeof evidenceItem.currentValue !== "number" ||
+    !Number.isFinite(evidenceItem.currentValue)
+  ) {
+    return `Evidence item at index ${index} must have a finite currentValue.`;
+  }
+  if (
+    evidenceItem.previousValue !== null &&
+    (typeof evidenceItem.previousValue !== "number" ||
+      !Number.isFinite(evidenceItem.previousValue))
+  ) {
+    return `Evidence item at index ${index} previousValue must be a finite number or null.`;
+  }
+  if (
+    typeof evidenceItem.direction !== "string" ||
+    !VALID_EVIDENCE_DIRECTIONS.has(evidenceItem.direction)
+  ) {
+    return `Evidence item at index ${index} direction must be "up", "down", or "flat".`;
+  }
+
+  return null;
+}
+
 /**
  * Validate an evidence packet shape.
  * Returns an error string or null if valid.
@@ -201,36 +244,9 @@ export function validateEvidencePacket(packet: unknown): string | null {
   }
 
   for (let i = 0; i < p.items.length; i++) {
-    const item = p.items[i] as unknown;
-    if (typeof item !== "object" || item === null) {
-      return `Evidence item at index ${i} must be a non-null object.`;
-    }
-
-    const it = item as Record<string, unknown>;
-    if (typeof it.metricKey !== "string" || it.metricKey.trim().length === 0) {
-      return `Evidence item at index ${i} must have a non-empty metricKey.`;
-    }
-    if (typeof it.label !== "string" || it.label.trim().length === 0) {
-      return `Evidence item at index ${i} must have a non-empty label.`;
-    }
-    if (
-      typeof it.currentValue !== "number" ||
-      !Number.isFinite(it.currentValue)
-    ) {
-      return `Evidence item at index ${i} must have a finite currentValue.`;
-    }
-    if (
-      it.previousValue !== null &&
-      (typeof it.previousValue !== "number" ||
-        !Number.isFinite(it.previousValue))
-    ) {
-      return `Evidence item at index ${i} previousValue must be a finite number or null.`;
-    }
-    if (
-      typeof it.direction !== "string" ||
-      !["up", "down", "flat"].includes(it.direction)
-    ) {
-      return `Evidence item at index ${i} direction must be "up", "down", or "flat".`;
+    const itemError = validateEvidenceItem(p.items[i], i);
+    if (itemError) {
+      return itemError;
     }
   }
 

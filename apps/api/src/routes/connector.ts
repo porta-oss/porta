@@ -51,10 +51,26 @@ interface WorkspaceContext {
 }
 
 interface ConnectorCreateBody {
-  config: Record<string, string>;
+  config?: Record<string, string>;
   provider: string;
   startupId: string;
 }
+
+interface ConnectorRouteError {
+  error: {
+    code: string;
+    message: string;
+    retryable?: boolean;
+  };
+}
+
+interface ParsedCreateConnectorRequest {
+  config?: Record<string, string>;
+  provider: ConnectorProvider;
+  startupId: string;
+}
+
+type ConnectorRowForSummary = Parameters<typeof serializeConnector>[0];
 
 // ------------------------------------------------------------------
 // Helpers
@@ -81,6 +97,34 @@ function toIso(value: Date | string | null | undefined): string | null {
   return (value instanceof Date ? value : new Date(value)).toISOString();
 }
 
+function requireIsoTimestamp(
+  value: Date | string | null | undefined,
+  fieldName: string
+): string {
+  const isoTimestamp = toIso(value);
+
+  if (!isoTimestamp) {
+    throw new Error(`Expected ${fieldName} to be present.`);
+  }
+
+  return isoTimestamp;
+}
+
+function createErrorResponse(
+  set: { status?: number | string },
+  status: number,
+  error: ConnectorRouteError["error"]
+): ConnectorRouteError {
+  set.status = status;
+  return { error };
+}
+
+function stringifyConnectorConfig(
+  config: Record<string, string> | undefined
+): string {
+  return JSON.stringify(config ?? {});
+}
+
 function serializeConnector(row: {
   id: string;
   startupId: string;
@@ -100,8 +144,8 @@ function serializeConnector(row: {
     lastSyncAt: toIso(row.lastSyncAt),
     lastSyncDurationMs: row.lastSyncDurationMs,
     lastSyncError: row.lastSyncError,
-    createdAt: toIso(row.createdAt)!,
-    updatedAt: toIso(row.updatedAt)!,
+    createdAt: requireIsoTimestamp(row.createdAt, "connector.createdAt"),
+    updatedAt: requireIsoTimestamp(row.updatedAt, "connector.updatedAt"),
   };
 }
 
@@ -127,7 +171,7 @@ function serializeSyncJob(row: {
     completedAt: toIso(row.completedAt),
     error: row.error,
     durationMs: row.durationMs,
-    createdAt: toIso(row.createdAt)!,
+    createdAt: requireIsoTimestamp(row.createdAt, "syncJob.createdAt"),
   };
 }
 
@@ -159,9 +203,215 @@ function serializeCustomMetric(row: {
     previousValue:
       row.previousValue === null ? null : Number(row.previousValue),
     capturedAt: toIso(row.capturedAt),
-    createdAt: toIso(row.createdAt)!,
-    updatedAt: toIso(row.updatedAt)!,
+    createdAt: requireIsoTimestamp(row.createdAt, "customMetric.createdAt"),
+    updatedAt: requireIsoTimestamp(row.updatedAt, "customMetric.updatedAt"),
   };
+}
+
+function parseCreateConnectorRequest(
+  body: ConnectorCreateBody,
+  set: { status?: number | string }
+): ParsedCreateConnectorRequest | ConnectorRouteError {
+  if (!body.startupId) {
+    return createErrorResponse(set, 400, {
+      code: "STARTUP_ID_REQUIRED",
+      message: "startupId is required.",
+    });
+  }
+
+  if (!isConnectorProvider(body.provider)) {
+    return createErrorResponse(set, 400, {
+      code: "UNSUPPORTED_PROVIDER",
+      message: `Provider must be one of: posthog, stripe, postgres. Received: ${body.provider}`,
+    });
+  }
+
+  return {
+    startupId: body.startupId,
+    provider: body.provider,
+    config: body.config,
+  };
+}
+
+async function ensureWorkspaceStartup(
+  runtime: ConnectorRuntime,
+  wsCtx: WorkspaceContext,
+  startupId: string,
+  set: { status?: number | string }
+): Promise<ConnectorRouteError | null> {
+  const startup = await verifyStartupOwnership(
+    runtime.db.db,
+    startupId,
+    wsCtx.workspace.id
+  );
+
+  if (startup) {
+    return null;
+  }
+
+  return createErrorResponse(set, 403, {
+    code: "STARTUP_SCOPE_INVALID",
+    message: "The startup does not belong to the active workspace.",
+  });
+}
+
+async function validateConnectorCreation(
+  runtime: ConnectorRuntime,
+  provider: ConnectorProvider,
+  startupId: string,
+  config: Record<string, string> | undefined,
+  set: { status?: number | string }
+): Promise<ConnectorRouteError | null> {
+  const validation = await validateProviderConfig(
+    runtime,
+    provider,
+    config ?? {}
+  );
+
+  if (validation.valid) {
+    return null;
+  }
+
+  console.warn("[connector] provider validation failed", {
+    provider,
+    startupId,
+    error: validation.error,
+    retryable: validation.retryable,
+  });
+
+  return createErrorResponse(set, 422, {
+    code: "PROVIDER_VALIDATION_FAILED",
+    message: validation.error ?? "Provider credential validation failed.",
+    retryable: validation.retryable ?? false,
+  });
+}
+
+async function insertConnectorRecord(
+  runtime: ConnectorRuntime,
+  input: {
+    connectorId: string;
+    encryptedConfig: {
+      authTag: string;
+      ciphertext: string;
+      iv: string;
+    };
+    provider: ConnectorProvider;
+    startupId: string;
+  },
+  set: { status?: number | string }
+): Promise<ConnectorRowForSummary | ConnectorRouteError> {
+  const insertedRows = await runtime.db.db
+    .insert(connector)
+    .values({
+      id: input.connectorId,
+      startupId: input.startupId,
+      provider: input.provider,
+      status: "pending",
+      encryptedConfig: input.encryptedConfig.ciphertext,
+      encryptionIv: input.encryptedConfig.iv,
+      encryptionAuthTag: input.encryptedConfig.authTag,
+    })
+    .returning();
+
+  const inserted = insertedRows[0];
+  if (inserted) {
+    return inserted;
+  }
+
+  return createErrorResponse(set, 502, {
+    code: "CONNECTOR_CREATE_MALFORMED",
+    message: "Connector creation returned an unexpected payload.",
+  });
+}
+
+async function maybeCreateCustomMetricSummary(
+  runtime: ConnectorRuntime,
+  provider: ConnectorProvider,
+  config: Record<string, string> | undefined,
+  startupId: string,
+  connectorId: string
+): Promise<CustomMetricSummary | undefined> {
+  if (provider !== "postgres") {
+    return undefined;
+  }
+
+  const customMetricId = randomUUID();
+  const metricRows = await runtime.db.db
+    .insert(customMetric)
+    .values({
+      id: customMetricId,
+      startupId,
+      connectorId,
+      label: config?.label ?? "",
+      unit: config?.unit ?? "",
+      schema: config?.schema ?? "",
+      view: config?.view ?? "",
+      status: "pending",
+    })
+    .returning();
+
+  const metricRow = metricRows[0];
+  const customMetricSummary = metricRow
+    ? serializeCustomMetric(metricRow)
+    : undefined;
+
+  console.info("[connector] custom metric created", {
+    connectorId,
+    customMetricId,
+    startupId,
+    label: config?.label,
+    schema: config?.schema,
+    view: config?.view,
+  });
+
+  return customMetricSummary;
+}
+
+async function enqueueInitialSync(
+  runtime: ConnectorRuntime,
+  input: {
+    connectorId: string;
+    provider: ConnectorProvider;
+    startupId: string;
+    syncJobId: string;
+  }
+): Promise<{ status: "failed" | "queued"; syncJobId: string }> {
+  await runtime.db.db.insert(syncJob).values({
+    id: input.syncJobId,
+    connectorId: input.connectorId,
+    status: "queued",
+    trigger: "initial" as SyncTrigger,
+    attempt: 1,
+  });
+
+  const enqueueResult = await runtime.queueProducer.enqueue({
+    connectorId: input.connectorId,
+    startupId: input.startupId,
+    provider: input.provider,
+    trigger: "initial",
+    syncJobId: input.syncJobId,
+  });
+
+  if (enqueueResult.success) {
+    return { syncJobId: input.syncJobId, status: "queued" };
+  }
+
+  console.error("[connector] initial sync enqueue failed", {
+    connectorId: input.connectorId,
+    provider: input.provider,
+    syncJobId: input.syncJobId,
+    error: enqueueResult.error,
+  });
+
+  await runtime.db.db
+    .update(syncJob)
+    .set({
+      status: "failed",
+      error: enqueueResult.error ?? "Queue enqueue failed",
+    })
+    .where(eq(syncJob.id, input.syncJobId));
+
+  return { syncJobId: input.syncJobId, status: "failed" };
 }
 
 async function validateProviderConfig(
@@ -282,182 +532,86 @@ export async function handleCreateConnector(
   body: ConnectorCreateBody,
   set: { status?: number | string }
 ) {
-  const { startupId, provider: rawProvider, config } = body;
-
-  // Validate inputs
-  if (!startupId) {
-    set.status = 400;
-    return {
-      error: { code: "STARTUP_ID_REQUIRED", message: "startupId is required." },
-    };
+  const parsedRequest = parseCreateConnectorRequest(body, set);
+  if ("error" in parsedRequest) {
+    return parsedRequest;
   }
 
-  if (!isConnectorProvider(rawProvider)) {
-    set.status = 400;
-    return {
-      error: {
-        code: "UNSUPPORTED_PROVIDER",
-        message: `Provider must be one of: posthog, stripe, postgres. Received: ${rawProvider}`,
-      },
-    };
-  }
+  const { startupId, provider, config } = parsedRequest;
 
-  const provider: ConnectorProvider = rawProvider;
-
-  // Verify startup belongs to workspace
-  const startup = await verifyStartupOwnership(
-    runtime.db.db,
+  const startupError = await ensureWorkspaceStartup(
+    runtime,
+    wsCtx,
     startupId,
-    wsCtx.workspace.id
+    set
   );
-  if (!startup) {
-    set.status = 403;
-    return {
-      error: {
-        code: "STARTUP_SCOPE_INVALID",
-        message: "The startup does not belong to the active workspace.",
-      },
-    };
+  if (startupError) {
+    return startupError;
   }
 
-  // Validate provider credentials
-  const validation = await validateProviderConfig(
+  const validationError = await validateConnectorCreation(
     runtime,
     provider,
-    config ?? {}
+    startupId,
+    config,
+    set
   );
-  if (!validation.valid) {
-    set.status = 422;
-    console.warn("[connector] provider validation failed", {
-      provider,
-      startupId,
-      error: validation.error,
-      retryable: validation.retryable,
-    });
-    return {
-      error: {
-        code: "PROVIDER_VALIDATION_FAILED",
-        message: validation.error ?? "Provider credential validation failed.",
-        retryable: validation.retryable ?? false,
-      },
-    };
+  if (validationError) {
+    return validationError;
   }
 
-  // Encrypt credentials
   const key = parseEncryptionKey(runtime.env.connectorEncryptionKey);
-  const encrypted = encryptConnectorConfig(JSON.stringify(config), key);
+  const encrypted = encryptConnectorConfig(
+    stringifyConnectorConfig(config),
+    key
+  );
 
   const connectorId = randomUUID();
   const syncJobId = randomUUID();
 
   try {
-    // Insert connector
-    const insertedRows = await runtime.db.db
-      .insert(connector)
-      .values({
-        id: connectorId,
+    const inserted = await insertConnectorRecord(
+      runtime,
+      {
+        connectorId,
         startupId,
         provider,
-        status: "pending",
-        encryptedConfig: encrypted.ciphertext,
-        encryptionIv: encrypted.iv,
-        encryptionAuthTag: encrypted.authTag,
-      })
-      .returning();
-
-    const inserted = insertedRows[0];
-    if (!inserted) {
-      set.status = 502;
-      return {
-        error: {
-          code: "CONNECTOR_CREATE_MALFORMED",
-          message: "Connector creation returned an unexpected payload.",
-        },
-      };
+        encryptedConfig: encrypted,
+      },
+      set
+    );
+    if ("error" in inserted) {
+      return inserted;
     }
 
-    // For postgres provider: create a startup-scoped custom metric definition row
-    let customMetricSummary: CustomMetricSummary | undefined;
-    if (provider === "postgres") {
-      const customMetricId = randomUUID();
-      const metricRows = await runtime.db.db
-        .insert(customMetric)
-        .values({
-          id: customMetricId,
-          startupId,
-          connectorId,
-          label: config.label ?? "",
-          unit: config.unit ?? "",
-          schema: config.schema ?? "",
-          view: config.view ?? "",
-          status: "pending",
-        })
-        .returning();
-
-      const metricRow = metricRows[0];
-      if (metricRow) {
-        customMetricSummary = serializeCustomMetric(metricRow);
-      }
-
-      console.info("[connector] custom metric created", {
-        connectorId,
-        customMetricId,
-        startupId,
-        label: config.label,
-        schema: config.schema,
-        view: config.view,
-      });
-    }
-
-    // Create initial sync job row
-    await runtime.db.db.insert(syncJob).values({
-      id: syncJobId,
-      connectorId,
-      status: "queued",
-      trigger: "initial" as SyncTrigger,
-      attempt: 1,
-    });
-
-    // Enqueue sync job (reference IDs only)
-    const enqueueResult = await runtime.queueProducer.enqueue({
+    const customMetricSummary = await maybeCreateCustomMetricSummary(
+      runtime,
+      provider,
+      config,
+      startupId,
+      connectorId
+    );
+    const queuedSync = await enqueueInitialSync(runtime, {
       connectorId,
       startupId,
       provider,
-      trigger: "initial",
       syncJobId,
     });
-
-    if (!enqueueResult.success) {
-      console.error("[connector] initial sync enqueue failed", {
-        connectorId,
-        provider,
-        syncJobId,
-        error: enqueueResult.error,
-      });
-      // Mark sync job as failed but keep connector — it's still valid
-      await runtime.db.db
-        .update(syncJob)
-        .set({
-          status: "failed",
-          error: enqueueResult.error ?? "Queue enqueue failed",
-        })
-        .where(eq(syncJob.id, syncJobId));
-    }
 
     console.info("[connector] created", {
       connectorId,
       provider,
       startupId,
       syncJobId,
-      enqueued: enqueueResult.success,
+      enqueued: queuedSync.status === "queued",
     });
 
     set.status = 201;
     const response: Record<string, unknown> = {
       connector: serializeConnector(inserted),
       syncJob: {
-        id: syncJobId,
-        status: enqueueResult.success ? "queued" : "failed",
+        id: queuedSync.syncJobId,
+        status: queuedSync.status,
         trigger: "initial",
       },
     };

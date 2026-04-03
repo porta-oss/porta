@@ -29,6 +29,16 @@ import {
 
 const { Pool } = pg;
 
+function requireEnvValue(value: string | null, name: string): string {
+  if (value) {
+    return value;
+  }
+
+  throw new Error(
+    `${name} is required when founder-proof mode is disabled for task-sync delivery.`
+  );
+}
+
 const log = {
   info(msg: string, meta?: Record<string, unknown>) {
     console.info(`[worker] ${msg}`, meta ? JSON.stringify(meta) : "");
@@ -151,11 +161,13 @@ async function main() {
   if (shouldEnableTaskSync) {
     const createLinearIssue = env.founderProofMode
       ? createFounderProofLinearClient()
-      : createLinearIssueClient(env.linearApiKey!);
+      : createLinearIssueClient(
+          requireEnvValue(env.linearApiKey, "LINEAR_API_KEY")
+        );
 
     const taskSyncTeamId = env.founderProofMode
       ? "founder-proof-team"
-      : env.linearTeamId!;
+      : requireEnvValue(env.linearTeamId, "LINEAR_TEAM_ID");
 
     const taskSyncProcessor = createTaskSyncProcessor({
       taskRepo,

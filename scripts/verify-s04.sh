@@ -27,7 +27,7 @@ echo ""
 
 # Phase 4: Full typecheck
 echo "[Phase 4] Full typecheck"
-pnpm lint
+bun run typecheck
 echo "✅ Phase 4 passed"
 echo ""
 

@@ -27,6 +27,96 @@ function isNonBlank(value: string): boolean {
   return value.trim().length > 0;
 }
 
+function validatePostHogConfig(
+  config: PostHogConfig
+): ProviderValidationResult | null {
+  if (!isNonBlank(config.apiKey)) {
+    return { valid: false, error: "PostHog API key is required." };
+  }
+
+  if (!isNonBlank(config.projectId)) {
+    return { valid: false, error: "PostHog project ID is required." };
+  }
+
+  if (!isValidPostHogHost(config.host)) {
+    return {
+      valid: false,
+      error: "PostHog host must be a valid URL (e.g. https://app.posthog.com).",
+    };
+  }
+
+  return null;
+}
+
+function createProjectUrl(config: PostHogConfig): string {
+  const baseUrl = config.host.replace(/\/+$/, "");
+  return `${baseUrl}/api/projects/${encodeURIComponent(config.projectId)}/`;
+}
+
+function mapPostHogResponseStatus(status: number): ProviderValidationResult {
+  if (status === 200) {
+    return { valid: true };
+  }
+
+  if (status === 401 || status === 403) {
+    return {
+      valid: false,
+      error:
+        "PostHog API key is invalid or lacks access to the specified project.",
+    };
+  }
+
+  if (status === 404) {
+    return {
+      valid: false,
+      error: "PostHog project not found. Verify the project ID and host.",
+    };
+  }
+
+  if (status >= 500) {
+    return {
+      valid: false,
+      error: "PostHog API returned a server error. Try again shortly.",
+      retryable: true,
+    };
+  }
+
+  return {
+    valid: false,
+    error: `PostHog validation failed with status ${status}.`,
+  };
+}
+
+async function requestProjectValidation(
+  url: string,
+  apiKey: string,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function isDemoPostHogConfig(config: PostHogConfig): boolean {
+  return (
+    config.apiKey === POSTHOG_DEMO_API_KEY &&
+    config.projectId === POSTHOG_DEMO_PROJECT_ID &&
+    config.host === POSTHOG_DEMO_HOST
+  );
+}
+
 /**
  * Production PostHog validator that calls the real PostHog API.
  */
@@ -37,71 +127,20 @@ export function createPostHogValidator(options?: {
 
   return {
     async validate(config: PostHogConfig): Promise<ProviderValidationResult> {
-      if (!isNonBlank(config.apiKey)) {
-        return { valid: false, error: "PostHog API key is required." };
+      const inputError = validatePostHogConfig(config);
+      if (inputError) {
+        return inputError;
       }
 
-      if (!isNonBlank(config.projectId)) {
-        return { valid: false, error: "PostHog project ID is required." };
-      }
-
-      if (!isValidPostHogHost(config.host)) {
-        return {
-          valid: false,
-          error:
-            "PostHog host must be a valid URL (e.g. https://app.posthog.com).",
-        };
-      }
-
-      const baseUrl = config.host.replace(/\/+$/, "");
-      const url = `${baseUrl}/api/projects/${encodeURIComponent(config.projectId)}/`;
+      const url = createProjectUrl(config);
 
       try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-        const response = await fetch(url, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${config.apiKey}`,
-            Accept: "application/json",
-          },
-          signal: controller.signal,
-        });
-
-        clearTimeout(timer);
-
-        if (response.status === 200) {
-          return { valid: true };
-        }
-
-        if (response.status === 401 || response.status === 403) {
-          return {
-            valid: false,
-            error:
-              "PostHog API key is invalid or lacks access to the specified project.",
-          };
-        }
-
-        if (response.status === 404) {
-          return {
-            valid: false,
-            error: "PostHog project not found. Verify the project ID and host.",
-          };
-        }
-
-        if (response.status >= 500) {
-          return {
-            valid: false,
-            error: "PostHog API returned a server error. Try again shortly.",
-            retryable: true,
-          };
-        }
-
-        return {
-          valid: false,
-          error: `PostHog validation failed with status ${response.status}.`,
-        };
+        const response = await requestProjectValidation(
+          url,
+          config.apiKey,
+          timeoutMs
+        );
+        return mapPostHogResponseStatus(response.status);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
           return {
@@ -140,19 +179,9 @@ export function createStubPostHogValidator(
     async validate(config: PostHogConfig): Promise<ProviderValidationResult> {
       calls.push(config);
 
-      // Still validate input shape even in stub mode
-      if (!isNonBlank(config.apiKey)) {
-        return { valid: false, error: "PostHog API key is required." };
-      }
-      if (!isNonBlank(config.projectId)) {
-        return { valid: false, error: "PostHog project ID is required." };
-      }
-      if (!isValidPostHogHost(config.host)) {
-        return {
-          valid: false,
-          error:
-            "PostHog host must be a valid URL (e.g. https://app.posthog.com).",
-        };
+      const inputError = validatePostHogConfig(config);
+      if (inputError) {
+        return inputError;
       }
 
       return result;
@@ -171,27 +200,12 @@ const POSTHOG_DEMO_HOST = "https://proof.posthog.local";
 export function createFounderProofPostHogValidator(): PostHogValidator {
   return {
     async validate(config: PostHogConfig): Promise<ProviderValidationResult> {
-      // Enforce input shape even in proof mode
-      if (!isNonBlank(config.apiKey)) {
-        return { valid: false, error: "PostHog API key is required." };
-      }
-      if (!isNonBlank(config.projectId)) {
-        return { valid: false, error: "PostHog project ID is required." };
-      }
-      if (!isValidPostHogHost(config.host)) {
-        return {
-          valid: false,
-          error:
-            "PostHog host must be a valid URL (e.g. https://app.posthog.com).",
-        };
+      const inputError = validatePostHogConfig(config);
+      if (inputError) {
+        return inputError;
       }
 
-      // Accept only the deterministic demo credentials
-      if (
-        config.apiKey === POSTHOG_DEMO_API_KEY &&
-        config.projectId === POSTHOG_DEMO_PROJECT_ID &&
-        config.host === POSTHOG_DEMO_HOST
-      ) {
+      if (isDemoPostHogConfig(config)) {
         return { valid: true };
       }
 

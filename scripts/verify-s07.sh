@@ -28,7 +28,7 @@ run_check() {
 
 # ─── Phase 1: Typecheck ───
 echo "── Phase 1: Typecheck ──"
-run_check "typecheck" pnpm lint
+run_check "typecheck" bun run typecheck
 
 # ─── Phase 2: T01 — Postgres setup API ───
 echo ""

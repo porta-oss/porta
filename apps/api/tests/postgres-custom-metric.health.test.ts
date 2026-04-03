@@ -14,35 +14,17 @@ import type { StartupDraft } from "@shared/types";
 import { convertSetCookieToCookie } from "better-auth/test";
 import { sql } from "drizzle-orm";
 
-import { type ApiApp, createApiApp } from "../src/app";
+import type { ApiApp } from "../src/app";
 import { createStubPostgresValidator } from "../src/lib/connectors/postgres";
 import { createStubPostHogValidator } from "../src/lib/connectors/posthog";
 import { createStubQueueProducer } from "../src/lib/connectors/queue";
 import { createStubStripeValidator } from "../src/lib/connectors/stripe";
 import { createStubTaskSyncQueueProducer } from "../src/lib/tasks/queue";
-
-// ---------------------------------------------------------------------------
-// Environment
-// ---------------------------------------------------------------------------
-
-const TEST_ENV = {
-  NODE_ENV: "test",
-  API_PORT: "3000",
-  API_URL: "http://localhost:3000",
-  WEB_URL: "http://localhost:5173",
-  DATABASE_URL: "postgres://postgres:postgres@127.0.0.1:5432/porta",
-  REDIS_URL: "redis://127.0.0.1:6379",
-  BETTER_AUTH_URL: "http://localhost:3000",
-  BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
-  GOOGLE_CLIENT_ID: "google-client-id",
-  GOOGLE_CLIENT_SECRET: "google-client-secret",
-  MAGIC_LINK_SENDER_EMAIL: "dev@porta.local",
-  CONNECTOR_ENCRYPTION_KEY:
-    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  AUTH_CONTEXT_TIMEOUT_MS: "2000",
-  DATABASE_CONNECT_TIMEOUT_MS: "5000",
-  DATABASE_POOL_MAX: "5",
-} as const;
+import {
+  closeTestApiApp,
+  createTestApiApp,
+  requireValue,
+} from "./helpers/test-app";
 
 const VALID_STARTUP: StartupDraft = {
   name: "PG Metric Health Test",
@@ -129,12 +111,16 @@ async function createStartup(app: ApiApp, cookie: string): Promise<string> {
 // Tests
 // ---------------------------------------------------------------------------
 
-let app: ApiApp;
+let app: ApiApp | undefined;
 let cookie: string;
 let startupId: string;
 
+function getApp() {
+  return requireValue(app, "Expected API test app to be initialized.");
+}
+
 beforeAll(async () => {
-  app = await createApiApp(TEST_ENV, {
+  app = await createTestApiApp({
     posthogValidator: createStubPostHogValidator(),
     stripeValidator: createStubStripeValidator(),
     postgresValidator: createStubPostgresValidator(),
@@ -142,32 +128,39 @@ beforeAll(async () => {
     taskSyncQueueProducer: createStubTaskSyncQueueProducer(),
   });
   const email = `pg-health-${randomUUID()}@test.local`;
-  cookie = await signUp(app, email);
-  await createWorkspace(app, cookie, "PG Health Workspace");
-  startupId = await createStartup(app, cookie);
+  const testApp = getApp();
+  cookie = await signUp(testApp, email);
+  await createWorkspace(testApp, cookie, "PG Health Workspace");
+  startupId = await createStartup(testApp, cookie);
 });
 
 afterAll(async () => {
+  const testApp = app;
+  if (!testApp) {
+    return;
+  }
+
   try {
-    await app.runtime.db.db.execute(
+    await testApp.runtime.db.db.execute(
       sql`DELETE FROM custom_metric WHERE startup_id = ${startupId}`
     );
-    await app.runtime.db.db.execute(
+    await testApp.runtime.db.db.execute(
       sql`DELETE FROM connector WHERE startup_id = ${startupId}`
     );
-    await app.runtime.db.db.execute(
+    await testApp.runtime.db.db.execute(
       sql`DELETE FROM startup WHERE id = ${startupId}`
     );
-    await app.runtime.db.close();
   } catch {
     /* ignore */
   }
+
+  await closeTestApiApp(testApp);
 });
 
 describe("health route — customMetric payload", () => {
   test("returns customMetric: null when no custom metric is configured", async () => {
     const res = await makeRequest(
-      app,
+      getApp(),
       `http://localhost:3000/api/startups/${startupId}/health`,
       {
         headers: { cookie },
@@ -182,7 +175,7 @@ describe("health route — customMetric payload", () => {
   test("returns customMetric with label, unit, and status after setup", async () => {
     // Create a postgres connector + custom metric via the setup endpoint
     const createRes = await makeRequest(
-      app,
+      getApp(),
       "http://localhost:3000/api/connectors",
       {
         method: "POST",
@@ -204,7 +197,7 @@ describe("health route — customMetric payload", () => {
 
     // Now fetch health — should include the custom metric
     const res = await makeRequest(
-      app,
+      getApp(),
       `http://localhost:3000/api/startups/${startupId}/health`,
       {
         headers: { cookie },
@@ -229,7 +222,7 @@ describe("health route — customMetric payload", () => {
     const now = new Date();
 
     // Simulate a successful sync by writing directly to the custom_metric table
-    await app.runtime.db.db.execute(
+    await getApp().runtime.db.db.execute(
       sql`UPDATE custom_metric
           SET status = 'active',
               metric_value = 42500.50,
@@ -240,7 +233,7 @@ describe("health route — customMetric payload", () => {
     );
 
     const res = await makeRequest(
-      app,
+      getApp(),
       `http://localhost:3000/api/startups/${startupId}/health`,
       {
         headers: { cookie },
@@ -263,7 +256,7 @@ describe("health route — customMetric payload", () => {
 
   test("custom metric preserves last-good data when status is error", async () => {
     // Simulate a failed sync: status goes to error but values preserved
-    await app.runtime.db.db.execute(
+    await getApp().runtime.db.db.execute(
       sql`UPDATE custom_metric
           SET status = 'error',
               updated_at = ${new Date()}
@@ -271,7 +264,7 @@ describe("health route — customMetric payload", () => {
     );
 
     const res = await makeRequest(
-      app,
+      getApp(),
       `http://localhost:3000/api/startups/${startupId}/health`,
       {
         headers: { cookie },
@@ -297,13 +290,13 @@ describe("health route — customMetric payload", () => {
     metrics.active_users = { value: 100, previous: null };
     metrics.customer_count = { value: 50, previous: null };
 
-    await app.runtime.db.db.execute(
+    await getApp().runtime.db.db.execute(
       sql`INSERT INTO health_snapshot (id, startup_id, health_state, north_star_key, north_star_value, supporting_metrics, computed_at)
           VALUES (${snapshotId}, ${startupId}, 'ready', 'mrr', 5000, ${JSON.stringify(metrics)}::jsonb, ${new Date()})`
     );
 
     const res = await makeRequest(
-      app,
+      getApp(),
       `http://localhost:3000/api/startups/${startupId}/health`,
       {
         headers: { cookie },
@@ -318,7 +311,8 @@ describe("health route — customMetric payload", () => {
 
     // supportingMetrics has exactly 5 fixed keys — no custom metric key smuggled in
     expect(body.health).not.toBeNull();
-    const metricKeys = Object.keys(body.health!.supportingMetrics).sort();
+    const health = requireValue(body.health, "Expected health payload.");
+    const metricKeys = Object.keys(health.supportingMetrics).sort();
     expect(metricKeys).toEqual([
       "active_users",
       "arpu",
@@ -334,7 +328,7 @@ describe("health route — customMetric payload", () => {
 
   test("health payload with PostHog/Stripe healthy but Postgres failing", async () => {
     const res = await makeRequest(
-      app,
+      getApp(),
       `http://localhost:3000/api/startups/${startupId}/health`,
       {
         headers: { cookie },

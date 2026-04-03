@@ -18,25 +18,11 @@ import {
 import { createStubQueueProducer } from "../src/lib/connectors/queue";
 import { STRIPE_DEMO_SECRET_KEY } from "../src/lib/connectors/stripe";
 import { readApiEnv } from "../src/lib/env";
-
-const BASE_ENV = {
-  NODE_ENV: "test",
-  API_PORT: "3000",
-  API_URL: "http://localhost:3000",
-  WEB_URL: "http://localhost:5173",
-  DATABASE_URL: "postgres://postgres:postgres@127.0.0.1:5432/porta",
-  REDIS_URL: "redis://127.0.0.1:6379",
-  BETTER_AUTH_URL: "http://localhost:3000",
-  BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
-  GOOGLE_CLIENT_ID: "google-client-id",
-  GOOGLE_CLIENT_SECRET: "google-client-secret",
-  MAGIC_LINK_SENDER_EMAIL: "dev@porta.local",
-  CONNECTOR_ENCRYPTION_KEY:
-    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  AUTH_CONTEXT_TIMEOUT_MS: "2000",
-  DATABASE_CONNECT_TIMEOUT_MS: "5000",
-  DATABASE_POOL_MAX: "5",
-} as const;
+import {
+  API_TEST_ENV,
+  closeTestApiApp,
+  requireValue,
+} from "./helpers/test-app";
 
 const VALID_STARTUP: StartupDraft = {
   name: "Proof Test Startup",
@@ -95,9 +81,11 @@ async function createSessionOnApp(testApp: ApiApp, email: string) {
     })
   );
   expect(signInResponse.status).toBe(200);
-  const magicLink = testApp.runtime.auth.getLatestMagicLink(email);
-  expect(magicLink).toBeDefined();
-  const verifyResponse = await testApp.handle(new Request(magicLink!.url));
+  const magicLink = requireValue(
+    testApp.runtime.auth.getLatestMagicLink(email),
+    `Expected magic link for ${email}.`
+  );
+  const verifyResponse = await testApp.handle(new Request(magicLink.url));
   const cookie =
     convertSetCookieToCookie(verifyResponse.headers).get("cookie") ?? "";
   expect(cookie.length).toBeGreaterThan(0);
@@ -147,39 +135,39 @@ async function setupWorkspaceAndStartupOnApp(testApp: ApiApp, email: string) {
 
 describe("founder-proof env parsing", () => {
   test("defaults to disabled when FOUNDER_PROOF_MODE is absent", () => {
-    const env = readApiEnv({ ...BASE_ENV });
+    const env = readApiEnv({ ...API_TEST_ENV });
     expect(env.founderProofMode).toBe(false);
   });
 
   test("enables when FOUNDER_PROOF_MODE=true", () => {
-    const env = readApiEnv({ ...BASE_ENV, FOUNDER_PROOF_MODE: "true" });
+    const env = readApiEnv({ ...API_TEST_ENV, FOUNDER_PROOF_MODE: "true" });
     expect(env.founderProofMode).toBe(true);
   });
 
   test("enables when FOUNDER_PROOF_MODE=1", () => {
-    const env = readApiEnv({ ...BASE_ENV, FOUNDER_PROOF_MODE: "1" });
+    const env = readApiEnv({ ...API_TEST_ENV, FOUNDER_PROOF_MODE: "1" });
     expect(env.founderProofMode).toBe(true);
   });
 
   test("disables when FOUNDER_PROOF_MODE=false", () => {
-    const env = readApiEnv({ ...BASE_ENV, FOUNDER_PROOF_MODE: "false" });
+    const env = readApiEnv({ ...API_TEST_ENV, FOUNDER_PROOF_MODE: "false" });
     expect(env.founderProofMode).toBe(false);
   });
 
   test("disables when FOUNDER_PROOF_MODE=0", () => {
-    const env = readApiEnv({ ...BASE_ENV, FOUNDER_PROOF_MODE: "0" });
+    const env = readApiEnv({ ...API_TEST_ENV, FOUNDER_PROOF_MODE: "0" });
     expect(env.founderProofMode).toBe(false);
   });
 
   test("rejects malformed FOUNDER_PROOF_MODE values", () => {
     expect(() =>
-      readApiEnv({ ...BASE_ENV, FOUNDER_PROOF_MODE: "yes" })
+      readApiEnv({ ...API_TEST_ENV, FOUNDER_PROOF_MODE: "yes" })
     ).toThrow(/FOUNDER_PROOF_MODE must be one of/);
     expect(() =>
-      readApiEnv({ ...BASE_ENV, FOUNDER_PROOF_MODE: "enabled" })
+      readApiEnv({ ...API_TEST_ENV, FOUNDER_PROOF_MODE: "enabled" })
     ).toThrow(/FOUNDER_PROOF_MODE must be one of/);
     expect(() =>
-      readApiEnv({ ...BASE_ENV, FOUNDER_PROOF_MODE: "maybe" })
+      readApiEnv({ ...API_TEST_ENV, FOUNDER_PROOF_MODE: "maybe" })
     ).toThrow(/FOUNDER_PROOF_MODE must be one of/);
   });
 });
@@ -189,7 +177,7 @@ describe("founder-proof env parsing", () => {
 // ---------------------------------------------------------------
 
 describe("founder-proof mode off (default)", () => {
-  let app: ApiApp;
+  let app: ApiApp | undefined;
   let queueProducer: ReturnType<typeof createStubQueueProducer>;
 
   beforeAll(async () => {
@@ -199,20 +187,28 @@ describe("founder-proof mode off (default)", () => {
     });
     // No FOUNDER_PROOF_MODE set — validators use real HTTP calls.
     // Provide no custom validators so the real ones are used.
-    app = await createApiApp({ ...BASE_ENV }, { queueProducer });
+    app = await createApiApp({ ...API_TEST_ENV }, { queueProducer });
   });
 
   beforeEach(async () => {
-    app.runtime.auth.resetMagicLinks();
-    await app.runtime.db.resetAuthTables();
+    const testApp = requireValue(
+      app,
+      "Expected API test app to be initialized."
+    );
+    testApp.runtime.auth.resetMagicLinks();
+    await testApp.runtime.db.resetAuthTables();
   });
 
   afterAll(async () => {
-    await app.runtime.db.close();
+    await closeTestApiApp(app);
   });
 
   test("/api/health reports founderProofMode=false and validationMode=live", async () => {
-    const response = await sendOnApp(app, "/api/health");
+    const testApp = requireValue(
+      app,
+      "Expected API test app to be initialized."
+    );
+    const response = await sendOnApp(testApp, "/api/health");
     const payload = await parseJson(response);
     expect(payload.founderProofMode).toBe(false);
     expect((payload.connectors as Record<string, unknown>).validationMode).toBe(
@@ -221,12 +217,16 @@ describe("founder-proof mode off (default)", () => {
   });
 
   test("PostHog demo credentials fail when proof mode is off", async () => {
-    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+    const testApp = requireValue(
       app,
+      "Expected API test app to be initialized."
+    );
+    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+      testApp,
       "proof-off-ph@example.com"
     );
 
-    const response = await sendOnApp(app, "/api/connectors", {
+    const response = await sendOnApp(testApp, "/api/connectors", {
       method: "POST",
       cookie,
       body: {
@@ -243,12 +243,16 @@ describe("founder-proof mode off (default)", () => {
   }, 15_000);
 
   test("Stripe demo credentials fail when proof mode is off", async () => {
-    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+    const testApp = requireValue(
       app,
+      "Expected API test app to be initialized."
+    );
+    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+      testApp,
       "proof-off-st@example.com"
     );
 
-    const response = await sendOnApp(app, "/api/connectors", {
+    const response = await sendOnApp(testApp, "/api/connectors", {
       method: "POST",
       cookie,
       body: {
@@ -270,7 +274,7 @@ describe("founder-proof mode off (default)", () => {
 // ---------------------------------------------------------------
 
 describe("founder-proof mode on", () => {
-  let app: ApiApp;
+  let app: ApiApp | undefined;
   let queueProducer: ReturnType<typeof createStubQueueProducer>;
 
   beforeAll(async () => {
@@ -281,23 +285,31 @@ describe("founder-proof mode on", () => {
     // Explicitly enable founder-proof mode — no custom validators provided,
     // so createApiApp should create founder-proof validators automatically.
     app = await createApiApp(
-      { ...BASE_ENV, FOUNDER_PROOF_MODE: "true" },
+      { ...API_TEST_ENV, FOUNDER_PROOF_MODE: "true" },
       { queueProducer }
     );
   });
 
   beforeEach(async () => {
-    app.runtime.auth.resetMagicLinks();
-    await app.runtime.db.resetAuthTables();
+    const testApp = requireValue(
+      app,
+      "Expected API test app to be initialized."
+    );
+    testApp.runtime.auth.resetMagicLinks();
+    await testApp.runtime.db.resetAuthTables();
     queueProducer.calls.length = 0;
   });
 
   afterAll(async () => {
-    await app.runtime.db.close();
+    await closeTestApiApp(app);
   });
 
   test("/api/health reports founderProofMode=true and validationMode=founder-proof", async () => {
-    const response = await sendOnApp(app, "/api/health");
+    const testApp = requireValue(
+      app,
+      "Expected API test app to be initialized."
+    );
+    const response = await sendOnApp(testApp, "/api/health");
     const payload = await parseJson(response);
     expect(payload.founderProofMode).toBe(true);
     expect((payload.connectors as Record<string, unknown>).validationMode).toBe(
@@ -306,22 +318,30 @@ describe("founder-proof mode on", () => {
   });
 
   test("/api/health does not leak secrets or connector config values", async () => {
-    const response = await sendOnApp(app, "/api/health");
+    const testApp = requireValue(
+      app,
+      "Expected API test app to be initialized."
+    );
+    const response = await sendOnApp(testApp, "/api/health");
     const text = await response.clone().text();
     // Must not contain encryption key, auth secret, or any demo credential values
-    expect(text).not.toContain(BASE_ENV.CONNECTOR_ENCRYPTION_KEY);
-    expect(text).not.toContain(BASE_ENV.BETTER_AUTH_SECRET);
+    expect(text).not.toContain(API_TEST_ENV.CONNECTOR_ENCRYPTION_KEY);
+    expect(text).not.toContain(API_TEST_ENV.BETTER_AUTH_SECRET);
     expect(text).not.toContain(POSTHOG_DEMO_API_KEY);
     expect(text).not.toContain(STRIPE_DEMO_SECRET_KEY);
   });
 
   test("PostHog demo credentials succeed in proof mode", async () => {
-    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+    const testApp = requireValue(
       app,
+      "Expected API test app to be initialized."
+    );
+    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+      testApp,
       "proof-on-ph@example.com"
     );
 
-    const response = await sendOnApp(app, "/api/connectors", {
+    const response = await sendOnApp(testApp, "/api/connectors", {
       method: "POST",
       cookie,
       body: {
@@ -346,12 +366,16 @@ describe("founder-proof mode on", () => {
   });
 
   test("Stripe demo credentials succeed in proof mode", async () => {
-    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+    const testApp = requireValue(
       app,
+      "Expected API test app to be initialized."
+    );
+    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+      testApp,
       "proof-on-st@example.com"
     );
 
-    const response = await sendOnApp(app, "/api/connectors", {
+    const response = await sendOnApp(testApp, "/api/connectors", {
       method: "POST",
       cookie,
       body: {
@@ -373,12 +397,16 @@ describe("founder-proof mode on", () => {
   });
 
   test("both PostHog and Stripe can be connected for the same startup in proof mode", async () => {
-    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+    const testApp = requireValue(
       app,
+      "Expected API test app to be initialized."
+    );
+    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+      testApp,
       "proof-both@example.com"
     );
 
-    const phResponse = await sendOnApp(app, "/api/connectors", {
+    const phResponse = await sendOnApp(testApp, "/api/connectors", {
       method: "POST",
       cookie,
       body: {
@@ -389,7 +417,7 @@ describe("founder-proof mode on", () => {
     });
     expect(phResponse.status).toBe(201);
 
-    const stResponse = await sendOnApp(app, "/api/connectors", {
+    const stResponse = await sendOnApp(testApp, "/api/connectors", {
       method: "POST",
       cookie,
       body: {
@@ -401,7 +429,7 @@ describe("founder-proof mode on", () => {
     expect(stResponse.status).toBe(201);
 
     const listResponse = await sendOnApp(
-      app,
+      testApp,
       `/api/connectors?startupId=${startup.id}`,
       { cookie }
     );
@@ -410,21 +438,25 @@ describe("founder-proof mode on", () => {
   });
 
   test("workspace scoping still works in proof mode", async () => {
+    const testApp = requireValue(
+      app,
+      "Expected API test app to be initialized."
+    );
     // User A sets up workspace + startup
     const { startup } = await setupWorkspaceAndStartupOnApp(
-      app,
+      testApp,
       "proof-scope-a@example.com"
     );
 
     // User B with their own workspace
     const { cookie: cookieB } = await createSessionOnApp(
-      app,
+      testApp,
       "proof-scope-b@example.com"
     );
-    await createWorkspaceOnApp(app, cookieB, "Other Proof Workspace");
+    await createWorkspaceOnApp(testApp, cookieB, "Other Proof Workspace");
 
     // User B tries to create a connector on User A's startup
-    const response = await sendOnApp(app, "/api/connectors", {
+    const response = await sendOnApp(testApp, "/api/connectors", {
       method: "POST",
       cookie: cookieB,
       body: {
@@ -444,7 +476,7 @@ describe("founder-proof mode on", () => {
 // ---------------------------------------------------------------
 
 describe("founder-proof mode negative tests", () => {
-  let app: ApiApp;
+  let app: ApiApp | undefined;
   let queueProducer: ReturnType<typeof createStubQueueProducer>;
 
   beforeAll(async () => {
@@ -453,27 +485,35 @@ describe("founder-proof mode negative tests", () => {
       jobId: "stub-job-id",
     });
     app = await createApiApp(
-      { ...BASE_ENV, FOUNDER_PROOF_MODE: "true" },
+      { ...API_TEST_ENV, FOUNDER_PROOF_MODE: "true" },
       { queueProducer }
     );
   });
 
   beforeEach(async () => {
-    app.runtime.auth.resetMagicLinks();
-    await app.runtime.db.resetAuthTables();
+    const testApp = requireValue(
+      app,
+      "Expected API test app to be initialized."
+    );
+    testApp.runtime.auth.resetMagicLinks();
+    await testApp.runtime.db.resetAuthTables();
   });
 
   afterAll(async () => {
-    await app.runtime.db.close();
+    await closeTestApiApp(app);
   });
 
   test("blank PostHog fields rejected even in proof mode", async () => {
-    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+    const testApp = requireValue(
       app,
+      "Expected API test app to be initialized."
+    );
+    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+      testApp,
       "proof-blank-ph@example.com"
     );
 
-    const response = await sendOnApp(app, "/api/connectors", {
+    const response = await sendOnApp(testApp, "/api/connectors", {
       method: "POST",
       cookie,
       body: {
@@ -486,12 +526,16 @@ describe("founder-proof mode negative tests", () => {
   });
 
   test("blank Stripe key rejected even in proof mode", async () => {
-    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+    const testApp = requireValue(
       app,
+      "Expected API test app to be initialized."
+    );
+    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+      testApp,
       "proof-blank-st@example.com"
     );
 
-    const response = await sendOnApp(app, "/api/connectors", {
+    const response = await sendOnApp(testApp, "/api/connectors", {
       method: "POST",
       cookie,
       body: {
@@ -504,12 +548,16 @@ describe("founder-proof mode negative tests", () => {
   });
 
   test("non-demo PostHog credentials rejected in proof mode", async () => {
-    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+    const testApp = requireValue(
       app,
+      "Expected API test app to be initialized."
+    );
+    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+      testApp,
       "proof-nondemo-ph@example.com"
     );
 
-    const response = await sendOnApp(app, "/api/connectors", {
+    const response = await sendOnApp(testApp, "/api/connectors", {
       method: "POST",
       cookie,
       body: {
@@ -530,12 +578,16 @@ describe("founder-proof mode negative tests", () => {
   });
 
   test("non-demo Stripe key rejected in proof mode", async () => {
-    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+    const testApp = requireValue(
       app,
+      "Expected API test app to be initialized."
+    );
+    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+      testApp,
       "proof-nondemo-st@example.com"
     );
 
-    const response = await sendOnApp(app, "/api/connectors", {
+    const response = await sendOnApp(testApp, "/api/connectors", {
       method: "POST",
       cookie,
       body: {
@@ -552,12 +604,16 @@ describe("founder-proof mode negative tests", () => {
   });
 
   test("unsupported provider still rejected in proof mode", async () => {
-    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+    const testApp = requireValue(
       app,
+      "Expected API test app to be initialized."
+    );
+    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+      testApp,
       "proof-unsupported@example.com"
     );
 
-    const response = await sendOnApp(app, "/api/connectors", {
+    const response = await sendOnApp(testApp, "/api/connectors", {
       method: "POST",
       cookie,
       body: { startupId: startup.id, provider: "hubspot", config: {} },
@@ -568,12 +624,16 @@ describe("founder-proof mode negative tests", () => {
   });
 
   test("invalid Stripe key format still rejected in proof mode", async () => {
-    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+    const testApp = requireValue(
       app,
+      "Expected API test app to be initialized."
+    );
+    const { cookie, startup } = await setupWorkspaceAndStartupOnApp(
+      testApp,
       "proof-badformat@example.com"
     );
 
-    const response = await sendOnApp(app, "/api/connectors", {
+    const response = await sendOnApp(testApp, "/api/connectors", {
       method: "POST",
       cookie,
       body: {

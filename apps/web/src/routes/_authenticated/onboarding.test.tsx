@@ -11,6 +11,14 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 
 import { type OnboardingApi, OnboardingPage } from "./onboarding";
 
+function requireValue<T>(value: T | null | undefined, message: string): T {
+  if (value === null || value === undefined) {
+    throw new Error(message);
+  }
+
+  return value;
+}
+
 function setNativeInputValue(element: HTMLInputElement, value: string) {
   const descriptor = Object.getOwnPropertyDescriptor(
     window.HTMLInputElement.prototype,
@@ -174,7 +182,7 @@ describe("startup onboarding route", () => {
       view.getByLabelText("Workspace name") as HTMLInputElement,
       "Acme Ventures"
     );
-    fireEvent.submit(view.getByRole("form", { name: "workspace create form" }));
+    fireEvent.click(view.getByRole("button", { name: "Create workspace" }));
 
     await waitFor(() => {
       expect(createWorkspace).toHaveBeenCalledWith({ name: "Acme Ventures" });
@@ -189,7 +197,7 @@ describe("startup onboarding route", () => {
       view.getByLabelText("Startup name") as HTMLInputElement,
       "Acme Analytics"
     );
-    fireEvent.submit(view.getByRole("form", { name: "startup form" }));
+    fireEvent.click(view.getByRole("button", { name: "Create startup" }));
 
     await waitFor(() => {
       expect(createStartupCall).toHaveBeenCalledWith({
@@ -267,7 +275,7 @@ describe("startup onboarding route", () => {
       view.getByLabelText("Startup name") as HTMLInputElement,
       "Retryable Startup"
     );
-    fireEvent.submit(view.getByRole("form", { name: "startup form" }));
+    fireEvent.click(view.getByRole("button", { name: "Create startup" }));
 
     expect((await view.findByRole("alert")).textContent).toContain(
       "Create or select a workspace before continuing startup onboarding."
@@ -315,9 +323,12 @@ describe("startup onboarding route", () => {
       "No active workspace yet. Create one or select an existing workspace to continue."
     );
 
-    fireEvent.change(view.getByLabelText("Existing workspaces"), {
-      target: { value: WORKSPACE_B.id },
-    });
+    fireEvent.click(
+      view.getByRole("combobox", { name: "Existing workspaces" })
+    );
+    fireEvent.click(
+      await view.findByRole("option", { name: WORKSPACE_B.name })
+    );
     fireEvent.submit(view.getByRole("form", { name: "workspace select form" }));
 
     await waitFor(() => {
@@ -351,10 +362,8 @@ describe("startup onboarding route", () => {
 
     const view = render(<OnboardingPage api={api} />);
 
-    expect(
-      await view.findByRole("form", { name: "PostHog setup form" })
-    ).toBeTruthy();
-    expect(view.getByRole("form", { name: "Stripe setup form" })).toBeTruthy();
+    expect(await view.findByLabelText("PostHog setup form")).toBeTruthy();
+    expect(view.getByLabelText("Stripe setup form")).toBeTruthy();
     expect(view.getByRole("button", { name: "Connect PostHog" })).toBeTruthy();
     expect(view.getByRole("button", { name: "Connect Stripe" })).toBeTruthy();
   });
@@ -377,25 +386,30 @@ describe("startup onboarding route", () => {
     });
     const view = render(<OnboardingPage api={api} navigateTo={navigateTo} />);
 
-    await view.findByRole("form", { name: "PostHog setup form" });
+    await view.findByLabelText("PostHog setup form");
 
     // Skip PostHog (first skip button belongs to PostHog card)
     const skipButtons = view.getAllByRole("button", { name: "Skip for now" });
-    fireEvent.click(skipButtons[0]!);
+    fireEvent.click(
+      requireValue(skipButtons[0], "Expected PostHog skip button to exist.")
+    );
 
     // PostHog form should be gone but Stripe should remain
     await waitFor(() => {
-      expect(
-        view.queryByRole("form", { name: "PostHog setup form" })
-      ).toBeNull();
+      expect(view.queryByLabelText("PostHog setup form")).toBeNull();
     });
-    expect(view.getByRole("form", { name: "Stripe setup form" })).toBeTruthy();
+    expect(view.getByLabelText("Stripe setup form")).toBeTruthy();
 
     // Skip Stripe (now only one skip button remains)
     const remainingSkipButtons = view.getAllByRole("button", {
       name: "Skip for now",
     });
-    fireEvent.click(remainingSkipButtons[0]!);
+    fireEvent.click(
+      requireValue(
+        remainingSkipButtons[0],
+        "Expected Stripe skip button to exist."
+      )
+    );
 
     // Both skipped — continue button should appear
     expect(
@@ -428,10 +442,10 @@ describe("startup onboarding route", () => {
     });
 
     const view = render(<OnboardingPage api={api} />);
-    await view.findByRole("form", { name: "PostHog setup form" });
+    await view.findByLabelText("PostHog setup form");
 
     // Submit with empty fields
-    fireEvent.submit(view.getByRole("form", { name: "PostHog setup form" }));
+    fireEvent.click(view.getByRole("button", { name: "Connect PostHog" }));
 
     const alerts = await view.findAllByRole("alert");
     const posthogAlert = alerts.find((a) =>
@@ -455,9 +469,9 @@ describe("startup onboarding route", () => {
     });
 
     const view = render(<OnboardingPage api={api} />);
-    await view.findByRole("form", { name: "Stripe setup form" });
+    await view.findByLabelText("Stripe setup form");
 
-    fireEvent.submit(view.getByRole("form", { name: "Stripe setup form" }));
+    fireEvent.click(view.getByRole("button", { name: "Connect Stripe" }));
 
     const alerts = await view.findAllByRole("alert");
     const stripeAlert = alerts.find((a) =>
@@ -484,24 +498,25 @@ describe("startup onboarding route", () => {
     });
 
     const view = render(<OnboardingPage api={api} />);
-    await view.findByRole("form", { name: "PostHog setup form" });
+    await view.findByLabelText("PostHog setup form");
 
-    setNativeInputValue(
-      view.getByLabelText("API key") as HTMLInputElement,
-      "phc_bad"
+    const inputDescriptor = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value"
     );
-    setNativeInputValue(
-      view.getByLabelText("Project ID") as HTMLInputElement,
-      "999"
-    );
+    const apiKeyInput = view.getByLabelText("API key") as HTMLInputElement;
+    const projectIdInput = view.getByLabelText(
+      "Project ID"
+    ) as HTMLInputElement;
 
-    fireEvent.submit(view.getByRole("form", { name: "PostHog setup form" }));
+    inputDescriptor?.set?.call(apiKeyInput, "phc_bad");
+    inputDescriptor?.set?.call(projectIdInput, "999");
 
-    const alerts = await view.findAllByRole("alert");
-    const failureAlert = alerts.find((a) =>
-      a.textContent?.includes("Provider credential validation failed")
-    );
-    expect(failureAlert).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: "Connect PostHog" }));
+
+    expect(
+      await view.findByText("Provider credential validation failed.")
+    ).toBeTruthy();
 
     // Form values should be preserved
     expect((view.getByLabelText("API key") as HTMLInputElement).value).toBe(
@@ -530,9 +545,9 @@ describe("startup onboarding route", () => {
     expect(await view.findByText("Connected")).toBeTruthy();
 
     // Stripe setup form should still appear (not connected yet)
-    expect(view.getByRole("form", { name: "Stripe setup form" })).toBeTruthy();
+    expect(view.getByLabelText("Stripe setup form")).toBeTruthy();
 
     // PostHog setup form should not appear
-    expect(view.queryByRole("form", { name: "PostHog setup form" })).toBeNull();
+    expect(view.queryByLabelText("PostHog setup form")).toBeNull();
   });
 });

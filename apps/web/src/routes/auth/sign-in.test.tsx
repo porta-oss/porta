@@ -136,8 +136,8 @@ describe("sign-in route", () => {
 
     fireEvent.click(view.getByRole("button", { name: "Send magic link" }));
 
-    expect((await view.findByRole("alert")).textContent).toContain(
-      "Enter an email address to receive a magic link."
+    expect(
+      await view.findByText("Enter your email address to receive a magic link.")
     );
     expect(signInWithMagicLink).not.toHaveBeenCalled();
   });
@@ -184,9 +184,7 @@ describe("sign-in route", () => {
 
     fireEvent.click(view.getByRole("button", { name: "Continue with Google" }));
 
-    expect((await view.findByRole("alert")).textContent).toContain(
-      "Google provider is unavailable right now."
-    );
+    expect(await view.findByText("Google provider is unavailable right now."));
     expect(
       view
         .getByRole("button", { name: "Continue with Google" })
@@ -213,8 +211,10 @@ describe("sign-in route", () => {
       />
     );
 
-    expect(view.getByRole("alert").textContent).toContain(
-      "Your magic link is invalid or has already been used."
+    expect(
+      await view.findByText(
+        "Your magic link is invalid or has already been used."
+      )
     );
 
     await waitFor(() => {

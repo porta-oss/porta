@@ -23,43 +23,32 @@ import {
   type InsightRepository,
   type ReplaceInsightInput,
 } from "../../worker/src/repository";
-import { type ApiApp, createApiApp } from "../src/app";
+import type { ApiApp } from "../src/app";
+import {
+  closeTestApiApp,
+  createTestApiApp,
+  requireValue,
+} from "./helpers/test-app";
 
 // ---------------------------------------------------------------------------
 // Test environment
 // ---------------------------------------------------------------------------
 
-const VALID_HEX_KEY =
-  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-
-const TEST_ENV = {
-  NODE_ENV: "test",
-  API_PORT: "3000",
-  API_URL: "http://localhost:3000",
-  WEB_URL: "http://localhost:5173",
-  DATABASE_URL: "postgres://postgres:postgres@127.0.0.1:5432/porta",
-  REDIS_URL: "redis://127.0.0.1:6379",
-  BETTER_AUTH_URL: "http://localhost:3000",
-  BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
-  GOOGLE_CLIENT_ID: "google-client-id",
-  GOOGLE_CLIENT_SECRET: "google-client-secret",
-  MAGIC_LINK_SENDER_EMAIL: "dev@porta.local",
-  CONNECTOR_ENCRYPTION_KEY: VALID_HEX_KEY,
-  AUTH_CONTEXT_TIMEOUT_MS: "2000",
-  DATABASE_CONNECT_TIMEOUT_MS: "5000",
-  DATABASE_POOL_MAX: "5",
-} as const;
-
-let app: ApiApp;
+let app: ApiApp | undefined;
 let insightRepo: InsightRepository;
 
+function getApp() {
+  return requireValue(app, "Expected API test app to be initialized.");
+}
+
 beforeAll(async () => {
-  app = await createApiApp(TEST_ENV);
+  app = await createTestApiApp();
+  const testApp = getApp();
 
   const dbHandle = {
     execute: async (query: unknown) => {
       return (
-        app.runtime.db.db as unknown as {
+        testApp.runtime.db.db as unknown as {
           execute: (q: unknown) => Promise<{ rows: unknown[] }>;
         }
       ).execute(query);
@@ -69,7 +58,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app.runtime.db.close();
+  await closeTestApiApp(app);
 });
 
 // ---------------------------------------------------------------------------
@@ -81,7 +70,7 @@ async function parseJson(response: Response) {
 }
 
 async function send(path: string) {
-  return app.handle(new Request(`http://localhost${path}`));
+  return getApp().handle(new Request(`http://localhost${path}`));
 }
 
 /** Insert a workspace + startup directly for testing. */
@@ -89,26 +78,27 @@ async function seedStartup(): Promise<{
   workspaceId: string;
   startupId: string;
 }> {
+  const testApp = getApp();
   const workspaceId = randomUUID();
   const startupId = randomUUID();
   const userId = randomUUID();
 
-  await app.runtime.db.pool.query(
+  await testApp.runtime.db.pool.query(
     `INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at)
      VALUES ('${userId}', 'Test User', 'test-${userId}@example.com', true, NOW(), NOW())
      ON CONFLICT (id) DO NOTHING`
   );
-  await app.runtime.db.pool.query(
+  await testApp.runtime.db.pool.query(
     `INSERT INTO "workspace" (id, name, slug, created_at)
      VALUES ('${workspaceId}', 'Test WS', 'test-ws-${workspaceId.slice(0, 8)}', NOW())
      ON CONFLICT (id) DO NOTHING`
   );
-  await app.runtime.db.pool.query(
+  await testApp.runtime.db.pool.query(
     `INSERT INTO "member" (id, organization_id, user_id, role, created_at)
      VALUES ('${randomUUID()}', '${workspaceId}', '${userId}', 'owner', NOW())
      ON CONFLICT (id) DO NOTHING`
   );
-  await app.runtime.db.pool.query(
+  await testApp.runtime.db.pool.query(
     `INSERT INTO "startup" (id, workspace_id, name, type, stage, timezone, currency, created_at, updated_at)
      VALUES ('${startupId}', '${workspaceId}', 'Test Startup', 'b2b_saas', 'mvp', 'UTC', 'USD', NOW(), NOW())
      ON CONFLICT (id) DO NOTHING`
@@ -308,7 +298,8 @@ describe("insight contract — evidence packet validation", () => {
 
   test("validateEvidencePacket rejects item with non-finite currentValue", () => {
     const packet = makeEvidencePacket();
-    packet.items[0] = { ...packet.items[0]!, currentValue: Number.NaN };
+    const firstItem = requireValue(packet.items[0], "Expected evidence item.");
+    packet.items[0] = { ...firstItem, currentValue: Number.NaN };
     expect(validateEvidencePacket(packet)).toContain("finite currentValue");
   });
 
@@ -409,7 +400,7 @@ describe("insight contract — direction computation", () => {
 
 describe("migration and bootstrap — insight table", () => {
   test("startup_insight table exists after bootstrap", async () => {
-    const result = (await app.runtime.db.pool.query(
+    const result = (await getApp().runtime.db.pool.query(
       `SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'public' AND table_name = 'startup_insight'`
     )) as { rows?: Array<{ table_name: string }> };
@@ -444,7 +435,7 @@ describe("migration and bootstrap — insight table", () => {
     // Direct insert bypassing delete should fail
     const secondId = randomUUID();
     try {
-      await app.runtime.db.pool.query(
+      await getApp().runtime.db.pool.query(
         `INSERT INTO startup_insight (id, startup_id, condition_code, evidence, generation_status, generated_at, updated_at)
          VALUES ('${secondId}', '${startupId}', 'mrr_declining', '{}', 'success', NOW(), NOW())`
       );
@@ -637,7 +628,8 @@ describe("negative tests — malformed insight inputs", () => {
 
   test("validateEvidencePacket rejects item with empty label", () => {
     const packet = makeEvidencePacket();
-    packet.items[0] = { ...packet.items[0]!, label: "" };
+    const firstItem = requireValue(packet.items[0], "Expected evidence item.");
+    packet.items[0] = { ...firstItem, label: "" };
     expect(validateEvidencePacket(packet)).toContain("non-empty label");
   });
 

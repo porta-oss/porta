@@ -226,6 +226,48 @@ export function validateSupportingMetrics(metrics: unknown): string | null {
   return null;
 }
 
+function validateFunnelStageRowShape(
+  row: unknown
+): { stage: FunnelStage } | { error: string } {
+  if (typeof row !== "object" || row === null) {
+    return { error: "Each funnel stage must be a non-null object." };
+  }
+
+  const parsedRow = row as Record<string, unknown>;
+
+  if (typeof parsedRow.stage !== "string" || !isFunnelStage(parsedRow.stage)) {
+    return {
+      error: `Invalid funnel stage: ${String(parsedRow.stage)}. Expected one of: ${FUNNEL_STAGES.join(", ")}`,
+    };
+  }
+
+  if (typeof parsedRow.label !== "string" || parsedRow.label.length === 0) {
+    return {
+      error: `Funnel stage "${parsedRow.stage}" must have a non-empty label.`,
+    };
+  }
+
+  if (
+    typeof parsedRow.value !== "number" ||
+    !Number.isFinite(parsedRow.value)
+  ) {
+    return {
+      error: `Funnel stage "${parsedRow.stage}.value" must be a finite number.`,
+    };
+  }
+
+  if (
+    typeof parsedRow.position !== "number" ||
+    !Number.isInteger(parsedRow.position)
+  ) {
+    return {
+      error: `Funnel stage "${parsedRow.stage}.position" must be an integer.`,
+    };
+  }
+
+  return { stage: parsedRow.stage };
+}
+
 /**
  * Validate a funnel stage row array.
  * Returns an error string or null if valid.
@@ -239,32 +281,15 @@ export function validateFunnelStages(stages: unknown): string | null {
   const seenStages = new Set<string>();
 
   for (const row of stages) {
-    if (typeof row !== "object" || row === null) {
-      return "Each funnel stage must be a non-null object.";
+    const parsedRow = validateFunnelStageRowShape(row);
+    if ("error" in parsedRow) {
+      return parsedRow.error;
     }
 
-    const r = row as Record<string, unknown>;
-
-    if (typeof r.stage !== "string" || !isFunnelStage(r.stage)) {
-      return `Invalid funnel stage: ${String(r.stage)}. Expected one of: ${FUNNEL_STAGES.join(", ")}`;
+    if (seenStages.has(parsedRow.stage)) {
+      return `Duplicate funnel stage: ${parsedRow.stage}`;
     }
-
-    if (seenStages.has(r.stage)) {
-      return `Duplicate funnel stage: ${r.stage}`;
-    }
-    seenStages.add(r.stage);
-
-    if (typeof r.label !== "string" || r.label.length === 0) {
-      return `Funnel stage "${r.stage}" must have a non-empty label.`;
-    }
-
-    if (typeof r.value !== "number" || !Number.isFinite(r.value)) {
-      return `Funnel stage "${r.stage}.value" must be a finite number.`;
-    }
-
-    if (typeof r.position !== "number" || !Number.isInteger(r.position)) {
-      return `Funnel stage "${r.stage}.position" must be an integer.`;
-    }
+    seenStages.add(parsedRow.stage);
   }
 
   for (const expected of expectedStages) {

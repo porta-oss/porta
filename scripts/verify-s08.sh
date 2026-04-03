@@ -126,7 +126,7 @@ wait_for_url() {
 # ------------------------------------------------------------------
 phase="typecheck"
 log "Running typecheck before starting the local runtime."
-run_check "typecheck" pnpm lint
+run_check "typecheck" bun run typecheck
 
 # ------------------------------------------------------------------
 # Phase 2: Unit tests for founder-proof mode

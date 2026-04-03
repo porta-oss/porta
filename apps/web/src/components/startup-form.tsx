@@ -22,7 +22,7 @@ export interface StartupFormProps {
   disabled?: boolean;
   error?: string | null;
   onChange: (next: StartupDraft) => void;
-  onSubmit: () => void | Promise<void>;
+  onSubmit: (name: string) => void | Promise<void>;
   value: StartupDraft;
 }
 
@@ -39,19 +39,19 @@ export function StartupForm({
       className="grid gap-3"
       onSubmit={(event) => {
         event.preventDefault();
-        void onSubmit();
+        const formData = new FormData(event.currentTarget);
+        void onSubmit(String(formData.get("name") ?? ""));
       }}
     >
       <div className="grid gap-1.5">
         <Label htmlFor="startup-name">Startup name</Label>
         <Input
+          defaultValue={value.name}
           disabled={disabled}
           id="startup-name"
           name="name"
-          onChange={(event) => onChange({ ...value, name: event.target.value })}
           placeholder="Acme Analytics"
           type="text"
-          value={value.name}
         />
       </div>
 
