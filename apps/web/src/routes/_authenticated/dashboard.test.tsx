@@ -325,6 +325,151 @@ describe("dashboard route", () => {
     expect(activeRow.getAttribute("aria-pressed")).toBe("true");
   });
 
+  test("loads sidebar health summaries for every startup after startup list resolves", async () => {
+    const fetchHealth = mock(async (_startupId: string) =>
+      createHealthyPayload()
+    );
+    const api = createApi({
+      fetchHealth,
+      listStartups: mock(async () => ({
+        workspace: WORKSPACE_A,
+        startups: [
+          createStartup(WORKSPACE_A.id, "Acme Analytics"),
+          createStartup(WORKSPACE_A.id, "Beta Billing"),
+          createStartup(WORKSPACE_A.id, "Gamma Growth"),
+        ],
+      })),
+    });
+
+    const view = render(
+      <DashboardPage
+        api={api}
+        authState={createAuthenticatedSnapshot()}
+        routeStartupId={`${WORKSPACE_A.id}_Acme Analytics`}
+      />
+    );
+
+    await waitFor(() => {
+      expect(fetchHealth).toHaveBeenCalledTimes(3);
+    });
+
+    expect(
+      view.container.querySelector('[data-health-summary-count="3"]')
+    ).toBeTruthy();
+  });
+
+  test("replaces a stale route startup after switching workspaces", async () => {
+    const navigateToStartup = mock(async () => {
+      /* noop */
+    });
+    let startupListCall = 0;
+    const api = createApi({
+      listStartups: mock(async () => {
+        startupListCall += 1;
+
+        return startupListCall === 1
+          ? {
+              workspace: WORKSPACE_A,
+              startups: [createStartup(WORKSPACE_A.id, "Acme Analytics")],
+            }
+          : {
+              workspace: WORKSPACE_B,
+              startups: [createStartup(WORKSPACE_B.id, "Beta Control")],
+            };
+      }),
+      listWorkspaces: mock(async () => ({
+        workspaces: [WORKSPACE_A, WORKSPACE_B],
+        activeWorkspaceId: WORKSPACE_A.id,
+      })),
+      setActiveWorkspace: mock(
+        async ({ workspaceId }: { workspaceId: string }) => ({
+          activeWorkspaceId: workspaceId,
+          workspace: WORKSPACE_B,
+        })
+      ),
+    });
+
+    const view = render(
+      <DashboardPage
+        api={api}
+        authState={createAuthenticatedSnapshot()}
+        navigateToStartup={navigateToStartup}
+        routeStartupId={`${WORKSPACE_A.id}_Acme Analytics`}
+      />
+    );
+
+    await view.findAllByText("Acme Analytics");
+
+    fireEvent.click(view.getByLabelText("Switch workspace"));
+    fireEvent.click(await view.findByText("Beta Ventures"));
+    fireEvent.click(view.getByRole("button", { name: "Switch" }));
+
+    await waitFor(() => {
+      expect(navigateToStartup).toHaveBeenCalledWith(
+        `${WORKSPACE_B.id}_Beta Control`,
+        true
+      );
+    });
+  });
+
+  test("refetches selected-startup detail when the route startup changes", async () => {
+    const fetchInsight = mock(async () => ({
+      diagnosticMessage: "No insight available yet.",
+      displayStatus: "unavailable" as const,
+      insight: null,
+    }));
+    const listTasks = mock(async () => ({
+      tasks: [],
+      startupId: "",
+      count: 0,
+    }));
+    const listConnectors = mock(async () => ({ connectors: [] }));
+    const api = createApi({
+      fetchInsight,
+      listConnectors,
+      listStartups: mock(async () => ({
+        workspace: WORKSPACE_A,
+        startups: [
+          createStartup(WORKSPACE_A.id, "Acme Analytics"),
+          createStartup(WORKSPACE_A.id, "Beta Billing"),
+        ],
+      })),
+      listTasks,
+    });
+
+    const { rerender } = render(
+      <DashboardPage
+        api={api}
+        authState={createAuthenticatedSnapshot()}
+        routeStartupId={`${WORKSPACE_A.id}_Acme Analytics`}
+      />
+    );
+
+    await waitFor(() => {
+      expect(fetchInsight).toHaveBeenCalledWith(
+        `${WORKSPACE_A.id}_Acme Analytics`
+      );
+    });
+
+    rerender(
+      <DashboardPage
+        api={api}
+        authState={createAuthenticatedSnapshot()}
+        routeStartupId={`${WORKSPACE_A.id}_Beta Billing`}
+      />
+    );
+
+    await waitFor(() => {
+      expect(fetchInsight).toHaveBeenCalledWith(
+        `${WORKSPACE_A.id}_Beta Billing`
+      );
+      expect(listConnectors).toHaveBeenCalledWith(
+        `${WORKSPACE_A.id}_Beta Billing`
+      );
+      expect(listTasks).toHaveBeenCalledWith(`${WORKSPACE_A.id}_Beta Billing`);
+    });
+  });
+
   test("keeps the shell chrome visible and points back to onboarding when the active workspace has no startups", async () => {
     const api = createApi({
       listStartups: mock(async () => ({

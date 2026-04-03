@@ -1,3 +1,4 @@
+import type { HealthState } from "@shared/startup-health";
 import type { StartupRecord, WorkspaceSummary } from "@shared/types";
 import type { ReactNode } from "react";
 
@@ -20,6 +21,7 @@ export interface AppShellProps {
   shellError?: string | null;
   shellStatus: "loading" | "ready" | "error";
   startupError?: string | null;
+  startupHealthById?: Record<string, HealthState | "load-error">;
   startupStatus: "idle" | "loading" | "refreshing" | "ready" | "error";
   startups: StartupRecord[];
   workspaceError?: string | null;
@@ -41,6 +43,7 @@ export function AppShell({
   onRetryStartups,
   onSelectStartup,
   onActivateWorkspace,
+  startupHealthById = {},
   children,
 }: AppShellProps) {
   const activeWorkspace =
@@ -98,6 +101,7 @@ export function AppShell({
             error={startupError}
             onRetry={onRetryStartups}
             onSelectStartup={onSelectStartup}
+            startupHealthById={startupHealthById}
             startups={startups}
             status={startupStatus}
             workspaceName={activeWorkspace?.name ?? null}

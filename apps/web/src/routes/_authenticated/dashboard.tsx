@@ -147,6 +147,7 @@ export interface DashboardPageProps {
 }
 
 type DashboardContentView = "overview" | "health-connectors";
+type StartupHealthSummaryMap = Record<string, HealthState | "load-error">;
 
 // ------------------------------------------------------------------
 // Internal types
@@ -1354,6 +1355,8 @@ export function DashboardPage({
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [startupError, setStartupError] = useState<string | null>(null);
   const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
+  const [startupHealthById, setStartupHealthById] =
+    useState<StartupHealthSummaryMap>({});
 
   // Health state
   const [healthPayload, setHealthPayload] =
@@ -1439,6 +1442,83 @@ export function DashboardPage({
     startupStatus,
     startups,
   ]);
+
+  useEffect(() => {
+    if (startups.length === 0) {
+      setStartupHealthById({});
+      return;
+    }
+
+    const sidebarSummaryStartups = startups.filter(
+      (startup) => startup.id !== selectedStartupId
+    );
+
+    if (sidebarSummaryStartups.length === 0) {
+      setStartupHealthById((current) =>
+        selectedStartupId && current[selectedStartupId]
+          ? { [selectedStartupId]: current[selectedStartupId] }
+          : {}
+      );
+      return;
+    }
+
+    let cancelled = false;
+
+    void Promise.all(
+      sidebarSummaryStartups.map(async (startup) => {
+        try {
+          const payload = await api.fetchHealth(startup.id);
+          return [startup.id, payload.status] as const;
+        } catch {
+          return [startup.id, "load-error"] as const;
+        }
+      })
+    ).then((entries) => {
+      if (!cancelled) {
+        setStartupHealthById((current) => {
+          const nextEntries = Object.fromEntries(entries);
+
+          if (selectedStartupId && current[selectedStartupId]) {
+            return {
+              ...nextEntries,
+              [selectedStartupId]: current[selectedStartupId],
+            };
+          }
+
+          return nextEntries;
+        });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, selectedStartupId, startups]);
+
+  useEffect(() => {
+    if (!selectedStartupId) {
+      return;
+    }
+
+    if (healthStatus === "ready" && healthPayload) {
+      setStartupHealthById((current) => ({
+        ...current,
+        [selectedStartupId]: healthPayload.status,
+      }));
+      return;
+    }
+
+    if (healthStatus === "error") {
+      setStartupHealthById((current) =>
+        current[selectedStartupId]
+          ? current
+          : {
+              ...current,
+              [selectedStartupId]: "load-error",
+            }
+      );
+    }
+  }, [healthPayload, healthStatus, selectedStartupId]);
 
   // Determine which providers already have a connector
   const posthogConnector =
@@ -1752,6 +1832,7 @@ export function DashboardPage({
       shellError={shellError}
       shellStatus={shellStatus}
       startupError={startupError}
+      startupHealthById={startupHealthById}
       startupStatus={startupStatus}
       startups={startups}
       workspaceError={workspaceError}

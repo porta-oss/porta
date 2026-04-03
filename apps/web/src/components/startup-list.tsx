@@ -1,3 +1,4 @@
+import type { HealthState } from "@shared/startup-health";
 import type { StartupRecord } from "@shared/types";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -15,6 +16,7 @@ export interface StartupListProps {
   error?: string | null;
   onRetry?: () => void | Promise<void>;
   onSelectStartup?: (startupId: string) => void | Promise<void>;
+  startupHealthById?: Record<string, HealthState | "load-error">;
   startups: StartupRecord[];
   status: "idle" | "loading" | "refreshing" | "ready" | "error";
   workspaceName: string | null;
@@ -28,6 +30,7 @@ export function StartupList({
   error = null,
   onRetry,
   onSelectStartup,
+  startupHealthById = {},
 }: StartupListProps) {
   const isBusy = status === "loading" || status === "refreshing";
 
@@ -101,7 +104,10 @@ export function StartupList({
         ) : null}
 
         {startups.length > 0 ? (
-          <ul className="m-0 grid list-none gap-1 p-0">
+          <ul
+            className="m-0 grid list-none gap-1 p-0"
+            data-health-summary-count={Object.keys(startupHealthById).length}
+          >
             {startups.map((startup) => {
               const isActive = startup.id === activeStartupId;
 
