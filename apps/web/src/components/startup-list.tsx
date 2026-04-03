@@ -11,19 +11,23 @@ import {
 } from "@/components/ui/card";
 
 export interface StartupListProps {
+  activeStartupId?: string | null;
   error?: string | null;
   onRetry?: () => void | Promise<void>;
+  onSelectStartup?: (startupId: string) => void | Promise<void>;
   startups: StartupRecord[];
   status: "idle" | "loading" | "refreshing" | "ready" | "error";
   workspaceName: string | null;
 }
 
 export function StartupList({
+  activeStartupId = null,
   workspaceName,
   startups,
   status,
   error = null,
   onRetry,
+  onSelectStartup,
 }: StartupListProps) {
   const isBusy = status === "loading" || status === "refreshing";
 
@@ -98,17 +102,29 @@ export function StartupList({
 
         {startups.length > 0 ? (
           <ul className="m-0 grid list-none gap-1 p-0">
-            {startups.map((startup) => (
-              <li
-                className="flex items-center justify-between rounded-md px-3 py-2 transition-colors hover:bg-muted/50"
-                key={startup.id}
-              >
-                <span className="font-medium text-sm">{startup.name}</span>
-                <span className="text-muted-foreground text-xs">
-                  {startup.stage.replace("_", " ")}
-                </span>
-              </li>
-            ))}
+            {startups.map((startup) => {
+              const isActive = startup.id === activeStartupId;
+
+              return (
+                <li key={startup.id}>
+                  <button
+                    aria-pressed={isActive}
+                    className={
+                      isActive
+                        ? "flex w-full items-center justify-between rounded-md bg-muted px-3 py-2 text-left transition-colors"
+                        : "flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors hover:bg-muted/50"
+                    }
+                    onClick={() => void onSelectStartup?.(startup.id)}
+                    type="button"
+                  >
+                    <span className="font-medium text-sm">{startup.name}</span>
+                    <span className="text-muted-foreground text-xs">
+                      {startup.stage.replace("_", " ")}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         ) : null}
       </CardContent>

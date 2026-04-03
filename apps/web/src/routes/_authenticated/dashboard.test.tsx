@@ -290,6 +290,41 @@ describe("dashboard route", () => {
     });
   });
 
+  test("routes sidebar clicks through startup navigation and marks the active row", async () => {
+    const navigateToStartup = mock(async () => {
+      /* noop */
+    });
+    const api = createApi({
+      listStartups: mock(async () => ({
+        workspace: WORKSPACE_A,
+        startups: [
+          createStartup(WORKSPACE_A.id, "Acme Analytics"),
+          createStartup(WORKSPACE_A.id, "Beta Billing"),
+        ],
+      })),
+    });
+
+    const view = render(
+      <DashboardPage
+        api={api}
+        authState={createAuthenticatedSnapshot()}
+        navigateToStartup={navigateToStartup}
+        routeStartupId={`${WORKSPACE_A.id}_Acme Analytics`}
+      />
+    );
+
+    const betaRow = await view.findByRole("button", { name: /Beta Billing/i });
+    fireEvent.click(betaRow);
+
+    expect(navigateToStartup).toHaveBeenCalledWith(
+      `${WORKSPACE_A.id}_Beta Billing`,
+      false
+    );
+
+    const activeRow = view.getByRole("button", { name: /Acme Analytics/i });
+    expect(activeRow.getAttribute("aria-pressed")).toBe("true");
+  });
+
   test("keeps the shell chrome visible and points back to onboarding when the active workspace has no startups", async () => {
     const api = createApi({
       listStartups: mock(async () => ({

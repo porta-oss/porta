@@ -9,12 +9,14 @@ import { StartupList } from "./startup-list";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 
 export interface AppShellProps {
+  activeStartupId?: string | null;
   activeWorkspaceId: string | null;
   children?: ReactNode;
   isSwitchingWorkspace?: boolean;
   onActivateWorkspace?: (workspaceId: string) => void | Promise<void>;
   onRetryShell?: () => void | Promise<void>;
   onRetryStartups?: () => void | Promise<void>;
+  onSelectStartup?: (startupId: string) => void | Promise<void>;
   shellError?: string | null;
   shellStatus: "loading" | "ready" | "error";
   startupError?: string | null;
@@ -26,6 +28,7 @@ export interface AppShellProps {
 
 export function AppShell({
   workspaces,
+  activeStartupId = null,
   activeWorkspaceId,
   startups,
   shellStatus,
@@ -36,6 +39,7 @@ export function AppShell({
   isSwitchingWorkspace = false,
   onRetryShell,
   onRetryStartups,
+  onSelectStartup,
   onActivateWorkspace,
   children,
 }: AppShellProps) {
@@ -90,8 +94,10 @@ export function AppShell({
             workspaces={workspaces}
           />
           <StartupList
+            activeStartupId={activeStartupId}
             error={startupError}
             onRetry={onRetryStartups}
+            onSelectStartup={onSelectStartup}
             startups={startups}
             status={startupStatus}
             workspaceName={activeWorkspace?.name ?? null}

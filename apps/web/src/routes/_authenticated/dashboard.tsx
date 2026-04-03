@@ -1740,11 +1740,15 @@ export function DashboardPage({
 
   return (
     <AppShell
+      activeStartupId={selectedStartupId}
       activeWorkspaceId={activeWorkspaceId}
       isSwitchingWorkspace={isSwitchingWorkspace}
       onActivateWorkspace={handleActivateWorkspace}
       onRetryShell={refreshShell}
       onRetryStartups={() => refreshStartups(activeWorkspaceId, "refreshing")}
+      onSelectStartup={(startupId) => {
+        void navigateToStartup?.(startupId, false);
+      }}
       shellError={shellError}
       shellStatus={shellStatus}
       startupError={startupError}
