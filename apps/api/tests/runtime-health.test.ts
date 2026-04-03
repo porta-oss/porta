@@ -13,7 +13,7 @@ import { createBootstrapDiagnostics, readApiEnv } from "../src/lib/env";
 // ---------------------------------------------------------------------------
 // Minimal env that satisfies readApiEnv({ strict: false })
 // ---------------------------------------------------------------------------
-function baseEnv(overrides: Record<string, string> = {}) {
+function baseEnv(overrides: Record<string, string | undefined> = {}) {
   return {
     NODE_ENV: "test",
     API_PORT: "3000",
@@ -121,6 +121,16 @@ describe("readApiEnv edition and host", () => {
   test("trims and falls back on blank API_HOST", () => {
     const env = readApiEnv(baseEnv({ API_HOST: "  " }));
     expect(env.apiHost).toBe("0.0.0.0");
+  });
+
+  test("falls back to PORT when API_PORT is absent", () => {
+    const env = readApiEnv(baseEnv({ API_PORT: undefined, PORT: "4815" }));
+    expect(env.apiPort).toBe(4815);
+  });
+
+  test("prefers API_PORT over PORT when both are set", () => {
+    const env = readApiEnv(baseEnv({ API_PORT: "3001", PORT: "4815" }));
+    expect(env.apiPort).toBe(3001);
   });
 });
 

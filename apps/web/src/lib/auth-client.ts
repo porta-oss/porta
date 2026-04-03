@@ -11,11 +11,21 @@ export const AUTH_BOOTSTRAP_TIMEOUT_MS = Number(
 export const DEFAULT_AUTH_REDIRECT_PATH = "/app";
 export const AUTH_SESSION_BOOTSTRAP_PATH = "/get-session";
 
+function readRuntimeUrl(key: keyof NonNullable<Window["__PORTA_RUNTIME_ENV"]>) {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  const configured = window.__PORTA_RUNTIME_ENV?.[key]?.trim();
+  return configured || undefined;
+}
+
 export function resolveApiBaseUrl(location?: {
   origin: string;
   hostname: string;
 }) {
-  const configured = import.meta.env.VITE_API_URL?.trim();
+  const configured =
+    readRuntimeUrl("API_URL") ?? import.meta.env.VITE_API_URL?.trim();
 
   if (configured) {
     return configured;
@@ -41,7 +51,8 @@ export function resolveApiBaseUrl(location?: {
 }
 
 export function resolveWebBaseUrl(location?: { origin: string }) {
-  const configured = import.meta.env.VITE_WEB_URL?.trim();
+  const configured =
+    readRuntimeUrl("WEB_URL") ?? import.meta.env.VITE_WEB_URL?.trim();
 
   if (configured) {
     return configured;

@@ -25,24 +25,56 @@ function setViteEnv(key: string, value: string | undefined) {
   }
 }
 
+function setRuntimeEnv(values: Record<string, string> | undefined) {
+  const target = window as typeof window & {
+    __PORTA_RUNTIME_ENV?: Record<string, string>;
+  };
+
+  if (values === undefined) {
+    target.__PORTA_RUNTIME_ENV = undefined;
+    return;
+  }
+
+  target.__PORTA_RUNTIME_ENV = values;
+}
+
 // ===========================================================================
 // resolveApiBaseUrl
 // ===========================================================================
 
 describe("resolveApiBaseUrl", () => {
   let savedViteApiUrl: string | undefined;
+  let savedRuntimeEnv: Record<string, string> | undefined;
 
   beforeEach(() => {
     savedViteApiUrl = import.meta.env.VITE_API_URL as string | undefined;
+    savedRuntimeEnv = (
+      window as typeof window & {
+        __PORTA_RUNTIME_ENV?: Record<string, string>;
+      }
+    ).__PORTA_RUNTIME_ENV;
   });
 
   afterEach(() => {
     setViteEnv("VITE_API_URL", savedViteApiUrl);
+    setRuntimeEnv(savedRuntimeEnv);
   });
 
   test("returns explicit VITE_API_URL when set", () => {
     setViteEnv("VITE_API_URL", "https://api.porta.example.com");
     expect(resolveApiBaseUrl()).toBe("https://api.porta.example.com");
+  });
+
+  test("returns runtime API_URL before VITE_API_URL when present", () => {
+    setRuntimeEnv({ API_URL: "https://runtime-api.porta.example.com" });
+    setViteEnv("VITE_API_URL", "https://build-api.porta.example.com");
+    expect(resolveApiBaseUrl()).toBe("https://runtime-api.porta.example.com");
+  });
+
+  test("ignores blank runtime API_URL and falls back to VITE_API_URL", () => {
+    setRuntimeEnv({ API_URL: "   " });
+    setViteEnv("VITE_API_URL", "https://build-api.porta.example.com");
+    expect(resolveApiBaseUrl()).toBe("https://build-api.porta.example.com");
   });
 
   test("returns localhost:3000 for localhost origin when no VITE_API_URL", () => {
@@ -107,18 +139,37 @@ describe("resolveApiBaseUrl", () => {
 
 describe("resolveWebBaseUrl", () => {
   let savedViteWebUrl: string | undefined;
+  let savedRuntimeEnv: Record<string, string> | undefined;
 
   beforeEach(() => {
     savedViteWebUrl = import.meta.env.VITE_WEB_URL as string | undefined;
+    savedRuntimeEnv = (
+      window as typeof window & {
+        __PORTA_RUNTIME_ENV?: Record<string, string>;
+      }
+    ).__PORTA_RUNTIME_ENV;
   });
 
   afterEach(() => {
     setViteEnv("VITE_WEB_URL", savedViteWebUrl);
+    setRuntimeEnv(savedRuntimeEnv);
   });
 
   test("returns explicit VITE_WEB_URL when set", () => {
     setViteEnv("VITE_WEB_URL", "https://porta.mycompany.io");
     expect(resolveWebBaseUrl()).toBe("https://porta.mycompany.io");
+  });
+
+  test("returns runtime WEB_URL before VITE_WEB_URL when present", () => {
+    setRuntimeEnv({ WEB_URL: "https://runtime.porta.example.com" });
+    setViteEnv("VITE_WEB_URL", "https://build.porta.example.com");
+    expect(resolveWebBaseUrl()).toBe("https://runtime.porta.example.com");
+  });
+
+  test("ignores blank runtime WEB_URL and falls back to VITE_WEB_URL", () => {
+    setRuntimeEnv({ WEB_URL: "   " });
+    setViteEnv("VITE_WEB_URL", "https://build.porta.example.com");
+    expect(resolveWebBaseUrl()).toBe("https://build.porta.example.com");
   });
 
   test("returns location origin when no VITE_WEB_URL is set", () => {

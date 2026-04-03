@@ -9,3 +9,10 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+interface Window {
+  __PORTA_RUNTIME_ENV?: {
+    API_URL?: string;
+    WEB_URL?: string;
+  };
+}

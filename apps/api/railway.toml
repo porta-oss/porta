@@ -4,10 +4,11 @@
 # Health check: GET /api/health → { "status": "ok" }
 
 [build]
-builder = "nixpacks"
+builder = "DOCKERFILE"
+dockerfilePath = "apps/api/Dockerfile"
+watchPatterns = ["/apps/api/**", "/packages/shared/**", "/package.json", "/bun.lock", "/tsconfig.base.json"]
 
 [deploy]
-startCommand = "bun src/index.ts"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"

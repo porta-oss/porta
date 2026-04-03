@@ -162,6 +162,10 @@ function summarizeConfigured(value: string | undefined) {
   return Boolean(value && value.trim().length > 0);
 }
 
+function resolveApiPort(source: Record<string, string | undefined>): string {
+  return source.API_PORT ?? source.PORT ?? DEFAULTS.API_PORT;
+}
+
 export function readApiEnv(
   source: Record<string, string | undefined>,
   options?: { strict?: boolean }
@@ -190,12 +194,7 @@ export function readApiEnv(
     edition: parseEdition(source.PORTA_EDITION),
     nodeEnv: parseRuntimeMode(source.NODE_ENV),
     apiHost: (source.API_HOST ?? DEFAULTS.API_HOST).trim() || DEFAULTS.API_HOST,
-    apiPort: parseInteger(
-      "API_PORT",
-      source.API_PORT ?? DEFAULTS.API_PORT,
-      1,
-      65_535
-    ),
+    apiPort: parseInteger("API_PORT", resolveApiPort(source), 1, 65_535),
     apiUrl: parseUrl("API_URL", source.API_URL ?? DEFAULTS.API_URL, [
       "http:",
       "https:",

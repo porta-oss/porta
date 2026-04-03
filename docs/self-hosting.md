@@ -76,7 +76,7 @@ docker compose down -v       # stop and delete volumes (destroys data)
 
 ## Path 2: Railway
 
-Railway deploys each service from the monorepo using the `railway.toml` files checked into `apps/api/`, `apps/web/`, and `apps/worker/`.
+Railway deploys each service from the monorepo using the `railway.toml` files checked into `apps/api/`, `apps/web/`, and `apps/worker/`. Each service now uses an explicit Dockerfile, so the build/runtime contract lives in the repo instead of depending on builder auto-detection.
 
 ### 1. Create a Railway project
 
@@ -86,15 +86,15 @@ Railway deploys each service from the monorepo using the `railway.toml` files ch
 
 ### 2. Add the three application services
 
-Create three services from the same GitHub repo, each pointing to a different root directory:
+Create three services from the same GitHub repo:
 
-| Service | Root directory | Start command |
-|---------|---------------|---------------|
-| API     | `/` (monorepo root) | `bun src/index.ts` (from `apps/api/railway.toml`) |
-| Web     | `/` (monorepo root) | `npx serve apps/web/dist -s -l tcp://0.0.0.0:$PORT` |
-| Worker  | `/` (monorepo root) | `node apps/worker/dist/index.js` |
+| Service | Config file | Dockerfile | Runtime |
+|---------|-------------|------------|---------|
+| API     | `apps/api/railway.toml` | `apps/api/Dockerfile` | Bun API server with `/api/health` |
+| Web     | `apps/web/railway.toml` | `apps/web/Dockerfile` | nginx serving the built SPA |
+| Worker  | `apps/worker/railway.toml` | `apps/worker/Dockerfile` | Node worker process |
 
-> Railway reads the `railway.toml` in each service directory for build/deploy config. The root directory stays at `/` because the monorepo workspace needs the root `bun.lock`.
+> Railway reads the `railway.toml` in each service directory for build/deploy config. The checked-in config points at the service Dockerfile and scoped watch paths, which makes template deploys more predictable for shared-monorepo builds.
 
 ### 3. Set environment variables
 
@@ -103,13 +103,15 @@ For each service, set the required env vars (see [Environment Reference](#enviro
 Key Railway-specific notes:
 
 - Set `BETTER_AUTH_SECRET` and `CONNECTOR_ENCRYPTION_KEY` as shared variables across all services.
-- Set `API_URL` on the Web service to the Railway-generated API URL (e.g., `https://porta-api-production.up.railway.app`).
+- Set `API_URL` on the Web service to the Railway-generated API URL (e.g., `https://porta-api-production.up.railway.app`). The Web container writes this into `/env.js` at startup, so you do not need a rebuild when the API domain changes.
+- Set `WEB_URL` on the Web service to the Railway-generated Web URL if you want an explicit frontend origin in runtime config. If omitted, the browser origin is used.
 - Set `WEB_URL` on the API service to the Railway-generated Web URL.
 - Set `BETTER_AUTH_URL` on the API to the same value as `API_URL`.
+- Do not set `PORT` manually. Railway injects it automatically, and the checked-in Dockerfiles/config are wired to use it.
 
 ### 4. Deploy
 
-Push to your connected branch. Railway will build and deploy all three services. The API service has a health check configured at `/api/health`.
+Push to your connected branch. Railway will build and deploy all three services from their checked-in Dockerfiles. The API service has a health check configured at `/api/health`, and the Web service has a health check configured at `/`.
 
 ---
 

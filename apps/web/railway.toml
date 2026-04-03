@@ -1,12 +1,14 @@
 # Porta Web — Railway service config
-# Builds the Vite SPA and serves it with a static file server.
-# The API_URL env var must point to the deployed API service URL.
+# Builds the Vite SPA and serves it with nginx.
+# API_URL and WEB_URL are injected at container start into /env.js.
 
 [build]
-builder = "nixpacks"
-buildCommand = "bun install --frozen-lockfile && cd apps/web && bun run build"
+builder = "DOCKERFILE"
+dockerfilePath = "apps/web/Dockerfile"
+watchPatterns = ["/apps/web/**", "/packages/shared/**", "/package.json", "/bun.lock", "/tsconfig.base.json"]
 
 [deploy]
-startCommand = "npx serve apps/web/dist -s -l tcp://0.0.0.0:$PORT"
+healthcheckPath = "/"
+healthcheckTimeout = 30
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
