@@ -92,10 +92,10 @@ File: `packages/shared/src/api-key.ts`
 
 ### Task 9: Update connector types
 File: `packages/shared/src/connectors.ts`
-- [ ] Add 'yookassa' and 'sentry' to CONNECTOR_PROVIDERS const array
-- [ ] ConnectorProvider type auto-updates from const array
-- [ ] Update isConnectorProvider guard if it exists
-- [ ] Verify no downstream type errors
+- [x] Add 'yookassa' and 'sentry' to CONNECTOR_PROVIDERS const array
+- [x] ConnectorProvider type auto-updates from const array
+- [x] Update isConnectorProvider guard if it exists
+- [x] Verify no downstream type errors
 
 ### Task 10: Update startup-health types
 File: `packages/shared/src/startup-health.ts`

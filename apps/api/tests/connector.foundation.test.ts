@@ -344,7 +344,13 @@ describe("shared connector contracts", () => {
   });
 
   test("CONNECTOR_PROVIDERS matches expected set", () => {
-    expect(CONNECTOR_PROVIDERS).toEqual(["posthog", "stripe", "postgres"]);
+    expect(CONNECTOR_PROVIDERS).toEqual([
+      "posthog",
+      "stripe",
+      "postgres",
+      "yookassa",
+      "sentry",
+    ]);
   });
 });
 

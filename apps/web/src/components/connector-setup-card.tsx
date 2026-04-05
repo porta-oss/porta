@@ -62,6 +62,8 @@ const PROVIDER_LABELS: Record<ConnectorProvider, string> = {
   posthog: "PostHog",
   stripe: "Stripe",
   postgres: "Postgres",
+  yookassa: "YooKassa",
+  sentry: "Sentry",
 };
 
 export function ConnectorSetupCard({
