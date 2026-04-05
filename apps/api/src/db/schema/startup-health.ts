@@ -12,6 +12,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   text,
   timestamp,
@@ -30,8 +31,8 @@ export const healthSnapshot = pgTable(
     healthState: text("health_state").notNull(),
     blockedReason: text("blocked_reason"),
     northStarKey: text("north_star_key").notNull(),
-    northStarValue: integer("north_star_value").notNull(),
-    northStarPreviousValue: integer("north_star_previous_value"),
+    northStarValue: numeric("north_star_value"),
+    northStarPreviousValue: numeric("north_star_previous_value"),
     /** JSONB: UniversalMetrics from @shared/universal-metrics */
     supportingMetrics: jsonb("supporting_metrics").notNull(),
     syncJobId: text("sync_job_id"),

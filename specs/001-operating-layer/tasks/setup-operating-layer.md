@@ -132,9 +132,9 @@ File: `apps/api/src/db/schema/connector.ts`
 
 ### Task 15: Modify health_snapshot schema
 File: `apps/api/src/db/schema/startup-health.ts`
-- [ ] Change northStarValue from integer to numeric, make nullable
-- [ ] Change northStarPreviousValue to numeric
-- [ ] Replace supportingMetrics JSONB type annotation from SupportingMetricsSnapshot to UniversalMetrics
+- [x] Change northStarValue from integer to numeric, make nullable
+- [x] Change northStarPreviousValue to numeric
+- [x] Replace supportingMetrics JSONB type annotation from SupportingMetricsSnapshot to UniversalMetrics
 
 ### Task 16: Modify health_funnel_stage schema
 File: `apps/api/src/db/schema/startup-health.ts`
