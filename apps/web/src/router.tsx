@@ -3,7 +3,8 @@ import { createRouter, type RouterHistory } from "@tanstack/react-router";
 import { type AuthController, authController } from "./lib/auth-client";
 import { rootRoute } from "./routes/__root";
 import { authenticatedRoute } from "./routes/_authenticated";
-import { dashboardRoute } from "./routes/_authenticated/dashboard";
+import { dashboardIndexRoute } from "./routes/_authenticated/dashboard-index";
+import { dashboardStartupRoute } from "./routes/_authenticated/dashboard-startup";
 import { onboardingRoute } from "./routes/_authenticated/onboarding";
 import { signInRoute } from "./routes/auth/sign-in";
 import { indexRoute } from "./routes/index";
@@ -11,7 +12,11 @@ import { indexRoute } from "./routes/index";
 const routeTree = rootRoute.addChildren([
   indexRoute,
   signInRoute,
-  authenticatedRoute.addChildren([dashboardRoute, onboardingRoute]),
+  authenticatedRoute.addChildren([
+    dashboardIndexRoute,
+    dashboardStartupRoute,
+    onboardingRoute,
+  ]),
 ]);
 
 export function createAppRouter(

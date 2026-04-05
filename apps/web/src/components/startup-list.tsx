@@ -1,3 +1,4 @@
+import type { HealthState } from "@shared/startup-health";
 import type { StartupRecord } from "@shared/types";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -9,21 +10,33 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  startupIndicatorVariant,
+  startupRowToneClass,
+  toStartupHealthTone,
+} from "@/lib/startup-health-tone";
+import { cn } from "@/lib/utils";
 
 export interface StartupListProps {
+  activeStartupId?: string | null;
   error?: string | null;
   onRetry?: () => void | Promise<void>;
+  onSelectStartup?: (startupId: string) => void | Promise<void>;
+  startupHealthById?: Record<string, HealthState | "load-error">;
   startups: StartupRecord[];
   status: "idle" | "loading" | "refreshing" | "ready" | "error";
   workspaceName: string | null;
 }
 
 export function StartupList({
+  activeStartupId = null,
   workspaceName,
   startups,
   status,
   error = null,
   onRetry,
+  onSelectStartup,
+  startupHealthById = {},
 }: StartupListProps) {
   const isBusy = status === "loading" || status === "refreshing";
 
@@ -97,18 +110,59 @@ export function StartupList({
         ) : null}
 
         {startups.length > 0 ? (
-          <ul className="m-0 grid list-none gap-1 p-0">
-            {startups.map((startup) => (
-              <li
-                className="flex items-center justify-between rounded-md px-3 py-2 transition-colors hover:bg-muted/50"
-                key={startup.id}
-              >
-                <span className="font-medium text-sm">{startup.name}</span>
-                <span className="text-muted-foreground text-xs">
-                  {startup.stage.replace("_", " ")}
-                </span>
-              </li>
-            ))}
+          <ul
+            className="m-0 grid list-none gap-1 p-0"
+            data-health-summary-count={Object.keys(startupHealthById).length}
+          >
+            {startups.map((startup) => {
+              const isActive = startup.id === activeStartupId;
+              const tone = toStartupHealthTone(
+                startupHealthById[startup.id] ?? null
+              );
+              const indicatorVariant = startupIndicatorVariant(tone);
+
+              return (
+                <li key={startup.id}>
+                  <button
+                    aria-pressed={isActive}
+                    className={cn(
+                      "flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors",
+                      isActive ? startupRowToneClass(tone) : "hover:bg-muted/50"
+                    )}
+                    data-health-indicator={indicatorVariant}
+                    data-health-tone={tone}
+                    onClick={() => void onSelectStartup?.(startup.id)}
+                    type="button"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "h-2.5 w-2.5 rounded-full",
+                          indicatorVariant === "ring" &&
+                            "border border-danger bg-card",
+                          tone === "healthy" &&
+                            indicatorVariant === "solid" &&
+                            "bg-success",
+                          tone === "attention" &&
+                            indicatorVariant === "solid" &&
+                            "bg-warning",
+                          tone === "blocked" &&
+                            indicatorVariant === "solid" &&
+                            "bg-danger"
+                        )}
+                      />
+                      <span className="font-medium text-sm">
+                        {startup.name}
+                      </span>
+                    </span>
+                    <span className="text-muted-foreground text-xs">
+                      {startup.stage.replace("_", " ")}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         ) : null}
       </CardContent>

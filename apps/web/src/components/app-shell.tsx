@@ -1,3 +1,4 @@
+import type { HealthState } from "@shared/startup-health";
 import type { StartupRecord, WorkspaceSummary } from "@shared/types";
 import type { ReactNode } from "react";
 
@@ -9,15 +10,18 @@ import { StartupList } from "./startup-list";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 
 export interface AppShellProps {
+  activeStartupId?: string | null;
   activeWorkspaceId: string | null;
   children?: ReactNode;
   isSwitchingWorkspace?: boolean;
   onActivateWorkspace?: (workspaceId: string) => void | Promise<void>;
   onRetryShell?: () => void | Promise<void>;
   onRetryStartups?: () => void | Promise<void>;
+  onSelectStartup?: (startupId: string) => void | Promise<void>;
   shellError?: string | null;
   shellStatus: "loading" | "ready" | "error";
   startupError?: string | null;
+  startupHealthById?: Record<string, HealthState | "load-error">;
   startupStatus: "idle" | "loading" | "refreshing" | "ready" | "error";
   startups: StartupRecord[];
   workspaceError?: string | null;
@@ -26,6 +30,7 @@ export interface AppShellProps {
 
 export function AppShell({
   workspaces,
+  activeStartupId = null,
   activeWorkspaceId,
   startups,
   shellStatus,
@@ -36,7 +41,9 @@ export function AppShell({
   isSwitchingWorkspace = false,
   onRetryShell,
   onRetryStartups,
+  onSelectStartup,
   onActivateWorkspace,
+  startupHealthById = {},
   children,
 }: AppShellProps) {
   const activeWorkspace =
@@ -90,8 +97,11 @@ export function AppShell({
             workspaces={workspaces}
           />
           <StartupList
+            activeStartupId={activeStartupId}
             error={startupError}
             onRetry={onRetryStartups}
+            onSelectStartup={onSelectStartup}
+            startupHealthById={startupHealthById}
             startups={startups}
             status={startupStatus}
             workspaceName={activeWorkspace?.name ?? null}

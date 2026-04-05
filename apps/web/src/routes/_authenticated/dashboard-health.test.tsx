@@ -249,6 +249,8 @@ describe("startup health page", () => {
     );
 
     await openHealthConnectorsTab(view);
+    const separator = await view.findByTestId("health-detail-separator");
+    expect(separator.className).toContain("bg-border/60");
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
     const northStar = view.getByTestId("north-star-value");
     expect(northStar.textContent).toContain("12,500");

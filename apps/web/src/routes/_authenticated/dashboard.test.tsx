@@ -218,7 +218,7 @@ function createHealthyPayload(): StartupHealthPayload {
   };
 }
 
-function _createBlockedPayload(): StartupHealthPayload {
+function createBlockedPayload(): StartupHealthPayload {
   return {
     health: null,
     connectors: [],
@@ -240,6 +240,37 @@ afterEach(() => {
 });
 
 describe("dashboard route", () => {
+  test("normalizes a missing route startup id to the first startup in the workspace", async () => {
+    const navigateToStartup = mock(async () => {
+      /* noop */
+    });
+    const api = createApi({
+      listStartups: mock(async () => ({
+        workspace: WORKSPACE_A,
+        startups: [
+          createStartup(WORKSPACE_A.id, "Acme Analytics"),
+          createStartup(WORKSPACE_A.id, "Beta Billing"),
+        ],
+      })),
+    });
+
+    render(
+      <DashboardPage
+        api={api}
+        authState={createAuthenticatedSnapshot()}
+        navigateToStartup={navigateToStartup}
+        routeStartupId={null}
+      />
+    );
+
+    await waitFor(() => {
+      expect(navigateToStartup).toHaveBeenCalledWith(
+        `${WORKSPACE_A.id}_Acme Analytics`,
+        true
+      );
+    });
+  });
+
   test("shows the mounted workspace and startup context after bootstrap", async () => {
     const api = createApi();
     const view = render(
@@ -252,9 +283,231 @@ describe("dashboard route", () => {
     expect(
       view.getByRole("heading", { name: "Portfolio overview" })
     ).toBeTruthy();
+    await waitFor(() => {
+      expect(view.getAllByText("Acme Analytics").length).toBeGreaterThanOrEqual(
+        2
+      );
+    });
+  });
+
+  test("routes sidebar clicks through startup navigation and marks the active row", async () => {
+    const navigateToStartup = mock(async () => {
+      /* noop */
+    });
+    const api = createApi({
+      listStartups: mock(async () => ({
+        workspace: WORKSPACE_A,
+        startups: [
+          createStartup(WORKSPACE_A.id, "Acme Analytics"),
+          createStartup(WORKSPACE_A.id, "Beta Billing"),
+        ],
+      })),
+    });
+
+    const view = render(
+      <DashboardPage
+        api={api}
+        authState={createAuthenticatedSnapshot()}
+        navigateToStartup={navigateToStartup}
+        routeStartupId={`${WORKSPACE_A.id}_Acme Analytics`}
+      />
+    );
+
+    const betaRow = await view.findByRole("button", { name: /Beta Billing/i });
+    fireEvent.click(betaRow);
+
+    expect(navigateToStartup).toHaveBeenCalledWith(
+      `${WORKSPACE_A.id}_Beta Billing`,
+      false
+    );
+
+    const activeRow = view.getByRole("button", { name: /Acme Analytics/i });
+    expect(activeRow.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  test("loads sidebar health summaries for every startup after startup list resolves", async () => {
+    const fetchHealth = mock(async (_startupId: string) =>
+      createHealthyPayload()
+    );
+    const api = createApi({
+      fetchHealth,
+      listStartups: mock(async () => ({
+        workspace: WORKSPACE_A,
+        startups: [
+          createStartup(WORKSPACE_A.id, "Acme Analytics"),
+          createStartup(WORKSPACE_A.id, "Beta Billing"),
+          createStartup(WORKSPACE_A.id, "Gamma Growth"),
+        ],
+      })),
+    });
+
+    const view = render(
+      <DashboardPage
+        api={api}
+        authState={createAuthenticatedSnapshot()}
+        routeStartupId={`${WORKSPACE_A.id}_Acme Analytics`}
+      />
+    );
+
+    await waitFor(() => {
+      expect(fetchHealth).toHaveBeenCalledTimes(3);
+    });
+
     expect(
-      (await view.findAllByText("Acme Analytics")).length
-    ).toBeGreaterThanOrEqual(2);
+      view.container.querySelector('[data-health-summary-count="3"]')
+    ).toBeTruthy();
+  });
+
+  test("renders blocked rows with a solid marker and error rows with a ring marker", async () => {
+    const api = createApi({
+      fetchHealth: mock(async (startupId: string) => {
+        if (startupId.endsWith("Beta Billing")) {
+          throw new Error("connector timeout");
+        }
+
+        return startupId.endsWith("Gamma Growth")
+          ? createBlockedPayload()
+          : createHealthyPayload();
+      }),
+      listStartups: mock(async () => ({
+        workspace: WORKSPACE_A,
+        startups: [
+          createStartup(WORKSPACE_A.id, "Acme Analytics"),
+          createStartup(WORKSPACE_A.id, "Beta Billing"),
+          createStartup(WORKSPACE_A.id, "Gamma Growth"),
+        ],
+      })),
+    });
+    const view = render(
+      <DashboardPage
+        api={api}
+        authState={createAuthenticatedSnapshot()}
+        routeStartupId={`${WORKSPACE_A.id}_Acme Analytics`}
+      />
+    );
+
+    const activeRow = await view.findByRole("button", {
+      name: /Acme Analytics/i,
+    });
+    const blockedRow = view.getByRole("button", { name: /Gamma Growth/i });
+    const errorRow = view.getByRole("button", { name: /Beta Billing/i });
+
+    expect(activeRow.getAttribute("data-health-tone")).toBe("healthy");
+    expect(activeRow.className).toContain("bg-success-bg/55");
+    expect(blockedRow.getAttribute("data-health-indicator")).toBe("solid");
+    expect(errorRow.getAttribute("data-health-indicator")).toBe("ring");
+  });
+
+  test("replaces a stale route startup after switching workspaces", async () => {
+    const navigateToStartup = mock(async () => {
+      /* noop */
+    });
+    let startupListCall = 0;
+    const api = createApi({
+      listStartups: mock(async () => {
+        startupListCall += 1;
+
+        return startupListCall === 1
+          ? {
+              workspace: WORKSPACE_A,
+              startups: [createStartup(WORKSPACE_A.id, "Acme Analytics")],
+            }
+          : {
+              workspace: WORKSPACE_B,
+              startups: [createStartup(WORKSPACE_B.id, "Beta Control")],
+            };
+      }),
+      listWorkspaces: mock(async () => ({
+        workspaces: [WORKSPACE_A, WORKSPACE_B],
+        activeWorkspaceId: WORKSPACE_A.id,
+      })),
+      setActiveWorkspace: mock(
+        async ({ workspaceId }: { workspaceId: string }) => ({
+          activeWorkspaceId: workspaceId,
+          workspace: WORKSPACE_B,
+        })
+      ),
+    });
+
+    const view = render(
+      <DashboardPage
+        api={api}
+        authState={createAuthenticatedSnapshot()}
+        navigateToStartup={navigateToStartup}
+        routeStartupId={`${WORKSPACE_A.id}_Acme Analytics`}
+      />
+    );
+
+    await view.findAllByText("Acme Analytics");
+
+    fireEvent.click(view.getByLabelText("Switch workspace"));
+    fireEvent.click(await view.findByText("Beta Ventures"));
+    fireEvent.click(view.getByRole("button", { name: "Switch" }));
+
+    await waitFor(() => {
+      expect(navigateToStartup).toHaveBeenCalledWith(
+        `${WORKSPACE_B.id}_Beta Control`,
+        true
+      );
+    });
+  });
+
+  test("refetches selected-startup detail when the route startup changes", async () => {
+    const fetchInsight = mock(async () => ({
+      diagnosticMessage: "No insight available yet.",
+      displayStatus: "unavailable" as const,
+      insight: null,
+    }));
+    const listTasks = mock(async () => ({
+      tasks: [],
+      startupId: "",
+      count: 0,
+    }));
+    const listConnectors = mock(async () => ({ connectors: [] }));
+    const api = createApi({
+      fetchInsight,
+      listConnectors,
+      listStartups: mock(async () => ({
+        workspace: WORKSPACE_A,
+        startups: [
+          createStartup(WORKSPACE_A.id, "Acme Analytics"),
+          createStartup(WORKSPACE_A.id, "Beta Billing"),
+        ],
+      })),
+      listTasks,
+    });
+
+    const { rerender } = render(
+      <DashboardPage
+        api={api}
+        authState={createAuthenticatedSnapshot()}
+        routeStartupId={`${WORKSPACE_A.id}_Acme Analytics`}
+      />
+    );
+
+    await waitFor(() => {
+      expect(fetchInsight).toHaveBeenCalledWith(
+        `${WORKSPACE_A.id}_Acme Analytics`
+      );
+    });
+
+    rerender(
+      <DashboardPage
+        api={api}
+        authState={createAuthenticatedSnapshot()}
+        routeStartupId={`${WORKSPACE_A.id}_Beta Billing`}
+      />
+    );
+
+    await waitFor(() => {
+      expect(fetchInsight).toHaveBeenCalledWith(
+        `${WORKSPACE_A.id}_Beta Billing`
+      );
+      expect(listConnectors).toHaveBeenCalledWith(
+        `${WORKSPACE_A.id}_Beta Billing`
+      );
+      expect(listTasks).toHaveBeenCalledWith(`${WORKSPACE_A.id}_Beta Billing`);
+    });
   });
 
   test("keeps the shell chrome visible and points back to onboarding when the active workspace has no startups", async () => {
@@ -315,9 +568,11 @@ describe("dashboard route", () => {
     await waitFor(() => {
       expect(listStartups).toHaveBeenCalledTimes(2);
     });
-    expect(
-      (await view.findAllByText("Acme Analytics")).length
-    ).toBeGreaterThanOrEqual(2);
+    await waitFor(() => {
+      expect(view.getAllByText("Acme Analytics").length).toBeGreaterThanOrEqual(
+        2
+      );
+    });
   });
 
   test("shows a loading failure when workspace context cannot be parsed", async () => {
@@ -381,9 +636,11 @@ describe("dashboard route", () => {
         workspaceId: WORKSPACE_B.id,
       });
     });
-    expect(
-      (await view.findAllByText("Beta Analytics")).length
-    ).toBeGreaterThanOrEqual(2);
+    await waitFor(() => {
+      expect(view.getAllByText("Beta Analytics").length).toBeGreaterThanOrEqual(
+        2
+      );
+    });
   });
 
   // ---------------------------------------------------------------
