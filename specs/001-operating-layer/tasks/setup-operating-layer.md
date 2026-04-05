@@ -176,8 +176,8 @@ File: `apps/api/src/db/schema/event-log.ts` (NEW)
 
 ### Task 22: Create telegram_config table schema
 File: `apps/api/src/db/schema/telegram-config.ts` (NEW)
-- [ ] Create telegramConfig pgTable with: id (PK), workspaceId (FK, UNIQUE), botToken, chatId (nullable), verificationCode (nullable), verificationExpiresAt (nullable), digestTime (default '09:00'), digestTimezone (default 'UTC'), isActive (default false), lastDigestAt (nullable), createdAt, updatedAt
-- [ ] Add indexes: workspace_uidx unique on (workspace_id), chat_idx on (chat_id)
+- [x] Create telegramConfig pgTable with: id (PK), workspaceId (FK, UNIQUE), botToken, chatId (nullable), verificationCode (nullable), verificationExpiresAt (nullable), digestTime (default '09:00'), digestTimezone (default 'UTC'), isActive (default false), lastDigestAt (nullable), createdAt, updatedAt
+- [x] Add indexes: workspace_uidx unique on (workspace_id), chat_idx on (chat_id)
 
 ### Task 23: Create webhook_config table schema
 File: `apps/api/src/db/schema/webhook-config.ts` (NEW)
