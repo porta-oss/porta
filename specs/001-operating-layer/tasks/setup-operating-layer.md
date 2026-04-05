@@ -62,11 +62,11 @@ File: `packages/shared/src/event-log.ts`
 
 ### Task 5: Create MCP tool schemas
 File: `packages/shared/src/mcp.ts`
-- [ ] Create McpResponse\<T\> generic Zod schema wrapper (data, dataAsOf, dashboardUrl, pagination?)
-- [ ] Create McpErrorResponse schema (error string, code enum NOT_FOUND|FORBIDDEN|RATE_LIMITED|INTERNAL, retryAfter?)
-- [ ] Create input schemas for all 8 tools: getMetricsInput, getAlertsInput, getAtRiskCustomersInput, getActivityLogInput, getPortfolioSummaryInput, createTaskInput, snoozeAlertInput, triggerSyncInput
-- [ ] Create output schemas for all 8 tools
-- [ ] Export all schemas
+- [x] Create McpResponse\<T\> generic Zod schema wrapper (data, dataAsOf, dashboardUrl, pagination?)
+- [x] Create McpErrorResponse schema (error string, code enum NOT_FOUND|FORBIDDEN|RATE_LIMITED|INTERNAL, retryAfter?)
+- [x] Create input schemas for all 8 tools: getMetricsInput, getAlertsInput, getAtRiskCustomersInput, getActivityLogInput, getPortfolioSummaryInput, createTaskInput, snoozeAlertInput, triggerSyncInput
+- [x] Create output schemas for all 8 tools
+- [x] Export all schemas
 
 ### Task 6: Create Telegram config schemas
 File: `packages/shared/src/telegram.ts`
