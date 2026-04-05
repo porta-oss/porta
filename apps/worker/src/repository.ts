@@ -27,7 +27,7 @@ export interface HealthSnapshotRow {
   id: string;
   northStarKey: string;
   northStarPreviousValue: number | null;
-  northStarValue: number;
+  northStarValue: number | null;
   startupId: string;
   supportingMetrics: unknown;
   syncJobId: string | null;
@@ -213,8 +213,8 @@ export function createHealthSnapshotRepository(
             health_state: string;
             blocked_reason: string | null;
             north_star_key: string;
-            north_star_value: number;
-            north_star_previous_value: number | null;
+            north_star_value: string | null;
+            north_star_previous_value: string | null;
             supporting_metrics: unknown;
             sync_job_id: string | null;
             computed_at: Date;
@@ -231,8 +231,12 @@ export function createHealthSnapshotRepository(
         healthState: row.health_state,
         blockedReason: row.blocked_reason,
         northStarKey: row.north_star_key,
-        northStarValue: row.north_star_value,
-        northStarPreviousValue: row.north_star_previous_value,
+        northStarValue:
+          row.north_star_value == null ? 0 : Number(row.north_star_value),
+        northStarPreviousValue:
+          row.north_star_previous_value == null
+            ? null
+            : Number(row.north_star_previous_value),
         supportingMetrics: row.supporting_metrics,
         syncJobId: row.sync_job_id,
         computedAt: row.computed_at,

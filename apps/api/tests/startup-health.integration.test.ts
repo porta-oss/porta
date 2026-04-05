@@ -310,8 +310,8 @@ describe("startup health integration", () => {
     expect(snapResult.rows.length).toBe(1);
     const snap = snapResult.rows[0] as any;
     expect(snap.id).toBe(snap2Id);
-    expect(snap.north_star_value).toBe(2000);
-    expect(snap.north_star_previous_value).toBe(1000);
+    expect(Number(snap.north_star_value)).toBe(2000);
+    expect(Number(snap.north_star_previous_value)).toBe(1000);
 
     const funnelResult = await db.execute(
       sql`SELECT * FROM health_funnel_stage WHERE startup_id = ${startupId} ORDER BY position`

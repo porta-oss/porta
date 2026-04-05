@@ -385,8 +385,14 @@ export async function loadStartupHealth(
     healthState: status,
     blockedReason: snapshot.blocked_reason,
     northStarKey: snapshot.north_star_key,
-    northStarValue: snapshot.north_star_value,
-    northStarPreviousValue: snapshot.north_star_previous_value,
+    northStarValue:
+      snapshot.north_star_value == null
+        ? null
+        : Number(snapshot.north_star_value),
+    northStarPreviousValue:
+      snapshot.north_star_previous_value == null
+        ? null
+        : Number(snapshot.north_star_previous_value),
     supportingMetrics,
     funnel,
     computedAt: requireIsoString(snapshot.computed_at, "snapshot.computed_at"),
