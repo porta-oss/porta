@@ -114,8 +114,8 @@ File: `packages/shared/src/custom-metric.ts`
 
 ### Task 12: Export all new modules from shared index
 File: `packages/shared/src/index.ts`
-- [ ] Add exports for: universal-metrics, alert-rule, event-log, mcp, telegram, webhook, api-key
-- [ ] Verify all re-exports work (no circular deps)
+- [x] Add exports for: universal-metrics, alert-rule, event-log, mcp, telegram, webhook, api-key
+- [x] Verify all re-exports work (no circular deps)
 
 ### Task 13: Modify startup schema
 File: `apps/api/src/db/schema/startup.ts`

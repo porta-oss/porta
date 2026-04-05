@@ -257,7 +257,7 @@ export const createTaskInputSchema = zod.object({
   title: zod.string().min(1).max(200),
 });
 
-export type CreateTaskInput = z.infer<typeof createTaskInputSchema>;
+export type McpCreateTaskInput = z.infer<typeof createTaskInputSchema>;
 
 export const mcpTaskSchema = zod.object({
   createdAt: zod.string(),
