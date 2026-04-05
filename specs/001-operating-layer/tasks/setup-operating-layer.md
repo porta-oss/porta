@@ -153,9 +153,9 @@ File: `apps/api/src/db/schema/custom-metric.ts`
 
 ### Task 18: Create alert_rule table schema
 File: `apps/api/src/db/schema/alert-rule.ts` (NEW)
-- [ ] Create alertRule pgTable with: id (PK), startupId (FK to startup), metricKey, condition (CHECK IN alert conditions), threshold (numeric), severity (CHECK IN, default 'medium'), enabled (default true), minDataPoints (integer, default 7), createdAt, updatedAt
-- [ ] Add indexes: startup_idx on (startup_id), unique on (startup_id, metric_key, condition)
-- [ ] Create alertRuleRelations: many-to-one with startup, one-to-many with alert
+- [x] Create alertRule pgTable with: id (PK), startupId (FK to startup), metricKey, condition (CHECK IN alert conditions), threshold (numeric), severity (CHECK IN, default 'medium'), enabled (default true), minDataPoints (integer, default 7), createdAt, updatedAt
+- [x] Add indexes: startup_idx on (startup_id), unique on (startup_id, metric_key, condition)
+- [x] Create alertRuleRelations: many-to-one with startup, one-to-many with alert
 
 ### Task 19: Create alert table schema
 File: `apps/api/src/db/schema/alert-rule.ts` (same file)
