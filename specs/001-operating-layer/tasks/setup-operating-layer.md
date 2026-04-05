@@ -159,9 +159,9 @@ File: `apps/api/src/db/schema/alert-rule.ts` (NEW)
 
 ### Task 19: Create alert table schema
 File: `apps/api/src/db/schema/alert-rule.ts` (same file)
-- [ ] Create alert pgTable with: id (PK), startupId (FK), ruleId (FK to alertRule), metricKey, severity, value (numeric), threshold (numeric), status (CHECK IN alert statuses, default 'active'), occurrenceCount (integer, default 1), snoozedUntil (nullable), firedAt, lastFiredAt, resolvedAt (nullable), createdAt
-- [ ] Add indexes: startup_idx, status_idx, startup_status_idx, rule_idx
-- [ ] Create alertRelations: many-to-one with startup, many-to-one with alertRule
+- [x] Create alert pgTable with: id (PK), startupId (FK), ruleId (FK to alertRule), metricKey, severity, value (numeric), threshold (numeric), status (CHECK IN alert statuses, default 'active'), occurrenceCount (integer, default 1), snoozedUntil (nullable), firedAt, lastFiredAt, resolvedAt (nullable), createdAt
+- [x] Add indexes: startup_idx, status_idx, startup_status_idx, rule_idx
+- [x] Create alertRelations: many-to-one with startup, many-to-one with alertRule
 
 ### Task 20: Create streak table schema
 File: `apps/api/src/db/schema/alert-rule.ts` (same file)
