@@ -195,9 +195,9 @@ File: `apps/api/src/db/schema/startup-health.ts` (append to existing)
 - [x] Add indexes: startup_metric_idx on (startup_id, metric_key, captured_at DESC), captured_idx on (captured_at)
 
 ### Task 26: Generate Drizzle migrations
-- [ ] Run drizzle-kit generate to produce migration SQL files in apps/api/drizzle/
-- [ ] Verify migration files cover: schema opens (startup, connector), health changes, custom metric changes, all new tables
-- [ ] Review generated SQL for correctness
+- [x] Run drizzle-kit generate to produce migration SQL files in apps/api/drizzle/
+- [x] Verify migration files cover: schema opens (startup, connector), health changes, custom metric changes, all new tables
+- [x] Review generated SQL for correctness
 
 ### Task 27: Run database migrations
 - [ ] Ensure Docker services are up (pnpm services:up)
