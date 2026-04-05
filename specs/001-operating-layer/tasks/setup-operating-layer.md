@@ -165,8 +165,8 @@ File: `apps/api/src/db/schema/alert-rule.ts` (same file)
 
 ### Task 20: Create streak table schema
 File: `apps/api/src/db/schema/alert-rule.ts` (same file)
-- [ ] Create streak pgTable with: id (PK), startupId (FK, unique), currentDays (integer, default 0), longestDays (integer, default 0), startedAt (nullable), brokenAt (nullable), updatedAt
-- [ ] Create streakRelations: one-to-one with startup
+- [x] Create streak pgTable with: id (PK), startupId (FK, unique), currentDays (integer, default 0), longestDays (integer, default 0), startedAt (nullable), brokenAt (nullable), updatedAt
+- [x] Create streakRelations: one-to-one with startup
 
 ### Task 21: Create event_log table schema
 File: `apps/api/src/db/schema/event-log.ts` (NEW)
