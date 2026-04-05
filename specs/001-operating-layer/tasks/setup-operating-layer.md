@@ -181,8 +181,8 @@ File: `apps/api/src/db/schema/telegram-config.ts` (NEW)
 
 ### Task 23: Create webhook_config table schema
 File: `apps/api/src/db/schema/webhook-config.ts` (NEW)
-- [ ] Create webhookConfig pgTable with: id (PK), startupId (FK, UNIQUE), url, secret, eventTypes (jsonb, default '[]'), enabled (default true), consecutiveFailures (integer, default 0), circuitBrokenAt (nullable), createdAt, updatedAt
-- [ ] Add indexes: startup_uidx unique on (startup_id), enabled_idx on (enabled)
+- [x] Create webhookConfig pgTable with: id (PK), startupId (FK, UNIQUE), url, secret, eventTypes (jsonb, default '[]'), enabled (default true), consecutiveFailures (integer, default 0), circuitBrokenAt (nullable), createdAt, updatedAt
+- [x] Add indexes: startup_uidx unique on (startup_id), enabled_idx on (enabled)
 
 ### Task 24: Create api_key table schema
 File: `apps/api/src/db/schema/api-key.ts` (NEW)
