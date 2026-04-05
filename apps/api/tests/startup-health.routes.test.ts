@@ -171,7 +171,7 @@ async function insertSnapshot(
   for (const stage of stages) {
     await db.execute(
       sql`INSERT INTO health_funnel_stage
-          (id, startup_id, stage, label, value, position, snapshot_id)
+          (id, startup_id, key, label, value, position, snapshot_id)
           VALUES (${`fs-${stage.key}-${randomUUID()}`}, ${startupId},
                   ${stage.key}, ${stage.label}, ${stage.value},
                   ${stage.position}, ${snapshotId})`

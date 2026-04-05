@@ -138,8 +138,8 @@ File: `apps/api/src/db/schema/startup-health.ts`
 
 ### Task 16: Modify health_funnel_stage schema
 File: `apps/api/src/db/schema/startup-health.ts`
-- [ ] Rename stage column to key (text, free-form)
-- [ ] Update unique constraint to (startupId, key)
+- [x] Rename stage column to key (text, free-form)
+- [x] Update unique constraint to (startupId, key)
 
 ### Task 17: Modify custom_metric schema
 File: `apps/api/src/db/schema/custom-metric.ts`

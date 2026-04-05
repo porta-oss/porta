@@ -74,9 +74,9 @@ interface SnapshotRow {
 }
 
 interface FunnelRow {
+  key: string;
   label: string;
   position: number;
-  stage: string;
   value: number;
 }
 
@@ -108,7 +108,7 @@ async function loadFunnelStages(
   startupId: string
 ): Promise<FunnelRow[]> {
   const result = await db.execute(
-    sql`SELECT stage, label, value, position
+    sql`SELECT key, label, value, position
         FROM health_funnel_stage
         WHERE startup_id = ${startupId}
         ORDER BY position ASC`
@@ -220,7 +220,7 @@ function requireIsoString(
 
 function serializeFunnelRows(rows: FunnelRow[]): FunnelStageRow[] {
   return rows.map((row) => ({
-    key: row.stage,
+    key: row.key,
     label: row.label,
     value: row.value,
     position: row.position,

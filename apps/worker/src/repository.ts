@@ -192,7 +192,7 @@ export function createHealthSnapshotRepository(
       // Insert funnel stage rows.
       for (const stage of input.funnel) {
         await db.execute(
-          sql`INSERT INTO health_funnel_stage (id, startup_id, stage, label, value, position, snapshot_id)
+          sql`INSERT INTO health_funnel_stage (id, startup_id, key, label, value, position, snapshot_id)
               VALUES (${stage.id}, ${input.startupId}, ${stage.key}, ${stage.label}, ${stage.value}, ${stage.position}, ${input.snapshotId})`
         );
       }
@@ -241,20 +241,20 @@ export function createHealthSnapshotRepository(
 
     async findFunnelStages(startupId: string): Promise<FunnelStageRow[]> {
       const result = await db.execute(
-        sql`SELECT stage, label, value, position
+        sql`SELECT key, label, value, position
             FROM health_funnel_stage WHERE startup_id = ${startupId}
             ORDER BY position ASC`
       );
 
       return (
         result.rows as Array<{
-          stage: string;
+          key: string;
           label: string;
           value: number;
           position: number;
         }>
       ).map((row) => ({
-        key: row.stage,
+        key: row.key,
         label: row.label,
         value: row.value,
         position: row.position,

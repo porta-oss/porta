@@ -194,7 +194,7 @@ describe("startup health integration", () => {
     ];
     for (const stage of stages) {
       await db.execute(
-        sql`INSERT INTO health_funnel_stage (id, startup_id, stage, label, value, position, snapshot_id)
+        sql`INSERT INTO health_funnel_stage (id, startup_id, key, label, value, position, snapshot_id)
             VALUES (${`fs-${stage.key}-${Date.now()}`}, ${startupId}, ${stage.key}, ${stage.label}, ${stage.value}, ${stage.position}, ${snapshotId})`
       );
     }
@@ -265,7 +265,7 @@ describe("startup health integration", () => {
       },
     ]) {
       await db.execute(
-        sql`INSERT INTO health_funnel_stage (id, startup_id, stage, label, value, position, snapshot_id)
+        sql`INSERT INTO health_funnel_stage (id, startup_id, key, label, value, position, snapshot_id)
             VALUES (${`fs1-${stage.key}-${Date.now()}`}, ${startupId}, ${stage.key}, ${stage.label}, ${10}, ${stage.position}, ${snap1Id})`
       );
     }
@@ -298,7 +298,7 @@ describe("startup health integration", () => {
       },
     ]) {
       await db.execute(
-        sql`INSERT INTO health_funnel_stage (id, startup_id, stage, label, value, position, snapshot_id)
+        sql`INSERT INTO health_funnel_stage (id, startup_id, key, label, value, position, snapshot_id)
             VALUES (${`fs2-${stage.key}-${Date.now()}`}, ${startupId}, ${stage.key}, ${stage.label}, ${20}, ${stage.position}, ${snap2Id})`
       );
     }

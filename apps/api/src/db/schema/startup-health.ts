@@ -60,7 +60,7 @@ export const healthFunnelStage = pgTable(
     startupId: text("startup_id")
       .notNull()
       .references(() => startup.id, { onDelete: "cascade" }),
-    stage: text("stage").notNull(),
+    key: text("key").notNull(),
     label: text("label").notNull(),
     value: integer("value").notNull(),
     position: integer("position").notNull(),
@@ -72,9 +72,9 @@ export const healthFunnelStage = pgTable(
   },
   (table) => [
     index("health_funnel_stage_startupId_idx").on(table.startupId),
-    uniqueIndex("health_funnel_stage_startup_stage_uidx").on(
+    uniqueIndex("health_funnel_stage_startup_key_uidx").on(
       table.startupId,
-      table.stage
+      table.key
     ),
     index("health_funnel_stage_snapshotId_idx").on(table.snapshotId),
   ]
