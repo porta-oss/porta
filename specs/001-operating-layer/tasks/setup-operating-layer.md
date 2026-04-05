@@ -214,13 +214,13 @@ File: `apps/api/src/lib/events/emitter.ts` (NEW)
 
 ### Task 29: Add new queue definitions
 File: `apps/worker/src/queues.ts`
-- [ ] Add TELEGRAM_QUEUE = "telegram" as const
-- [ ] Add WEBHOOK_QUEUE = "webhook" as const
-- [ ] Add PORTFOLIO_DIGEST_QUEUE = "portfolio-digest" as const
-- [ ] Add EVENT_PURGE_QUEUE = "event-purge" as const
-- [ ] Create queue factory functions and worker factory functions for each
-- [ ] Telegram: concurrency 1, repeatable (cron-based per workspace)
-- [ ] Webhook: concurrency 5, 4 retries with exponential backoff (60s, 300s, 900s, 3600s)
-- [ ] Portfolio digest: concurrency 1, weekly repeatable
-- [ ] Event purge: concurrency 1, daily repeatable
-- [ ] Follow existing pattern from createSyncQueue/createSyncWorker
+- [x] Add TELEGRAM_QUEUE = "telegram" as const
+- [x] Add WEBHOOK_QUEUE = "webhook" as const
+- [x] Add PORTFOLIO_DIGEST_QUEUE = "portfolio-digest" as const
+- [x] Add EVENT_PURGE_QUEUE = "event-purge" as const
+- [x] Create queue factory functions and worker factory functions for each
+- [x] Telegram: concurrency 1, repeatable (cron-based per workspace)
+- [x] Webhook: concurrency 5, 4 retries with exponential backoff (60s, 300s, 900s, 3600s)
+- [x] Portfolio digest: concurrency 1, weekly repeatable
+- [x] Event purge: concurrency 1, daily repeatable
+- [x] Follow existing pattern from createSyncQueue/createSyncWorker
