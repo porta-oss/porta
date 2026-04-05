@@ -351,11 +351,10 @@ async function maybeCreateCustomMetricSummary(
       id: customMetricId,
       startupId,
       connectorId,
+      key: config?.key ?? "",
       label: config?.label ?? "",
       unit: config?.unit ?? "",
-      schema: config?.schema ?? "",
-      view: config?.view ?? "",
-      status: "pending",
+      category: config?.category ?? "custom",
     })
     .returning();
 

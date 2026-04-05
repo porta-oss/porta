@@ -143,13 +143,13 @@ File: `apps/api/src/db/schema/startup-health.ts`
 
 ### Task 17: Modify custom_metric schema
 File: `apps/api/src/db/schema/custom-metric.ts`
-- [ ] Add key column: `text("key").notNull().default('')`
-- [ ] Add category column: `text("category").notNull().default('custom')`
-- [ ] Add delta column: `numeric("delta")`
-- [ ] Drop schema column
-- [ ] Drop view column
-- [ ] Drop status column
-- [ ] Change unique constraint from (startupId) to (startupId, key)
+- [x] Add key column: `text("key").notNull().default('')`
+- [x] Add category column: `text("category").notNull().default('custom')`
+- [x] Add delta column: `numeric("delta")`
+- [x] Drop schema column
+- [x] Drop view column
+- [x] Drop status column
+- [x] Change unique constraint from (startupId) to (startupId, key)
 
 ### Task 18: Create alert_rule table schema
 File: `apps/api/src/db/schema/alert-rule.ts` (NEW)
