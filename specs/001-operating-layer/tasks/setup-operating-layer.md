@@ -42,14 +42,14 @@ File: `packages/shared/src/universal-metrics.ts`
 
 ### Task 3: Create AlertRule Zod schema
 File: `packages/shared/src/alert-rule.ts`
-- [ ] Define ALERT_CONDITIONS as const: `['drop_wow_pct', 'spike_vs_avg', 'below_threshold', 'above_threshold']`
-- [ ] Define ALERT_SEVERITIES as const: `['critical', 'high', 'medium', 'low']`
-- [ ] Create AlertCondition and AlertSeverity union types
-- [ ] Create AlertRuleSchema Zod object: metricKey (string, non-empty, max 100), condition (enum), threshold (number, >0, max 10000), severity (enum, default 'medium'), enabled (boolean, default true), minDataPoints (number, default 7, min 1, max 365)
-- [ ] Create AlertRuleSummary interface (id, startupId, metricKey, condition, threshold, severity, enabled, minDataPoints, createdAt, updatedAt)
-- [ ] Create AlertSummary interface (id, startupId, ruleId, metricKey, severity, value, threshold, status, occurrenceCount, snoozedUntil?, firedAt, lastFiredAt, resolvedAt?)
-- [ ] Define ALERT_STATUSES as const: `['active', 'acknowledged', 'snoozed', 'dismissed', 'resolved']`
-- [ ] Export all
+- [x] Define ALERT_CONDITIONS as const: `['drop_wow_pct', 'spike_vs_avg', 'below_threshold', 'above_threshold']`
+- [x] Define ALERT_SEVERITIES as const: `['critical', 'high', 'medium', 'low']`
+- [x] Create AlertCondition and AlertSeverity union types
+- [x] Create AlertRuleSchema Zod object: metricKey (string, non-empty, max 100), condition (enum), threshold (number, >0, max 10000), severity (enum, default 'medium'), enabled (boolean, default true), minDataPoints (number, default 7, min 1, max 365)
+- [x] Create AlertRuleSummary interface (id, startupId, metricKey, condition, threshold, severity, enabled, minDataPoints, createdAt, updatedAt)
+- [x] Create AlertSummary interface (id, startupId, ruleId, metricKey, severity, value, threshold, status, occurrenceCount, snoozedUntil?, firedAt, lastFiredAt, resolvedAt?)
+- [x] Define ALERT_STATUSES as const: `['active', 'acknowledged', 'snoozed', 'dismissed', 'resolved']`
+- [x] Export all
 
 ### Task 4: Create EventLogEntry discriminated union schema
 File: `packages/shared/src/event-log.ts`
