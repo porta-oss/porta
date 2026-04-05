@@ -119,10 +119,10 @@ File: `packages/shared/src/index.ts`
 
 ### Task 13: Modify startup schema
 File: `apps/api/src/db/schema/startup.ts`
-- [ ] Add northStarKey column: `text("north_star_key").notNull().default('mrr')`
-- [ ] Open type column: remove any enum constraint, keep as text validated at API layer
-- [ ] Open timezone column: remove hardcoded enum, keep as text validated at API layer
-- [ ] Open currency column: remove hardcoded enum, keep as text validated at API layer
+- [x] Add northStarKey column: `text("north_star_key").notNull().default('mrr')`
+- [x] Open type column: remove any enum constraint, keep as text validated at API layer
+- [x] Open timezone column: remove hardcoded enum, keep as text validated at API layer
+- [x] Open currency column: remove hardcoded enum, keep as text validated at API layer
 
 ### Task 14: Modify connector schema
 File: `apps/api/src/db/schema/connector.ts`

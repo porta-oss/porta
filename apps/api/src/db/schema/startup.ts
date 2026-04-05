@@ -21,6 +21,7 @@ export const startup = pgTable(
     stage: text("stage").notNull(),
     timezone: text("timezone").notNull(),
     currency: text("currency").notNull(),
+    northStarKey: text("north_star_key").notNull().default("mrr"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
