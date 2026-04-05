@@ -53,12 +53,12 @@ File: `packages/shared/src/alert-rule.ts`
 
 ### Task 4: Create EventLogEntry discriminated union schema
 File: `packages/shared/src/event-log.ts`
-- [ ] Define EVENT_TYPES as const array with all 20 event types: `alert.fired`, `alert.ack`, `alert.snoozed`, `alert.dismissed`, `alert.resolved`, `connector.synced`, `connector.errored`, `connector.created`, `connector.deleted`, `insight.generated`, `insight.viewed`, `telegram.digest`, `telegram.alert`, `telegram.reaction`, `mcp.query`, `mcp.action`, `mcp.key_created`, `mcp.key_revoked`, `task.created`, `task.completed`, `webhook.delivered`, `webhook.failed`
-- [ ] Define ACTOR_TYPES as const: `['system', 'user', 'ai', 'mcp']`
-- [ ] Create per-type payload Zod schemas (z.object for each event type's payload shape)
-- [ ] Create EventLogEntry Zod discriminated union on eventType
-- [ ] Create EventLogEntrySummary interface (id, workspaceId, startupId?, eventType, actorType, actorId?, payload, createdAt)
-- [ ] Export all
+- [x] Define EVENT_TYPES as const array with all 20 event types: `alert.fired`, `alert.ack`, `alert.snoozed`, `alert.dismissed`, `alert.resolved`, `connector.synced`, `connector.errored`, `connector.created`, `connector.deleted`, `insight.generated`, `insight.viewed`, `telegram.digest`, `telegram.alert`, `telegram.reaction`, `mcp.query`, `mcp.action`, `mcp.key_created`, `mcp.key_revoked`, `task.created`, `task.completed`, `webhook.delivered`, `webhook.failed`
+- [x] Define ACTOR_TYPES as const: `['system', 'user', 'ai', 'mcp']`
+- [x] Create per-type payload Zod schemas (z.object for each event type's payload shape)
+- [x] Create EventLogEntry Zod discriminated union on eventType
+- [x] Create EventLogEntrySummary interface (id, workspaceId, startupId?, eventType, actorType, actorId?, payload, createdAt)
+- [x] Export all
 
 ### Task 5: Create MCP tool schemas
 File: `packages/shared/src/mcp.ts`
