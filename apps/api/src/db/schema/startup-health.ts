@@ -93,3 +93,47 @@ export const healthFunnelStageRelations = relations(
     }),
   })
 );
+
+// ---------------------------------------------------------------------------
+// health_snapshot_history — time-series metric values for sparklines / trends
+// ---------------------------------------------------------------------------
+
+export const healthSnapshotHistory = pgTable(
+  "health_snapshot_history",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    startupId: text("startup_id")
+      .notNull()
+      .references(() => startup.id, { onDelete: "cascade" }),
+    metricKey: text("metric_key").notNull(),
+    value: numeric("value").notNull(),
+    snapshotId: text("snapshot_id")
+      .notNull()
+      .references(() => healthSnapshot.id, { onDelete: "cascade" }),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("health_snapshot_history_startup_metric_idx").on(
+      table.startupId,
+      table.metricKey,
+      table.capturedAt
+    ),
+    index("health_snapshot_history_captured_idx").on(table.capturedAt),
+  ]
+);
+
+export const healthSnapshotHistoryRelations = relations(
+  healthSnapshotHistory,
+  ({ one }) => ({
+    startup: one(startup, {
+      fields: [healthSnapshotHistory.startupId],
+      references: [startup.id],
+    }),
+    snapshot: one(healthSnapshot, {
+      fields: [healthSnapshotHistory.snapshotId],
+      references: [healthSnapshot.id],
+    }),
+  })
+);

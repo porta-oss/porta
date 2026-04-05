@@ -191,8 +191,8 @@ File: `apps/api/src/db/schema/api-key.ts` (NEW)
 
 ### Task 25: Create health_snapshot_history table schema
 File: `apps/api/src/db/schema/startup-health.ts` (append to existing)
-- [ ] Create healthSnapshotHistory pgTable with: id (PK), startupId (FK), metricKey (text), value (numeric), snapshotId (FK to healthSnapshot), capturedAt (timestamptz)
-- [ ] Add indexes: startup_metric_idx on (startup_id, metric_key, captured_at DESC), captured_idx on (captured_at)
+- [x] Create healthSnapshotHistory pgTable with: id (PK), startupId (FK), metricKey (text), value (numeric), snapshotId (FK to healthSnapshot), capturedAt (timestamptz)
+- [x] Add indexes: startup_metric_idx on (startup_id, metric_key, captured_at DESC), captured_idx on (captured_at)
 
 ### Task 26: Generate Drizzle migrations
 - [ ] Run drizzle-kit generate to produce migration SQL files in apps/api/drizzle/
