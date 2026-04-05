@@ -206,11 +206,11 @@ File: `apps/api/src/db/schema/startup-health.ts` (append to existing)
 
 ### Task 28: Create event log emitter
 File: `apps/api/src/lib/events/emitter.ts` (NEW)
-- [ ] Create emit() async function that inserts into event_log table
-- [ ] Parameters: { workspaceId, startupId?, eventType, actorType, actorId?, payload }
-- [ ] Use Drizzle insert with the eventLog table schema
-- [ ] Export the emit function
-- [ ] Keep it simple — no batching, no queuing, direct insert
+- [x] Create emit() async function that inserts into event_log table
+- [x] Parameters: { workspaceId, startupId?, eventType, actorType, actorId?, payload }
+- [x] Use Drizzle insert with the eventLog table schema
+- [x] Export the emit function
+- [x] Keep it simple — no batching, no queuing, direct insert
 
 ### Task 29: Add new queue definitions
 File: `apps/worker/src/queues.ts`
