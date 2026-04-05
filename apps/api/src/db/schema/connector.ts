@@ -44,11 +44,11 @@ export const connector = pgTable(
     index("connector_status_idx").on(table.status),
     check(
       "connector_provider_check",
-      sql`${table.provider} IN ('posthog', 'stripe', 'postgres')`
+      sql`${table.provider} IN ('posthog', 'stripe', 'postgres', 'yookassa', 'sentry')`
     ),
     check(
       "connector_status_check",
-      sql`${table.status} IN ('pending', 'connected', 'error', 'disconnected')`
+      sql`${table.status} IN ('pending', 'connected', 'error', 'disconnected', 'stale')`
     ),
   ]
 );

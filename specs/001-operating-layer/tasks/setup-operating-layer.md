@@ -126,9 +126,9 @@ File: `apps/api/src/db/schema/startup.ts`
 
 ### Task 14: Modify connector schema
 File: `apps/api/src/db/schema/connector.ts`
-- [ ] Expand provider check constraint to include 'yookassa' and 'sentry'
-- [ ] Add 'stale' to status enum check constraint
-- [ ] Update the `sql\`CHECK(...)\`` to include new values
+- [x] Expand provider check constraint to include 'yookassa' and 'sentry'
+- [x] Add 'stale' to status enum check constraint
+- [x] Update the `sql\`CHECK(...)\`` to include new values
 
 ### Task 15: Modify health_snapshot schema
 File: `apps/api/src/db/schema/startup-health.ts`
