@@ -34,11 +34,11 @@ This plan covers Phase 1 (Setup) and Phase 2 (Foundational) — all shared infra
 
 ### Task 2: Create universal metric keys and types
 File: `packages/shared/src/universal-metrics.ts`
-- [ ] Define UNIVERSAL_METRIC_KEYS as const array: `['mrr', 'active_users', 'churn_rate', 'error_rate', 'growth_rate', 'arpu']`
-- [ ] Create UniversalMetrics interface with all 6 keys as optional nullable numbers
-- [ ] Create METRIC_LABELS map: `{ mrr: 'MRR', active_users: 'Active Users', churn_rate: 'Churn Rate', error_rate: 'Error Rate', growth_rate: 'Growth Rate', arpu: 'ARPU' }`
-- [ ] Create METRIC_UNITS map: `{ mrr: 'currency', active_users: 'count', churn_rate: 'percent', error_rate: 'percent', growth_rate: 'percent', arpu: 'currency' }`
-- [ ] Export all types and constants
+- [x] Define UNIVERSAL_METRIC_KEYS as const array: `['mrr', 'active_users', 'churn_rate', 'error_rate', 'growth_rate', 'arpu']`
+- [x] Create UniversalMetrics interface with all 6 keys as optional nullable numbers
+- [x] Create METRIC_LABELS map: `{ mrr: 'MRR', active_users: 'Active Users', churn_rate: 'Churn Rate', error_rate: 'Error Rate', growth_rate: 'Growth Rate', arpu: 'ARPU' }`
+- [x] Create METRIC_UNITS map: `{ mrr: 'currency', active_users: 'count', churn_rate: 'percent', error_rate: 'percent', growth_rate: 'percent', arpu: 'currency' }`
+- [x] Export all types and constants
 
 ### Task 3: Create AlertRule Zod schema
 File: `packages/shared/src/alert-rule.ts`
