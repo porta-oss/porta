@@ -84,11 +84,11 @@ File: `packages/shared/src/webhook.ts`
 
 ### Task 8: Create ApiKey schemas
 File: `packages/shared/src/api-key.ts`
-- [ ] Define API_KEY_SCOPES as const: `['read', 'write']`
-- [ ] Create ApiKeyScope type
-- [ ] Create ApiKeySummary interface (id, workspaceId, name, keyPrefix, scope, lastUsedAt?, revokedAt?, createdAt) — never includes key_hash
-- [ ] Create ApiKeyCreateInput Zod schema (name: non-empty max 100, scope: enum)
-- [ ] Export all
+- [x] Define API_KEY_SCOPES as const: `['read', 'write']`
+- [x] Create ApiKeyScope type
+- [x] Create ApiKeySummary interface (id, workspaceId, name, keyPrefix, scope, lastUsedAt?, revokedAt?, createdAt) — never includes key_hash
+- [x] Create ApiKeyCreateInput Zod schema (name: non-empty max 100, scope: enum)
+- [x] Export all
 
 ### Task 9: Update connector types
 File: `packages/shared/src/connectors.ts`
