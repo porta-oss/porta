@@ -70,10 +70,10 @@ File: `packages/shared/src/mcp.ts`
 
 ### Task 6: Create Telegram config schemas
 File: `packages/shared/src/telegram.ts`
-- [ ] Create TelegramConfigSummary interface (id, workspaceId, botUsername?, chatId?, digestTime, digestTimezone, isActive, lastDigestAt?)
-- [ ] Create TelegramSetupInput Zod schema (botToken: string matching `/^\d+:[A-Za-z0-9_-]{35}$/`, digestTime: HH:MM, digestTimezone: IANA string)
-- [ ] Create digest payload schemas (per-startup summary shape)
-- [ ] Export all
+- [x] Create TelegramConfigSummary interface (id, workspaceId, botUsername?, chatId?, digestTime, digestTimezone, isActive, lastDigestAt?)
+- [x] Create TelegramSetupInput Zod schema (botToken: string matching `/^\d+:[A-Za-z0-9_-]{35}$/`, digestTime: HH:MM, digestTimezone: IANA string)
+- [x] Create digest payload schemas (per-startup summary shape)
+- [x] Export all
 
 ### Task 7: Create Webhook schemas
 File: `packages/shared/src/webhook.ts`
