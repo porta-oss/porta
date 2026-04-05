@@ -200,9 +200,9 @@ File: `apps/api/src/db/schema/startup-health.ts` (append to existing)
 - [x] Review generated SQL for correctness
 
 ### Task 27: Run database migrations
-- [ ] Ensure Docker services are up (pnpm services:up)
-- [ ] Run `bun run --cwd apps/api src/db/migrate.ts`
-- [ ] Verify all migrations applied successfully
+- [x] Ensure Docker services are up (pnpm services:up)
+- [x] Run `bun run --cwd apps/api src/db/migrate.ts`
+- [x] Verify all migrations applied successfully
 
 ### Task 28: Create event log emitter
 File: `apps/api/src/lib/events/emitter.ts` (NEW)
