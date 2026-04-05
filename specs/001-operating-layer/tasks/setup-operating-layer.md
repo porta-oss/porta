@@ -186,8 +186,8 @@ File: `apps/api/src/db/schema/webhook-config.ts` (NEW)
 
 ### Task 24: Create api_key table schema
 File: `apps/api/src/db/schema/api-key.ts` (NEW)
-- [ ] Create apiKey pgTable with: id (PK), workspaceId (FK), name, keyHash (unique), keyPrefix, scope (CHECK IN 'read','write'), lastUsedAt (nullable), revokedAt (nullable), createdAt
-- [ ] Add indexes: hash_uidx unique on (key_hash), workspace_idx on (workspace_id), prefix_idx on (key_prefix)
+- [x] Create apiKey pgTable with: id (PK), workspaceId (FK), name, keyHash (unique), keyPrefix, scope (CHECK IN 'read','write'), lastUsedAt (nullable), revokedAt (nullable), createdAt
+- [x] Add indexes: hash_uidx unique on (key_hash), workspace_idx on (workspace_id), prefix_idx on (key_prefix)
 
 ### Task 25: Create health_snapshot_history table schema
 File: `apps/api/src/db/schema/startup-health.ts` (append to existing)
