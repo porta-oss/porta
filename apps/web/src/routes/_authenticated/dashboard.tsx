@@ -1,6 +1,6 @@
 import type { ConnectorProvider, ConnectorSummary } from "@shared/connectors";
 import type { CustomMetricSummary } from "@shared/custom-metric";
-import { isCustomMetricStatus } from "@shared/custom-metric";
+import { isCustomMetricCategory } from "@shared/custom-metric";
 import type { InternalTaskPayload } from "@shared/internal-task";
 import { isTaskSyncStatus } from "@shared/internal-task";
 import type {
@@ -239,12 +239,11 @@ function isCustomMetricSummary(value: unknown): value is CustomMetricSummary {
     typeof value.id === "string" &&
     typeof value.startupId === "string" &&
     typeof value.connectorId === "string" &&
+    typeof value.key === "string" &&
+    typeof value.category === "string" &&
+    isCustomMetricCategory(value.category) &&
     typeof value.label === "string" &&
     typeof value.unit === "string" &&
-    typeof value.schema === "string" &&
-    typeof value.view === "string" &&
-    typeof value.status === "string" &&
-    isCustomMetricStatus(value.status) &&
     typeof value.createdAt === "string" &&
     typeof value.updatedAt === "string"
   );
@@ -738,8 +737,6 @@ function createDefaultDashboardApi(): DashboardApi {
           provider: "postgres",
           config: {
             connectionUri: setup.connectionUri,
-            schema: setup.schema,
-            view: setup.view,
             label: setup.label,
             unit: setup.unit,
           },

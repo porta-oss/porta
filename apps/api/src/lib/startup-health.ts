@@ -8,11 +8,8 @@
 // blocked-state reasons instead of blank metrics.
 
 import type { ConnectorProvider, ConnectorStatus } from "@shared/connectors";
-import type {
-  CustomMetricStatus,
-  CustomMetricSummary,
-} from "@shared/custom-metric";
-import { isCustomMetricStatus } from "@shared/custom-metric";
+import type { CustomMetricSummary } from "@shared/custom-metric";
+import { isCustomMetricCategory } from "@shared/custom-metric";
 import type {
   FunnelStageRow,
   HealthSnapshotSummary,
@@ -134,18 +131,18 @@ async function loadConnectorFreshness(
 
 interface CustomMetricDbRow {
   captured_at: string | Date | null;
+  category: string | null;
   connector_id: string;
   created_at: string | Date;
+  delta: string | null;
   id: string;
+  key: string | null;
   label: string;
   metric_value: string | null;
   previous_value: string | null;
-  schema: string;
   startup_id: string;
-  status: string;
   unit: string;
   updated_at: string | Date;
-  view: string;
 }
 
 async function loadCustomMetric(
@@ -153,8 +150,8 @@ async function loadCustomMetric(
   startupId: string
 ): Promise<CustomMetricDbRow | null> {
   const result = await db.execute(
-    sql`SELECT id, startup_id, connector_id, label, unit, schema, view, status,
-               metric_value, previous_value, captured_at, created_at, updated_at
+    sql`SELECT id, startup_id, connector_id, key, category, label, unit,
+               metric_value, previous_value, delta, captured_at, created_at, updated_at
         FROM custom_metric
         WHERE startup_id = ${startupId}
         LIMIT 1`
@@ -164,23 +161,30 @@ async function loadCustomMetric(
 }
 
 function serializeCustomMetricRow(row: CustomMetricDbRow): CustomMetricSummary {
+  const metricValue =
+    row.metric_value === null ? null : Number.parseFloat(row.metric_value);
+  const previousValue =
+    row.previous_value === null ? null : Number.parseFloat(row.previous_value);
+  let delta: number | null = null;
+  if (row.delta != null) {
+    delta = Number.parseFloat(row.delta);
+  } else if (metricValue != null && previousValue != null) {
+    delta = metricValue - previousValue;
+  }
+
   return {
     id: row.id,
     startupId: row.startup_id,
     connectorId: row.connector_id,
+    key: row.key ?? "",
+    category: (isCustomMetricCategory(row.category ?? "")
+      ? row.category
+      : "custom") as CustomMetricSummary["category"],
     label: row.label,
     unit: row.unit,
-    schema: row.schema,
-    view: row.view,
-    status: (isCustomMetricStatus(row.status)
-      ? row.status
-      : "pending") as CustomMetricStatus,
-    metricValue:
-      row.metric_value === null ? null : Number.parseFloat(row.metric_value),
-    previousValue:
-      row.previous_value === null
-        ? null
-        : Number.parseFloat(row.previous_value),
+    metricValue,
+    previousValue,
+    delta,
     capturedAt: toIsoString(row.captured_at),
     createdAt: toIsoString(row.created_at) ?? new Date().toISOString(),
     updatedAt: toIsoString(row.updated_at) ?? new Date().toISOString(),

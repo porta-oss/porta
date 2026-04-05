@@ -46,37 +46,7 @@ export function CustomMetricPanel({
     return null;
   }
 
-  if (customMetric.status === "error") {
-    return (
-      <Card
-        aria-label="custom metric"
-        className="border-danger-border bg-danger-bg"
-        data-testid="custom-metric-panel"
-      >
-        <CardContent className="grid gap-2 pt-5">
-          <div className="flex items-center justify-between">
-            <p className="font-semibold">{customMetric.label}</p>
-            <Badge variant="destructive">Sync failed</Badge>
-          </div>
-          {customMetric.metricValue === null ? (
-            <p className="text-danger text-sm">
-              No data has been synced yet. Check the Postgres connector
-              configuration.
-            </p>
-          ) : (
-            <div data-testid="custom-metric-value">
-              <p className="text-sm text-warning">
-                Last known:{" "}
-                {formatMetricValue(customMetric.metricValue, customMetric.unit)}
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (customMetric.status === "pending") {
+  if (customMetric.metricValue === null) {
     return (
       <Card
         aria-label="custom metric"
@@ -86,7 +56,7 @@ export function CustomMetricPanel({
         <CardContent className="grid gap-2 pt-5">
           <p className="font-semibold">{customMetric.label}</p>
           <p className="text-sm text-warning" role="status">
-            Waiting for the first sync to complete\u2026
+            Waiting for the first sync to complete{"\u2026"}
           </p>
         </CardContent>
       </Card>

@@ -210,9 +210,7 @@ describe("health route — customMetric payload", () => {
     expect(body.customMetric).not.toBeNull();
     expect(body.customMetric?.label).toBe("Daily Revenue");
     expect(body.customMetric?.unit).toBe("$");
-    expect(body.customMetric?.schema).toBe("public");
-    expect(body.customMetric?.view).toBe("daily_revenue");
-    expect(body.customMetric?.status).toBe("pending");
+    expect(body.customMetric?.category).toBe("custom");
     expect(body.customMetric?.metricValue).toBeNull();
     expect(body.customMetric?.startupId).toBe(startupId);
   });
@@ -244,7 +242,6 @@ describe("health route — customMetric payload", () => {
       customMetric: CustomMetricSummary | null;
     };
     expect(body.customMetric).not.toBeNull();
-    expect(body.customMetric?.status).toBe("active");
     expect(body.customMetric?.metricValue).toBe(42_500.5);
     expect(body.customMetric?.previousValue).toBe(41_200.0);
     expect(body.customMetric?.capturedAt).not.toBeNull();
@@ -275,7 +272,6 @@ describe("health route — customMetric payload", () => {
       customMetric: CustomMetricSummary | null;
     };
     expect(body.customMetric).not.toBeNull();
-    expect(body.customMetric?.status).toBe("error");
     // Last-good values are still visible
     expect(body.customMetric?.metricValue).toBe(42_500.5);
     expect(body.customMetric?.previousValue).toBe(41_200.0);
@@ -339,9 +335,8 @@ describe("health route — customMetric payload", () => {
       connectors: Array<{ provider: string; status: string }>;
     };
 
-    // Custom metric is in error state
+    // Custom metric is present
     expect(body.customMetric).not.toBeNull();
-    expect(body.customMetric?.status).toBe("error");
 
     // The health snapshot itself is still present (from the previous test)
     expect(body.health).not.toBeNull();

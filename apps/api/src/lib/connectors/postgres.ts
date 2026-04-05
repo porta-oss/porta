@@ -1,15 +1,36 @@
 // Postgres connection-URI validation adapter.
-// Validates the URI format, scheme, and reachability before persisting credentials.
+// Validates the URI format and scheme before persisting credentials.
 // The connection string itself is never logged or included in error messages.
 
 import type { ProviderValidationResult } from "@shared/connectors";
-import type { PostgresSetupInput } from "@shared/custom-metric";
-import { postgresSetupSchema } from "@shared/custom-metric";
 
-export type { PostgresSetupInput };
+// ---------------------------------------------------------------------------
+// Postgres config — connectionUri only
+// ---------------------------------------------------------------------------
+
+export interface PostgresSetupInput {
+  connectionUri: string;
+}
 
 export interface PostgresValidator {
   validate(config: PostgresSetupInput): Promise<ProviderValidationResult>;
+}
+
+function validatePostgresSetup(config: PostgresSetupInput): string | null {
+  if (!config.connectionUri || config.connectionUri.length === 0) {
+    return "Connection URI is required.";
+  }
+
+  try {
+    const url = new URL(config.connectionUri);
+    if (url.protocol !== "postgres:" && url.protocol !== "postgresql:") {
+      return "Connection URI must use the postgres:// or postgresql:// scheme.";
+    }
+  } catch {
+    return "Connection URI must use the postgres:// or postgresql:// scheme.";
+  }
+
+  return null;
 }
 
 /**
@@ -22,14 +43,9 @@ export function createPostgresValidator(): PostgresValidator {
     async validate(
       config: PostgresSetupInput
     ): Promise<ProviderValidationResult> {
-      // Validate with the shared Zod schema first
-      const parsed = postgresSetupSchema.safeParse(config);
-      if (!parsed.success) {
-        const firstIssue = parsed.error.issues[0];
-        return {
-          valid: false,
-          error: firstIssue?.message ?? "Postgres setup validation failed.",
-        };
+      const error = validatePostgresSetup(config);
+      if (error) {
+        return { valid: false, error };
       }
 
       return { valid: true };
@@ -52,14 +68,9 @@ export function createStubPostgresValidator(
     ): Promise<ProviderValidationResult> {
       calls.push(config);
 
-      // Still validate input shape even in stub mode
-      const parsed = postgresSetupSchema.safeParse(config);
-      if (!parsed.success) {
-        const firstIssue = parsed.error.issues[0];
-        return {
-          valid: false,
-          error: firstIssue?.message ?? "Postgres setup validation failed.",
-        };
+      const error = validatePostgresSetup(config);
+      if (error) {
+        return { valid: false, error };
       }
 
       return result;

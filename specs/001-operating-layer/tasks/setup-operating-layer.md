@@ -108,9 +108,9 @@ File: `packages/shared/src/startup-health.ts`
 
 ### Task 11: Update custom-metric types
 File: `packages/shared/src/custom-metric.ts`
-- [ ] Add CustomMetricCategory enum: `['engagement', 'revenue', 'health', 'growth', 'custom']`
-- [ ] Update CustomMetricSummary: add key, category, delta fields. Remove schema, view, status fields
-- [ ] Remove postgresSetupSchema if present (Postgres config is now connectionUri only)
+- [x] Add CustomMetricCategory enum: `['engagement', 'revenue', 'health', 'growth', 'custom']`
+- [x] Update CustomMetricSummary: add key, category, delta fields. Remove schema, view, status fields
+- [x] Remove postgresSetupSchema if present (Postgres config is now connectionUri only)
 
 ### Task 12: Export all new modules from shared index
 File: `packages/shared/src/index.ts`
