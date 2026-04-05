@@ -170,9 +170,9 @@ File: `apps/api/src/db/schema/alert-rule.ts` (same file)
 
 ### Task 21: Create event_log table schema
 File: `apps/api/src/db/schema/event-log.ts` (NEW)
-- [ ] Create eventLog pgTable with: id (PK), workspaceId (FK to workspace), startupId (FK to startup, nullable), eventType (text, NOT NULL), actorType (text, NOT NULL, CHECK IN actor types), actorId (text, nullable), payload (jsonb, NOT NULL), createdAt
-- [ ] Add indexes: workspace_created_idx on (workspace_id, created_at DESC), startup_created_idx on (startup_id, created_at DESC), type_idx on (event_type), created_idx on (created_at)
-- [ ] Create eventLogRelations: many-to-one with workspace (SET NULL on startup delete to preserve audit trail)
+- [x] Create eventLog pgTable with: id (PK), workspaceId (FK to workspace), startupId (FK to startup, nullable), eventType (text, NOT NULL), actorType (text, NOT NULL, CHECK IN actor types), actorId (text, nullable), payload (jsonb, NOT NULL), createdAt
+- [x] Add indexes: workspace_created_idx on (workspace_id, created_at DESC), startup_created_idx on (startup_id, created_at DESC), type_idx on (event_type), created_idx on (created_at)
+- [x] Create eventLogRelations: many-to-one with workspace (SET NULL on startup delete to preserve audit trail)
 
 ### Task 22: Create telegram_config table schema
 File: `apps/api/src/db/schema/telegram-config.ts` (NEW)
