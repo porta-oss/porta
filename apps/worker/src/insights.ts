@@ -8,10 +8,7 @@
 // prompt content in insight data.
 
 import { randomUUID } from "node:crypto";
-import type {
-  HealthState,
-  SupportingMetricsSnapshot,
-} from "@shared/startup-health";
+import type { HealthState } from "@shared/startup-health";
 import type {
   EvidenceItem,
   EvidencePacket,
@@ -24,6 +21,7 @@ import {
   validateEvidencePacket,
   validateInsightExplanation,
 } from "@shared/startup-insight";
+import type { UniversalMetrics } from "@shared/universal-metrics";
 
 import type {
   HealthSnapshotRepository,
@@ -351,7 +349,6 @@ export function createFounderProofExplainer(): ExplainerFn {
 /** Threshold constants for condition detection. */
 const MRR_DECLINE_THRESHOLD = 0.05; // 5% decline triggers mrr_declining
 const CHURN_SPIKE_THRESHOLD = 10; // Churn rate > 10% triggers churn_spike
-const TRIAL_CONVERSION_DECLINE_THRESHOLD = 0.1; // 10% drop triggers trial_conversion_drop
 
 export interface DetectionInput {
   /** Health state of the connector (for freshness check). */
@@ -359,7 +356,7 @@ export interface DetectionInput {
   /** Current health snapshot. */
   snapshot: HealthSnapshotRow;
   /** Parsed supporting metrics from the snapshot. */
-  supportingMetrics: SupportingMetricsSnapshot;
+  supportingMetrics: UniversalMetrics;
 }
 
 export interface DetectionResult {
@@ -384,6 +381,7 @@ export function detectCondition(input: DetectionInput): DetectionResult {
   const mrr = snapshot.northStarValue;
   const prevMrr = snapshot.northStarPreviousValue;
   if (
+    mrr !== null &&
     prevMrr !== null &&
     prevMrr > 0 &&
     mrr < prevMrr &&
@@ -399,14 +397,14 @@ export function detectCondition(input: DetectionInput): DetectionResult {
       },
     ];
     // Add supporting context if churn is elevated
-    const churn = supportingMetrics.churn_rate;
-    if (churn.value > 5) {
+    const churn = supportingMetrics.churn_rate ?? 0;
+    if (churn > 5) {
       items.push({
         metricKey: "churn_rate",
         label: "Churn Rate",
-        currentValue: churn.value,
-        previousValue: churn.previous,
-        direction: computeDirection(churn.value, churn.previous),
+        currentValue: churn,
+        previousValue: null,
+        direction: "flat",
       });
     }
     return {
@@ -421,25 +419,15 @@ export function detectCondition(input: DetectionInput): DetectionResult {
   }
 
   // Check churn spike
-  const churnRate = supportingMetrics.churn_rate;
-  if (churnRate.value > CHURN_SPIKE_THRESHOLD) {
+  const churnRate = supportingMetrics.churn_rate ?? 0;
+  if (churnRate > CHURN_SPIKE_THRESHOLD) {
     const items: EvidenceItem[] = [
       {
         metricKey: "churn_rate",
         label: "Churn Rate",
-        currentValue: churnRate.value,
-        previousValue: churnRate.previous,
-        direction: computeDirection(churnRate.value, churnRate.previous),
-      },
-      {
-        metricKey: "customer_count",
-        label: "Customer Count",
-        currentValue: supportingMetrics.customer_count.value,
-        previousValue: supportingMetrics.customer_count.previous,
-        direction: computeDirection(
-          supportingMetrics.customer_count.value,
-          supportingMetrics.customer_count.previous
-        ),
+        currentValue: churnRate,
+        previousValue: null,
+        direction: "flat",
       },
     ];
     return {
@@ -453,54 +441,14 @@ export function detectCondition(input: DetectionInput): DetectionResult {
     };
   }
 
-  // Check trial conversion drop
-  const trialConversion = supportingMetrics.trial_conversion_rate;
-  if (
-    trialConversion.previous !== null &&
-    trialConversion.previous > 0 &&
-    trialConversion.value < trialConversion.previous &&
-    (trialConversion.previous - trialConversion.value) /
-      trialConversion.previous >=
-      TRIAL_CONVERSION_DECLINE_THRESHOLD
-  ) {
-    const items: EvidenceItem[] = [
-      {
-        metricKey: "trial_conversion_rate",
-        label: "Trial Conversion Rate",
-        currentValue: trialConversion.value,
-        previousValue: trialConversion.previous,
-        direction: "down",
-      },
-      {
-        metricKey: "active_users",
-        label: "Active Users",
-        currentValue: supportingMetrics.active_users.value,
-        previousValue: supportingMetrics.active_users.previous,
-        direction: computeDirection(
-          supportingMetrics.active_users.value,
-          supportingMetrics.active_users.previous
-        ),
-      },
-    ];
-    return {
-      conditionCode: "trial_conversion_drop",
-      evidence: {
-        conditionCode: "trial_conversion_drop",
-        items,
-        snapshotComputedAt,
-        syncJobId,
-      },
-    };
-  }
-
   // No condition detected — still produce evidence with summary metrics
   const items: EvidenceItem[] = [
     {
       metricKey: "mrr",
       label: "Monthly Recurring Revenue",
-      currentValue: mrr,
+      currentValue: mrr ?? 0,
       previousValue: prevMrr,
-      direction: computeDirection(mrr, prevMrr),
+      direction: computeDirection(mrr ?? 0, prevMrr),
     },
   ];
 
@@ -554,11 +502,8 @@ async function skipInsightGeneration(
   };
 }
 
-function parseSupportingMetricsSnapshot(
-  snapshot: HealthSnapshotRow
-): SupportingMetricsSnapshot {
-  const supportingMetrics =
-    snapshot.supportingMetrics as SupportingMetricsSnapshot;
+function parseUniversalMetrics(snapshot: HealthSnapshotRow): UniversalMetrics {
+  const supportingMetrics = snapshot.supportingMetrics as UniversalMetrics;
   if (typeof supportingMetrics !== "object" || supportingMetrics === null) {
     throw new Error("Supporting metrics is not an object.");
   }
@@ -659,9 +604,9 @@ async function parseInsightSupportingMetricsOrSkip(
   startupId: string,
   snapshot: HealthSnapshotRow,
   logCtx: Record<string, unknown>
-): Promise<SupportingMetricsSnapshot | InsightGenerationResult> {
+): Promise<UniversalMetrics | InsightGenerationResult> {
   try {
-    return parseSupportingMetricsSnapshot(snapshot);
+    return parseUniversalMetrics(snapshot);
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     deps.log.error("malformed supporting metrics in snapshot", {

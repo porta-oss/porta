@@ -32,7 +32,7 @@ export const healthSnapshot = pgTable(
     northStarKey: text("north_star_key").notNull(),
     northStarValue: integer("north_star_value").notNull(),
     northStarPreviousValue: integer("north_star_previous_value"),
-    /** JSONB: SupportingMetricsSnapshot from @shared/startup-health */
+    /** JSONB: UniversalMetrics from @shared/universal-metrics */
     supportingMetrics: jsonb("supporting_metrics").notNull(),
     syncJobId: text("sync_job_id"),
     computedAt: timestamp("computed_at").notNull(),

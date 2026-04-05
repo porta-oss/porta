@@ -104,18 +104,19 @@ function createHealthyPayload(): StartupHealthPayload {
       northStarValue: 12_500,
       northStarPreviousValue: 11_000,
       supportingMetrics: {
-        active_users: { value: 340, previous: 300 },
-        customer_count: { value: 42, previous: 38 },
-        churn_rate: { value: 2.1, previous: 2.5 },
-        arpu: { value: 297, previous: 289 },
-        trial_conversion_rate: { value: 18.5, previous: 16.2 },
+        active_users: 340,
+        churn_rate: 2.1,
+        arpu: 297,
+        mrr: 12_500,
+        error_rate: 0.5,
+        growth_rate: 13.6,
       },
       funnel: [
-        { stage: "visitor", label: "Visitors", value: 8200, position: 0 },
-        { stage: "signup", label: "Sign-ups", value: 620, position: 1 },
-        { stage: "activation", label: "Activated", value: 210, position: 2 },
+        { key: "visitor", label: "Visitors", value: 8200, position: 0 },
+        { key: "signup", label: "Sign-ups", value: 620, position: 1 },
+        { key: "activation", label: "Activated", value: 210, position: 2 },
         {
-          stage: "paying_customer",
+          key: "paying_customer",
           label: "Paying Customers",
           value: 42,
           position: 3,
@@ -259,7 +260,7 @@ describe("startup health page", () => {
     expect(delta.textContent).toContain("+13.6%");
   });
 
-  test("renders supporting metrics grid with all five metrics", async () => {
+  test("renders supporting metrics grid with all six metrics", async () => {
     const api = createApi();
     const view = render(
       <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
@@ -273,14 +274,13 @@ describe("startup health page", () => {
     expect(view.getByTestId("metric-active_users").textContent).toContain(
       "340"
     );
-    expect(view.getByTestId("metric-customer_count").textContent).toContain(
-      "42"
-    );
     expect(view.getByTestId("metric-churn_rate").textContent).toContain("2.1%");
     expect(view.getByTestId("metric-arpu").textContent).toContain("297");
-    expect(
-      view.getByTestId("metric-trial_conversion_rate").textContent
-    ).toContain("18.5%");
+    expect(view.getByTestId("metric-mrr").textContent).toContain("12,500");
+    expect(view.getByTestId("metric-error_rate").textContent).toContain("0.5%");
+    expect(view.getByTestId("metric-growth_rate").textContent).toContain(
+      "13.6%"
+    );
   });
 
   test("renders the acquisition funnel with four stages", async () => {

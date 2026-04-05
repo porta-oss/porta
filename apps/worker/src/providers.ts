@@ -9,15 +9,19 @@ import type {
   ConnectorProvider,
   ProviderValidationResult,
 } from "@shared/connectors";
-import type {
-  FunnelStageRow,
-  MetricValue,
-  SupportingMetricsSnapshot,
-} from "@shared/startup-health";
-import {
-  emptyFunnelStages,
-  emptySupportingMetrics,
-} from "@shared/startup-health";
+import type { FunnelStageRow } from "@shared/startup-health";
+import type { UniversalMetrics } from "@shared/universal-metrics";
+
+// ---------------------------------------------------------------------------
+// Default funnel stage definitions (free-form, no enum)
+// ---------------------------------------------------------------------------
+
+const DEFAULT_FUNNEL_STAGES: FunnelStageRow[] = [
+  { key: "visitor", label: "Visitors", value: 0, position: 0 },
+  { key: "signup", label: "Sign-ups", value: 0, position: 1 },
+  { key: "activation", label: "Activated", value: 0, position: 2 },
+  { key: "paying_customer", label: "Paying Customers", value: 0, position: 3 },
+];
 
 // ---------------------------------------------------------------------------
 // Sync result — extends validation with health metric data
@@ -30,7 +34,7 @@ export interface ProviderSyncResult extends ProviderValidationResult {
   /** MRR value extracted from the provider. Null on failure. */
   mrr: number | null;
   /** Supporting metrics snapshot. Null on failure. */
-  supportingMetrics: Partial<SupportingMetricsSnapshot> | null;
+  supportingMetrics: Partial<UniversalMetrics> | null;
 }
 
 /** Result from a Postgres custom metric sync. */
@@ -367,9 +371,8 @@ function buildStripeSyncResult(args: {
     valid: true,
     mrr: args.mrr,
     supportingMetrics: {
-      customer_count: { value: args.customerCount, previous: null },
-      churn_rate: { value: Math.round(churnRate * 100) / 100, previous: null },
-      arpu: { value: Math.round(arpu * 100) / 100, previous: null },
+      churn_rate: Math.round(churnRate * 100) / 100,
+      arpu: Math.round(arpu * 100) / 100,
     },
     funnelStages: {
       paying_customer: args.customerCount,
@@ -538,37 +541,23 @@ async function queryPostgresCustomMetric(
 // ---------------------------------------------------------------------------
 
 /**
- * Merge partial provider metrics into a full SupportingMetricsSnapshot,
- * filling missing keys with zeros. Carries forward previous values
- * from an existing snapshot when available.
+ * Merge partial provider metrics into a full UniversalMetrics object,
+ * combining data from multiple providers.
  */
 export function mergeMetrics(
-  stripe: Partial<SupportingMetricsSnapshot> | null,
-  posthog: Partial<SupportingMetricsSnapshot> | null,
-  previous: SupportingMetricsSnapshot | null
-): SupportingMetricsSnapshot {
-  const base = emptySupportingMetrics();
+  stripe: Partial<UniversalMetrics> | null,
+  posthog: Partial<UniversalMetrics> | null
+): UniversalMetrics {
+  const base: UniversalMetrics = {};
   const sources = [stripe, posthog];
 
   for (const src of sources) {
     if (!src) {
       continue;
     }
-    for (const [key, mv] of Object.entries(src)) {
-      const k = key as keyof SupportingMetricsSnapshot;
-      if (k in base) {
-        base[k] = mv as MetricValue;
-      }
-    }
-  }
-
-  // Carry forward previous values for delta computation
-  if (previous) {
-    for (const key of Object.keys(base) as Array<
-      keyof SupportingMetricsSnapshot
-    >) {
-      if (base[key].previous === null && previous[key]) {
-        base[key] = { ...base[key], previous: previous[key].value };
+    for (const [key, value] of Object.entries(src)) {
+      if (value !== undefined) {
+        (base as Record<string, unknown>)[key] = value;
       }
     }
   }
@@ -582,13 +571,13 @@ export function mergeMetrics(
 export function mergeFunnel(
   posthogFunnel: Partial<Record<string, number>> | null
 ): FunnelStageRow[] {
-  const base = emptyFunnelStages();
+  const base = DEFAULT_FUNNEL_STAGES.map((s) => ({ ...s }));
   if (!posthogFunnel) {
     return base;
   }
 
   return base.map((row) => {
-    const override = posthogFunnel[row.stage];
+    const override = posthogFunnel[row.key];
     if (override !== undefined && Number.isFinite(override)) {
       return { ...row, value: override };
     }
@@ -676,7 +665,7 @@ async function syncPostHog(config: {
     valid: true,
     mrr: null, // MRR comes from Stripe, not PostHog
     supportingMetrics: {
-      active_users: { value: activeUsers, previous: null },
+      active_users: activeUsers,
     },
     funnelStages: {
       visitor: visitors,
@@ -910,7 +899,7 @@ export function createStubSyncRouter(
   result: ProviderSyncResult = {
     valid: true,
     mrr: 5000,
-    supportingMetrics: emptySupportingMetrics(),
+    supportingMetrics: {},
     funnelStages: null,
   }
 ): ProviderSyncFn & {
@@ -959,9 +948,8 @@ export const FOUNDER_PROOF_STRIPE_CONFIG = {
  */
 export function createFounderProofSyncRouter(): ProviderSyncFn {
   return async (provider, configJson): Promise<ProviderSyncResult> => {
-    let _config: unknown;
     try {
-      _config = JSON.parse(configJson);
+      JSON.parse(configJson);
     } catch {
       return {
         valid: false,
@@ -978,7 +966,7 @@ export function createFounderProofSyncRouter(): ProviderSyncFn {
           valid: true,
           mrr: null,
           supportingMetrics: {
-            active_users: { value: 1420, previous: 1380 },
+            active_users: 1420,
           },
           funnelStages: {
             visitor: 8500,
@@ -992,9 +980,8 @@ export function createFounderProofSyncRouter(): ProviderSyncFn {
           valid: true,
           mrr: 12_400,
           supportingMetrics: {
-            customer_count: { value: 48, previous: 45 },
-            churn_rate: { value: 3.2, previous: 2.8 },
-            arpu: { value: 258.33, previous: 244.44 },
+            churn_rate: 3.2,
+            arpu: 258.33,
           },
           funnelStages: {
             paying_customer: 48,

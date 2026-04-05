@@ -14,7 +14,7 @@ import type {
   SyncJobPayload,
 } from "@shared/connectors";
 import { decryptConnectorConfig, parseEncryptionKey } from "@shared/crypto";
-import type { SupportingMetricsSnapshot } from "@shared/startup-health";
+import type { UniversalMetrics } from "@shared/universal-metrics";
 import type { Job } from "bullmq";
 import type { ExplainerFn } from "../insights";
 import { generateInsight } from "../insights";
@@ -122,10 +122,9 @@ async function recomputeSnapshot(
   try {
     // Read the previous snapshot for delta computation
     const previous = await deps.healthRepo.findSnapshot(startupId);
-    const previousMetrics: SupportingMetricsSnapshot | null =
-      previous?.supportingMetrics
-        ? (previous.supportingMetrics as SupportingMetricsSnapshot)
-        : null;
+    const previousMetrics: UniversalMetrics | null = previous?.supportingMetrics
+      ? (previous.supportingMetrics as UniversalMetrics)
+      : null;
 
     const previousMrr = previous?.northStarValue ?? null;
 
@@ -134,13 +133,12 @@ async function recomputeSnapshot(
     const stripeMetrics = isStripeResult ? syncResult.supportingMetrics : null;
     const posthogMetrics = isStripeResult ? null : syncResult.supportingMetrics;
 
-    // If we have a previous snapshot and this sync only covers one provider,
-    // carry forward the other provider's metrics from the previous snapshot
-    const mergedMetrics = mergeMetrics(
-      stripeMetrics,
-      posthogMetrics,
-      previousMetrics
-    );
+    // Merge metrics from both providers, carrying forward previous values
+    const freshMetrics = mergeMetrics(stripeMetrics, posthogMetrics);
+    const mergedMetrics: UniversalMetrics = {
+      ...previousMetrics,
+      ...freshMetrics,
+    };
     const mergedFunnel = mergeFunnel(syncResult.funnelStages);
 
     // MRR: use this sync's value if from Stripe, else carry forward
@@ -161,12 +159,12 @@ async function recomputeSnapshot(
       supportingMetrics: mergedMetrics,
       syncJobId,
       computedAt,
-      funnel: mergedFunnel.map((stage) => ({
+      funnel: mergedFunnel.map((row) => ({
         id: randomUUID(),
-        stage: stage.stage,
-        label: stage.label,
-        value: stage.value,
-        position: stage.position,
+        key: row.key,
+        label: row.label,
+        value: row.value,
+        position: row.position,
       })),
     };
 

@@ -7,13 +7,8 @@ import type {
   FunnelStageRow,
   HealthSnapshotSummary,
   HealthState,
-  SupportingMetricsSnapshot,
 } from "@shared/startup-health";
-import {
-  isHealthState,
-  validateFunnelStages,
-  validateSupportingMetrics,
-} from "@shared/startup-health";
+import { isHealthState } from "@shared/startup-health";
 import type { LatestInsightPayload } from "@shared/startup-insight";
 import {
   type EvidencePacket,
@@ -24,6 +19,7 @@ import {
   validateInsightExplanation,
 } from "@shared/startup-insight";
 import type { StartupRecord, WorkspaceSummary } from "@shared/types";
+import type { UniversalMetrics } from "@shared/universal-metrics";
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -356,16 +352,6 @@ function parseHealthSnapshot(
     return null;
   }
 
-  const metricsError = validateSupportingMetrics(payload.supportingMetrics);
-  const funnelError = validateFunnelStages(payload.funnel);
-
-  if (metricsError || funnelError) {
-    throw new DashboardApiError(
-      "MALFORMED_HEALTH_SNAPSHOT",
-      "Health data is incomplete. Please try again."
-    );
-  }
-
   return {
     startupId:
       typeof payload.startupId === "string" ? payload.startupId : startupId,
@@ -376,15 +362,24 @@ function parseHealthSnapshot(
         : status,
     blockedReason:
       typeof payload.blockedReason === "string" ? payload.blockedReason : null,
-    northStarKey: "mrr",
+    northStarKey:
+      typeof payload.northStarKey === "string" ? payload.northStarKey : "mrr",
     northStarValue:
-      typeof payload.northStarValue === "number" ? payload.northStarValue : 0,
+      typeof payload.northStarValue === "number"
+        ? payload.northStarValue
+        : null,
     northStarPreviousValue:
       typeof payload.northStarPreviousValue === "number"
         ? payload.northStarPreviousValue
         : null,
-    supportingMetrics: payload.supportingMetrics as SupportingMetricsSnapshot,
-    funnel: payload.funnel as FunnelStageRow[],
+    supportingMetrics:
+      typeof payload.supportingMetrics === "object" &&
+      payload.supportingMetrics !== null
+        ? (payload.supportingMetrics as UniversalMetrics)
+        : null,
+    funnel: Array.isArray(payload.funnel)
+      ? (payload.funnel as FunnelStageRow[])
+      : [],
     computedAt:
       typeof payload.computedAt === "string"
         ? payload.computedAt
@@ -1106,7 +1101,7 @@ function DashboardHealthSection({
             <>
               <DisclosureSection title="Supporting metrics">
                 <StartupMetricsGrid
-                  metrics={healthPayload.health.supportingMetrics}
+                  metrics={healthPayload.health.supportingMetrics ?? {}}
                   muted={isHealthMuted}
                 />
               </DisclosureSection>

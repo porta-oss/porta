@@ -3,18 +3,14 @@
 // Uses Drizzle's sql tagged template for parameterized queries
 // to avoid importing schema tables from the API package.
 
-import type {
-  FunnelStageRow,
-  HealthState,
-  NorthStarMetric,
-  SupportingMetricsSnapshot,
-} from "@shared/startup-health";
+import type { FunnelStageRow, HealthState } from "@shared/startup-health";
 import type {
   EvidencePacket,
   InsightConditionCode,
   InsightExplanation,
   InsightGenerationStatus,
 } from "@shared/startup-insight";
+import type { UniversalMetrics } from "@shared/universal-metrics";
 import { sql } from "drizzle-orm";
 import type { ConnectorRow, SyncRepository } from "./processors/sync";
 
@@ -43,18 +39,18 @@ export interface ReplaceSnapshotInput {
   computedAt: Date;
   funnel: Array<{
     id: string;
-    stage: string;
+    key: string;
     label: string;
     value: number;
     position: number;
   }>;
   healthState: HealthState;
-  northStarKey: NorthStarMetric;
+  northStarKey: string;
   northStarPreviousValue: number | null;
   northStarValue: number;
   snapshotId: string;
   startupId: string;
-  supportingMetrics: SupportingMetricsSnapshot;
+  supportingMetrics: UniversalMetrics;
   syncJobId: string | null;
 }
 
@@ -197,7 +193,7 @@ export function createHealthSnapshotRepository(
       for (const stage of input.funnel) {
         await db.execute(
           sql`INSERT INTO health_funnel_stage (id, startup_id, stage, label, value, position, snapshot_id)
-              VALUES (${stage.id}, ${input.startupId}, ${stage.stage}, ${stage.label}, ${stage.value}, ${stage.position}, ${input.snapshotId})`
+              VALUES (${stage.id}, ${input.startupId}, ${stage.key}, ${stage.label}, ${stage.value}, ${stage.position}, ${input.snapshotId})`
         );
       }
     },
@@ -258,7 +254,7 @@ export function createHealthSnapshotRepository(
           position: number;
         }>
       ).map((row) => ({
-        stage: row.stage as FunnelStageRow["stage"],
+        key: row.stage,
         label: row.label,
         value: row.value,
         position: row.position,

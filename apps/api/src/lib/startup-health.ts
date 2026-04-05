@@ -17,15 +17,9 @@ import type {
   FunnelStageRow,
   HealthSnapshotSummary,
   HealthState,
-  SupportingMetricsSnapshot,
 } from "@shared/startup-health";
-import {
-  emptyFunnelStages,
-  FUNNEL_STAGE_LABELS,
-  isFunnelStage,
-  isHealthState,
-  validateSupportingMetrics,
-} from "@shared/startup-health";
+import { isHealthState } from "@shared/startup-health";
+import type { UniversalMetrics } from "@shared/universal-metrics";
 import { sql } from "drizzle-orm";
 
 // ---------------------------------------------------------------------------
@@ -221,19 +215,12 @@ function requireIsoString(
 }
 
 function serializeFunnelRows(rows: FunnelRow[]): FunnelStageRow[] {
-  const validated: FunnelStageRow[] = [];
-  for (const row of rows) {
-    if (!isFunnelStage(row.stage)) {
-      continue;
-    }
-    validated.push({
-      stage: row.stage,
-      label: row.label || FUNNEL_STAGE_LABELS[row.stage],
-      value: row.value,
-      position: row.position,
-    });
-  }
-  return validated;
+  return rows.map((row) => ({
+    key: row.stage,
+    label: row.label,
+    value: row.value,
+    position: row.position,
+  }));
 }
 
 function serializeConnectors(rows: ConnectorRow[]): ConnectorFreshness[] {
@@ -381,32 +368,19 @@ export async function loadStartupHealth(
     };
   }
 
-  // Validate supporting metrics from JSONB
-  const metricsError = validateSupportingMetrics(snapshot.supporting_metrics);
-  if (metricsError) {
-    console.error("[startup-health] malformed supporting metrics in snapshot", {
-      startupId,
-      snapshotId: snapshot.id,
-      error: metricsError,
-    });
-    // Surface error state — malformed snapshot is a 5xx contract failure
-    throw new Error(
-      `Malformed health snapshot for startup ${startupId}: ${metricsError}`
-    );
-  }
   const supportingMetrics =
-    snapshot.supporting_metrics as SupportingMetricsSnapshot;
+    typeof snapshot.supporting_metrics === "object" &&
+    snapshot.supporting_metrics !== null
+      ? (snapshot.supporting_metrics as UniversalMetrics)
+      : null;
 
-  const funnel =
-    funnelRows.length > 0
-      ? serializeFunnelRows(funnelRows)
-      : emptyFunnelStages();
+  const funnel = serializeFunnelRows(funnelRows);
 
   const health: HealthSnapshotSummary = {
     startupId: snapshot.startup_id,
     healthState: status,
     blockedReason: snapshot.blocked_reason,
-    northStarKey: "mrr",
+    northStarKey: snapshot.north_star_key,
     northStarValue: snapshot.north_star_value,
     northStarPreviousValue: snapshot.north_star_previous_value,
     supportingMetrics,

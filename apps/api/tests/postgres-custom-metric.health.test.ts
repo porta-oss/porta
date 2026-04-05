@@ -8,7 +8,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { CustomMetricSummary } from "@shared/custom-metric";
-import { emptySupportingMetrics } from "@shared/startup-health";
 
 import type { StartupDraft } from "@shared/types";
 import { convertSetCookieToCookie } from "better-auth/test";
@@ -286,9 +285,7 @@ describe("health route — customMetric payload", () => {
   test("health payload does not widen fixed supportingMetrics keys", async () => {
     // Insert a health snapshot so supportingMetrics is populated
     const snapshotId = randomUUID();
-    const metrics = emptySupportingMetrics();
-    metrics.active_users = { value: 100, previous: null };
-    metrics.customer_count = { value: 50, previous: null };
+    const metrics = { active_users: 100, churn_rate: 0, arpu: 0 };
 
     await getApp().runtime.db.db.execute(
       sql`INSERT INTO health_snapshot (id, startup_id, health_state, north_star_key, north_star_value, supporting_metrics, computed_at)

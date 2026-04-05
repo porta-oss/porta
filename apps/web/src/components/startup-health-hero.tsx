@@ -1,4 +1,4 @@
-import type { HealthState, NorthStarMetric } from "@shared/startup-health";
+import type { HealthState } from "@shared/startup-health";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -7,12 +7,12 @@ export interface StartupHealthHeroProps {
   blockedReasons: Array<{ code: string; message: string }>;
   healthState: HealthState;
   lastSnapshotAt: string | null;
-  northStarKey: NorthStarMetric;
+  northStarKey: string;
   northStarPreviousValue: number | null;
-  northStarValue: number;
+  northStarValue: number | null;
 }
 
-const NORTH_STAR_LABELS: Record<NorthStarMetric, string> = {
+const NORTH_STAR_LABELS: Record<string, string> = {
   mrr: "Monthly Recurring Revenue",
 };
 
@@ -26,10 +26,10 @@ function formatCurrency(value: number): string {
 }
 
 function computeDelta(
-  current: number,
+  current: number | null,
   previous: number | null
 ): { label: string; direction: "up" | "down" | "flat" } | null {
-  if (previous === null || previous === 0) {
+  if (current === null || previous === null || previous === 0) {
     return null;
   }
   const pct = ((current - previous) / previous) * 100;
@@ -144,13 +144,13 @@ export function StartupHealthHero({
 
         <div>
           <p className="text-muted-foreground text-sm uppercase tracking-wide">
-            {NORTH_STAR_LABELS[northStarKey]}
+            {NORTH_STAR_LABELS[northStarKey] ?? northStarKey}
           </p>
           <p
             className={`mt-1 font-bold text-2xl tabular-nums leading-tight tracking-display ${isBlocked ? "text-muted-foreground" : "text-foreground"}`}
             data-testid="north-star-value"
           >
-            {formatCurrency(northStarValue)}
+            {formatCurrency(northStarValue ?? 0)}
           </p>
           {delta ? (
             <span

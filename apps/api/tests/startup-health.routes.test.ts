@@ -7,10 +7,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { HealthSnapshotSummary } from "@shared/startup-health";
-import {
-  emptyFunnelStages,
-  emptySupportingMetrics,
-} from "@shared/startup-health";
 
 import type { StartupDraft } from "@shared/types";
 import { convertSetCookieToCookie } from "better-auth/test";
@@ -142,7 +138,7 @@ async function insertSnapshot(
   } = {}
 ): Promise<string> {
   const snapshotId = `snap-${randomUUID()}`;
-  const metrics = JSON.stringify(emptySupportingMetrics());
+  const metrics = JSON.stringify({});
   const computedAt = overrides.computedAt ?? new Date();
 
   await db.execute(
@@ -161,13 +157,23 @@ async function insertSnapshot(
   );
 
   // Insert funnel stages
-  const stages = emptyFunnelStages();
+  const stages = [
+    { key: "visitor", label: "Visitors", value: 0, position: 0 },
+    { key: "signup", label: "Sign-ups", value: 0, position: 1 },
+    { key: "activation", label: "Activated", value: 0, position: 2 },
+    {
+      key: "paying_customer",
+      label: "Paying Customers",
+      value: 0,
+      position: 3,
+    },
+  ];
   for (const stage of stages) {
     await db.execute(
       sql`INSERT INTO health_funnel_stage
           (id, startup_id, stage, label, value, position, snapshot_id)
-          VALUES (${`fs-${stage.stage}-${randomUUID()}`}, ${startupId},
-                  ${stage.stage}, ${stage.label}, ${stage.value},
+          VALUES (${`fs-${stage.key}-${randomUUID()}`}, ${startupId},
+                  ${stage.key}, ${stage.label}, ${stage.value},
                   ${stage.position}, ${snapshotId})`
     );
   }
@@ -642,7 +648,7 @@ describe("startup health route", () => {
       expect(h.syncJobId).toBe("test-job-123");
 
       // Verify funnel stages are all present
-      const stageNames = h.funnel.map((f) => f.stage);
+      const stageNames = h.funnel.map((f) => f.key);
       expect(stageNames).toContain("visitor");
       expect(stageNames).toContain("signup");
       expect(stageNames).toContain("activation");

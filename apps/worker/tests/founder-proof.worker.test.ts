@@ -13,7 +13,6 @@ import { randomBytes } from "node:crypto";
 import type { ConnectorProvider, SyncJobPayload } from "@shared/connectors";
 import { encryptConnectorConfig, parseEncryptionKey } from "@shared/crypto";
 import type { FunnelStageRow } from "@shared/startup-health";
-import { emptySupportingMetrics } from "@shared/startup-health";
 import type { InsightExplanation } from "@shared/startup-insight";
 import { readWorkerEnv } from "../src/env";
 import { createFounderProofExplainer } from "../src/insights";
@@ -236,7 +235,7 @@ function createInMemoryHealthRepo(
         return [];
       }
       return input.funnel.map((f) => ({
-        stage: f.stage as FunnelStageRow["stage"],
+        key: f.key,
         label: f.label,
         value: f.value,
         position: f.position,
@@ -425,7 +424,7 @@ describe("founder-proof sync router", () => {
     expect(result.valid).toBe(true);
     expect(result.mrr).toBeNull(); // MRR comes from Stripe
     expect(result.supportingMetrics).toBeDefined();
-    expect((result.supportingMetrics as any).active_users.value).toBe(1420);
+    expect((result.supportingMetrics as any).active_users).toBe(1420);
     expect(result.funnelStages).toBeDefined();
     expect((result.funnelStages as any).visitor).toBe(8500);
     expect((result.funnelStages as any).signup).toBe(620);
@@ -440,9 +439,8 @@ describe("founder-proof sync router", () => {
     expect(result.valid).toBe(true);
     expect(result.mrr).toBe(12_400);
     expect(result.supportingMetrics).toBeDefined();
-    expect((result.supportingMetrics as any).customer_count.value).toBe(48);
-    expect((result.supportingMetrics as any).churn_rate.value).toBe(3.2);
-    expect((result.supportingMetrics as any).arpu.value).toBe(258.33);
+    expect((result.supportingMetrics as any).churn_rate).toBe(3.2);
+    expect((result.supportingMetrics as any).arpu).toBe(258.33);
     expect(result.funnelStages).toBeDefined();
     expect((result.funnelStages as any).paying_customer).toBe(48);
   });
@@ -469,8 +467,8 @@ describe("founder-proof sync router", () => {
       JSON.stringify(FOUNDER_PROOF_POSTHOG_CONFIG)
     );
     expect(r1.mrr).toBe(r2.mrr);
-    expect((r1.supportingMetrics as any).active_users.value).toBe(
-      (r2.supportingMetrics as any).active_users.value
+    expect((r1.supportingMetrics as any).active_users).toBe(
+      (r2.supportingMetrics as any).active_users
     );
   });
 
@@ -484,8 +482,8 @@ describe("founder-proof sync router", () => {
       JSON.stringify(FOUNDER_PROOF_STRIPE_CONFIG)
     );
     expect(r1.mrr).toBe(r2.mrr);
-    expect((r1.supportingMetrics as any).customer_count.value).toBe(
-      (r2.supportingMetrics as any).customer_count.value
+    expect((r1.supportingMetrics as any).churn_rate).toBe(
+      (r2.supportingMetrics as any).churn_rate
     );
   });
 });
@@ -730,7 +728,7 @@ describe("proof-mode full sync pipeline", () => {
       northStarKey: "mrr",
       northStarValue: 14_000,
       northStarPreviousValue: null,
-      supportingMetrics: emptySupportingMetrics(),
+      supportingMetrics: {},
       syncJobId: "sjob-prev",
       computedAt: new Date(Date.now() - 86_400_000),
     });

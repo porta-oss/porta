@@ -99,12 +99,12 @@ File: `packages/shared/src/connectors.ts`
 
 ### Task 10: Update startup-health types
 File: `packages/shared/src/startup-health.ts`
-- [ ] Replace SupportingMetricsSnapshot with import of UniversalMetrics from universal-metrics.ts
-- [ ] Remove NORTH_STAR_METRICS enum if present (northStarKey is now free-form string)
-- [ ] Update HealthSnapshotSummary: northStarValue becomes number|null (nullable), supportingMetrics becomes UniversalMetrics|null
-- [ ] Remove emptySupportingMetrics() and emptyFunnelStages() factory helpers
-- [ ] Update FunnelStageRow: rename stage to key (free-form string)
-- [ ] Remove FUNNEL_STAGES enum if present
+- [x] Replace SupportingMetricsSnapshot with import of UniversalMetrics from universal-metrics.ts
+- [x] Remove NORTH_STAR_METRICS enum if present (northStarKey is now free-form string)
+- [x] Update HealthSnapshotSummary: northStarValue becomes number|null (nullable), supportingMetrics becomes UniversalMetrics|null
+- [x] Remove emptySupportingMetrics() and emptyFunnelStages() factory helpers
+- [x] Update FunnelStageRow: rename stage to key (free-form string)
+- [x] Remove FUNNEL_STAGES enum if present
 
 ### Task 11: Update custom-metric types
 File: `packages/shared/src/custom-metric.ts`

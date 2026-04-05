@@ -7,11 +7,8 @@ import { describe, expect, test } from "bun:test";
 import { randomBytes } from "node:crypto";
 import type { ConnectorProvider, SyncJobPayload } from "@shared/connectors";
 import { encryptConnectorConfig, parseEncryptionKey } from "@shared/crypto";
-import type {
-  FunnelStageRow,
-  SupportingMetricsSnapshot,
-} from "@shared/startup-health";
-import { emptySupportingMetrics } from "@shared/startup-health";
+import type { FunnelStageRow } from "@shared/startup-health";
+import type { UniversalMetrics } from "@shared/universal-metrics";
 import type {
   ConnectorRow,
   SyncProcessorDeps,
@@ -196,7 +193,7 @@ function createInMemoryHealthRepo(): HealthSnapshotRepository & {
         return [];
       }
       return input.funnel.map((f) => ({
-        stage: f.stage as FunnelStageRow["stage"],
+        key: f.key,
         label: f.label,
         value: f.value,
         position: f.position,
@@ -269,9 +266,9 @@ describe("health snapshot recompute", () => {
         valid: true,
         mrr: 4200,
         supportingMetrics: {
-          customer_count: { value: 42, previous: null },
-          churn_rate: { value: 2.5, previous: null },
-          arpu: { value: 100, previous: null },
+          active_users: 42,
+          churn_rate: 2.5,
+          arpu: 100,
         },
         funnelStages: { paying_customer: 42 },
       });
@@ -309,7 +306,7 @@ describe("health snapshot recompute", () => {
         northStarKey: "mrr",
         northStarValue: 3000,
         northStarPreviousValue: null,
-        supportingMetrics: emptySupportingMetrics(),
+        supportingMetrics: {},
         syncJobId: "old-job",
         computedAt: new Date(),
         funnel: [],
@@ -319,7 +316,7 @@ describe("health snapshot recompute", () => {
         valid: true,
         mrr: null, // PostHog doesn't provide MRR
         supportingMetrics: {
-          active_users: { value: 150, previous: null },
+          active_users: 150,
         },
         funnelStages: { visitor: 1000, signup: 200, activation: 80 },
       });
@@ -352,7 +349,7 @@ describe("health snapshot recompute", () => {
         northStarKey: "mrr",
         northStarValue: 1000,
         northStarPreviousValue: null,
-        supportingMetrics: emptySupportingMetrics(),
+        supportingMetrics: {},
         syncJobId: "old-job",
         computedAt: new Date(Date.now() - 60_000),
         funnel: [],
@@ -362,7 +359,7 @@ describe("health snapshot recompute", () => {
         valid: true,
         mrr: 2000, // Updated MRR
         supportingMetrics: {
-          customer_count: { value: 20, previous: null },
+          active_users: 20,
         },
         funnelStages: null,
       });
@@ -413,14 +410,14 @@ describe("health snapshot recompute", () => {
       expect(snap.funnel.length).toBe(4);
 
       const visitor = requireValue(
-        snap.funnel.find((f) => f.stage === "visitor"),
+        snap.funnel.find((f) => f.key === "visitor"),
         "Expected visitor funnel stage."
       );
       expect(visitor.value).toBe(500);
       expect(visitor.position).toBe(0);
 
       const paying = requireValue(
-        snap.funnel.find((f) => f.stage === "paying_customer"),
+        snap.funnel.find((f) => f.key === "paying_customer"),
         "Expected paying customer funnel stage."
       );
       expect(paying.value).toBe(20);
@@ -441,7 +438,7 @@ describe("health snapshot recompute", () => {
         northStarKey: "mrr",
         northStarValue: 5000,
         northStarPreviousValue: null,
-        supportingMetrics: emptySupportingMetrics(),
+        supportingMetrics: {},
         syncJobId: "old-job",
         computedAt: new Date(),
         funnel: [],
@@ -479,7 +476,7 @@ describe("health snapshot recompute", () => {
         northStarKey: "mrr",
         northStarValue: 3000,
         northStarPreviousValue: null,
-        supportingMetrics: emptySupportingMetrics(),
+        supportingMetrics: {},
         syncJobId: "old-job",
         computedAt: new Date(),
         funnel: [],
@@ -548,7 +545,7 @@ describe("health snapshot recompute", () => {
         northStarKey: "mrr",
         northStarValue: 9000,
         northStarPreviousValue: null,
-        supportingMetrics: emptySupportingMetrics(),
+        supportingMetrics: {},
         syncJobId: "old-job",
         computedAt: new Date(),
         funnel: [],
@@ -585,65 +582,39 @@ describe("health snapshot recompute", () => {
 });
 
 describe("metric merging", () => {
-  test("mergeMetrics fills missing keys with zeros", () => {
-    const partial: Partial<SupportingMetricsSnapshot> = {
-      customer_count: { value: 42, previous: null },
+  test("mergeMetrics passes through provided keys", () => {
+    const partial: Partial<UniversalMetrics> = {
+      churn_rate: 42,
     };
-    const result = mergeMetrics(partial, null, null);
+    const result = mergeMetrics(partial, null);
 
-    expect(result.customer_count.value).toBe(42);
-    expect(result.active_users.value).toBe(0);
-    expect(result.churn_rate.value).toBe(0);
-    expect(result.arpu.value).toBe(0);
-    expect(result.trial_conversion_rate.value).toBe(0);
+    expect(result.churn_rate).toBe(42);
+    expect(result.active_users).toBeUndefined();
+    expect(result.arpu).toBeUndefined();
   });
 
   test("mergeMetrics combines Stripe and PostHog metrics", () => {
-    const stripe: Partial<SupportingMetricsSnapshot> = {
-      customer_count: { value: 10, previous: null },
-      churn_rate: { value: 5, previous: null },
-      arpu: { value: 50, previous: null },
+    const stripe: Partial<UniversalMetrics> = {
+      churn_rate: 5,
+      arpu: 50,
     };
-    const posthog: Partial<SupportingMetricsSnapshot> = {
-      active_users: { value: 200, previous: null },
-    };
-
-    const result = mergeMetrics(stripe, posthog, null);
-
-    expect(result.customer_count.value).toBe(10);
-    expect(result.active_users.value).toBe(200);
-    expect(result.churn_rate.value).toBe(5);
-    expect(result.arpu.value).toBe(50);
-    expect(result.trial_conversion_rate.value).toBe(0); // Not provided by either
-  });
-
-  test("mergeMetrics carries forward previous values for deltas", () => {
-    const current: Partial<SupportingMetricsSnapshot> = {
-      customer_count: { value: 15, previous: null },
-    };
-    const previous: SupportingMetricsSnapshot = {
-      active_users: { value: 100, previous: null },
-      customer_count: { value: 10, previous: null },
-      churn_rate: { value: 3, previous: null },
-      arpu: { value: 40, previous: null },
-      trial_conversion_rate: { value: 20, previous: null },
+    const posthog: Partial<UniversalMetrics> = {
+      active_users: 200,
     };
 
-    const result = mergeMetrics(current, null, previous);
+    const result = mergeMetrics(stripe, posthog);
 
-    expect(result.customer_count.value).toBe(15);
-    expect(result.customer_count.previous).toBe(10); // Carried from previous
-    expect(result.active_users.previous).toBe(100); // Carried from previous
+    expect(result.active_users).toBe(200);
+    expect(result.churn_rate).toBe(5);
+    expect(result.arpu).toBe(50);
   });
 
   test("mergeMetrics handles all nulls gracefully", () => {
-    const result = mergeMetrics(null, null, null);
+    const result = mergeMetrics(null, null);
 
-    expect(result.active_users.value).toBe(0);
-    expect(result.customer_count.value).toBe(0);
-    expect(result.churn_rate.value).toBe(0);
-    expect(result.arpu.value).toBe(0);
-    expect(result.trial_conversion_rate.value).toBe(0);
+    expect(result.active_users).toBeUndefined();
+    expect(result.churn_rate).toBeUndefined();
+    expect(result.arpu).toBeUndefined();
   });
 });
 
@@ -653,10 +624,10 @@ describe("funnel merging", () => {
     const result = mergeFunnel(partial);
 
     expect(result.length).toBe(4);
-    expect(result.find((r) => r.stage === "visitor")?.value).toBe(500);
-    expect(result.find((r) => r.stage === "signup")?.value).toBe(100);
-    expect(result.find((r) => r.stage === "activation")?.value).toBe(0); // Default
-    expect(result.find((r) => r.stage === "paying_customer")?.value).toBe(0); // Default
+    expect(result.find((r) => r.key === "visitor")?.value).toBe(500);
+    expect(result.find((r) => r.key === "signup")?.value).toBe(100);
+    expect(result.find((r) => r.key === "activation")?.value).toBe(0); // Default
+    expect(result.find((r) => r.key === "paying_customer")?.value).toBe(0); // Default
   });
 
   test("mergeFunnel returns zeros when input is null", () => {
@@ -671,22 +642,22 @@ describe("funnel merging", () => {
     const partial = { visitor: Number.NaN, signup: Number.POSITIVE_INFINITY };
     const result = mergeFunnel(partial);
 
-    expect(result.find((r) => r.stage === "visitor")?.value).toBe(0);
-    expect(result.find((r) => r.stage === "signup")?.value).toBe(0);
+    expect(result.find((r) => r.key === "visitor")?.value).toBe(0);
+    expect(result.find((r) => r.key === "signup")?.value).toBe(0);
   });
 
   test("mergeFunnel preserves stage positions and labels", () => {
     const result = mergeFunnel({ visitor: 10 });
 
     const visitor = requireValue(
-      result.find((r) => r.stage === "visitor"),
+      result.find((r) => r.key === "visitor"),
       "Expected visitor stage in merged funnel."
     );
     expect(visitor.position).toBe(0);
     expect(visitor.label).toBe("Visitors");
 
     const paying = requireValue(
-      result.find((r) => r.stage === "paying_customer"),
+      result.find((r) => r.key === "paying_customer"),
       "Expected paying customer stage in merged funnel."
     );
     expect(paying.position).toBe(3);
@@ -770,7 +741,7 @@ describe("boundary conditions", () => {
       valid: true,
       mrr: 1000,
       supportingMetrics: {
-        customer_count: { value: 5, previous: null },
+        churn_rate: 5,
       },
       funnelStages: { paying_customer: 5 },
     });
@@ -793,9 +764,10 @@ describe("boundary conditions", () => {
     const healthRepo = createInMemoryHealthRepo();
 
     // Pre-seed with data from both providers
-    const prevMetrics = emptySupportingMetrics();
-    prevMetrics.customer_count = { value: 10, previous: null };
-    prevMetrics.active_users = { value: 100, previous: null };
+    const prevMetrics: UniversalMetrics = {
+      churn_rate: 10,
+      active_users: 100,
+    };
 
     healthRepo.snapshots.set("startup-1", {
       snapshotId: "old-snap",
@@ -816,7 +788,7 @@ describe("boundary conditions", () => {
       valid: true,
       mrr: null, // PostHog doesn't provide MRR
       supportingMetrics: {
-        active_users: { value: 150, previous: null },
+        active_users: 150,
       },
       funnelStages: { visitor: 500, signup: 100 },
     });
@@ -833,9 +805,7 @@ describe("boundary conditions", () => {
     // MRR carried from previous (Stripe data)
     expect(snap.northStarValue).toBe(2000);
     // Active users updated from PostHog
-    expect(snap.supportingMetrics.active_users.value).toBe(150);
-    // Previous active_users carried for delta
-    expect(snap.supportingMetrics.active_users.previous).toBe(100);
+    expect((snap.supportingMetrics as UniversalMetrics).active_users).toBe(150);
   });
 });
 
