@@ -77,10 +77,10 @@ File: `packages/shared/src/telegram.ts`
 
 ### Task 7: Create Webhook schemas
 File: `packages/shared/src/webhook.ts`
-- [ ] Create WebhookConfigSummary interface (id, startupId, url, eventTypes, enabled, consecutiveFailures, circuitBrokenAt?)
-- [ ] Create WebhookPayload Zod schema (event: EventType, timestamp: ISO string, startupId, payload: object, deliveryId: UUID)
-- [ ] Create WebhookConfigInput schema (url: HTTPS only, eventTypes: EventType[], enabled?)
-- [ ] Export all
+- [x] Create WebhookConfigSummary interface (id, startupId, url, eventTypes, enabled, consecutiveFailures, circuitBrokenAt?)
+- [x] Create WebhookPayload Zod schema (event: EventType, timestamp: ISO string, startupId, payload: object, deliveryId: UUID)
+- [x] Create WebhookConfigInput schema (url: HTTPS only, eventTypes: EventType[], enabled?)
+- [x] Export all
 
 ### Task 8: Create ApiKey schemas
 File: `packages/shared/src/api-key.ts`
