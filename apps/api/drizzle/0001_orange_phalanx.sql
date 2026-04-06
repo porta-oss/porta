@@ -197,6 +197,7 @@ CREATE TABLE "telegram_config" (
 	"id" text PRIMARY KEY NOT NULL,
 	"workspace_id" text NOT NULL,
 	"bot_token" text NOT NULL,
+	"bot_username" text,
 	"chat_id" text,
 	"verification_code" text,
 	"verification_expires_at" timestamp with time zone,

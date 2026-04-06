@@ -85,6 +85,12 @@ import {
   validateStartupDraft,
 } from "./routes/startup";
 import {
+  type fetchBotInfo,
+  handleDeleteTelegram,
+  handleSetupTelegram,
+  type TelegramRuntime,
+} from "./routes/telegram";
+import {
   handleCreateWebhookConfig,
   handleDeleteWebhookConfig,
   handleGetWebhookConfig,
@@ -491,6 +497,7 @@ export async function createApiApp(
     taskSyncQueueProducer?: TaskSyncQueueProducer;
     yookassaValidator?: YooKassaValidator;
     webhookResolver?: (hostname: string) => Promise<string[]>;
+    telegramBotInfoFetcher?: typeof fetchBotInfo;
   }
 ): Promise<ApiApp> {
   const env = options?.env ?? readApiEnv(envSource, { strict: true });
@@ -1953,6 +1960,50 @@ export async function createApiApp(
         );
       }
     )
+    // -----------------------------------------------------------------
+    // Telegram integration (session auth)
+    // -----------------------------------------------------------------
+    .post(
+      "/workspace/telegram",
+      async ({ authContext, body, request, set }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/workspace/telegram"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleSetupTelegram(
+          { db: runtime.db } as TelegramRuntime,
+          { workspace: activeWorkspace.workspace },
+          body,
+          set,
+          options?.telegramBotInfoFetcher
+        );
+      }
+    )
+    .delete("/workspace/telegram", async ({ authContext, request, set }) => {
+      const activeWorkspace = await resolveActiveWorkspace(
+        runtime,
+        request,
+        authContext,
+        set,
+        "/api/workspace/telegram"
+      );
+      if ("error" in activeWorkspace) {
+        return activeWorkspace;
+      }
+
+      return handleDeleteTelegram(
+        { db: runtime.db } as TelegramRuntime,
+        { workspace: activeWorkspace.workspace },
+        set
+      );
+    })
     // -----------------------------------------------------------------
     // MCP REST endpoints (API key auth, not session auth)
     // -----------------------------------------------------------------

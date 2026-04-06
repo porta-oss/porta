@@ -24,6 +24,7 @@ export const telegramConfig = pgTable(
       .notNull()
       .references(() => workspace.id, { onDelete: "cascade" }),
     botToken: text("bot_token").notNull(),
+    botUsername: text("bot_username"),
     chatId: text("chat_id"),
     verificationCode: text("verification_code"),
     verificationExpiresAt: timestamp("verification_expires_at", {
