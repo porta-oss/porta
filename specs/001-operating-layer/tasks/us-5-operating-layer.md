@@ -44,11 +44,11 @@ File: `apps/api/tests/yookassa.connector.test.ts`
 
 ### Task 2: Write Sentry validator tests (TDD)
 File: `apps/api/tests/sentry.connector.test.ts`
-- [ ] Test valid token + org + project return `{ valid: true }`
-- [ ] Test Bearer auth header format
-- [ ] Test invalid token returns `{ valid: false }`
-- [ ] Test non-existent org/project returns `{ valid: false }`
-- [ ] Test founder-proof mode returns deterministic success
+- [x] Test valid token + org + project return `{ valid: true }`
+- [x] Test Bearer auth header format
+- [x] Test invalid token returns `{ valid: false }`
+- [x] Test non-existent org/project returns `{ valid: false }`
+- [x] Test founder-proof mode returns deterministic success
 
 ### Task 3: Create YooKassa validator
 File: `apps/api/src/lib/connectors/yookassa.ts`
