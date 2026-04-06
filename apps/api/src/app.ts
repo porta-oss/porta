@@ -87,6 +87,7 @@ import {
 import {
   type fetchBotInfo,
   handleDeleteTelegram,
+  handleGetTelegram,
   handleSetupTelegram,
   type TelegramRuntime,
 } from "./routes/telegram";
@@ -1963,6 +1964,24 @@ export async function createApiApp(
     // -----------------------------------------------------------------
     // Telegram integration (session auth)
     // -----------------------------------------------------------------
+    .get("/workspace/telegram", async ({ authContext, request, set }) => {
+      const activeWorkspace = await resolveActiveWorkspace(
+        runtime,
+        request,
+        authContext,
+        set,
+        "/api/workspace/telegram"
+      );
+      if ("error" in activeWorkspace) {
+        return activeWorkspace;
+      }
+
+      return handleGetTelegram(
+        { db: runtime.db } as TelegramRuntime,
+        { workspace: activeWorkspace.workspace },
+        set
+      );
+    })
     .post(
       "/workspace/telegram",
       async ({ authContext, body, request, set }) => {

@@ -249,6 +249,37 @@ export async function handleSetupTelegram(
   }
 }
 
+export async function handleGetTelegram(
+  runtime: TelegramRuntime,
+  wsCtx: WorkspaceContext,
+  set: { status?: number | string }
+): Promise<{ config: TelegramConfigSummary | null } | TelegramRouteError> {
+  try {
+    const rows = await runtime.db.db
+      .select()
+      .from(telegramConfig)
+      .where(eq(telegramConfig.workspaceId, wsCtx.workspace.id));
+
+    const row = rows[0];
+    if (!row) {
+      return { config: null };
+    }
+
+    return { config: serializeTelegramConfig(row) };
+  } catch (error) {
+    console.error("[telegram] get failed", {
+      workspaceId: wsCtx.workspace.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    return createErrorResponse(set, 500, {
+      code: "TELEGRAM_GET_FAILED",
+      message: "Failed to load Telegram configuration.",
+      retryable: true,
+    });
+  }
+}
+
 export async function handleDeleteTelegram(
   runtime: TelegramRuntime,
   wsCtx: WorkspaceContext,

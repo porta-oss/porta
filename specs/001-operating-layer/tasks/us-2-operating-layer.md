@@ -105,12 +105,12 @@ File: `apps/worker/src/processors/telegram.ts` (same file)
 
 ### Task 7: Create Telegram settings page
 File: `apps/web/src/routes/_authenticated/settings/telegram.tsx`
-- [ ] BotFather setup instructions (step-by-step guide)
-- [ ] Bot token input field with format validation
-- [ ] After setup: show verification code and instructions ("Send `/start {code}` to @{botname}")
-- [ ] Connected state: show bot name, chat linked status, digest time/timezone pickers
-- [ ] Unlink button with confirmation
-- [ ] Digest time picker (HH:MM) and timezone selector
+- [x] BotFather setup instructions (step-by-step guide)
+- [x] Bot token input field with format validation
+- [x] After setup: show verification code and instructions ("Send `/start {code}` to @{botname}")
+- [x] Connected state: show bot name, chat linked status, digest time/timezone pickers
+- [x] Unlink button with confirmation
+- [x] Digest time picker (HH:MM) and timezone selector
 
 ### Task 8: Register Telegram routes in app
 File: `apps/api/src/app.ts`
