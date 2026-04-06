@@ -68,12 +68,12 @@ File: `apps/api/src/lib/connectors/sentry.ts`
 
 ### Task 5: Add YooKassa sync provider
 File: `apps/worker/src/providers.ts`
-- [ ] Create `syncYooKassa` adapter function
-- [ ] Paginated GET `/v3/payments` (filter: last 30 days) -> sum amounts for `revenue_30d`
-- [ ] Paginated GET `/v3/refunds` -> count for `refunds_30d`
-- [ ] Filter payments with status `'canceled'` for `failed_payments` count
-- [ ] Return `ProviderSyncResult` with universal metric promotion (`mrr` from `revenue_30d` if applicable)
-- [ ] Add `yookassa` case to `createProviderSyncRouter()` switch
+- [x] Create `syncYooKassa` adapter function
+- [x] Paginated GET `/v3/payments` (filter: last 30 days) -> sum amounts for `revenue_30d`
+- [x] Paginated GET `/v3/refunds` -> count for `refunds_30d`
+- [x] Filter payments with status `'canceled'` for `failed_payments` count
+- [x] Return `ProviderSyncResult` with universal metric promotion (`mrr` from `revenue_30d` if applicable)
+- [x] Add `yookassa` case to `createProviderSyncRouter()` switch
 
 ### Task 6: Add Sentry sync provider
 File: `apps/worker/src/providers.ts`

@@ -37,6 +37,16 @@ export interface ProviderSyncResult extends ProviderValidationResult {
   supportingMetrics: Partial<UniversalMetrics> | null;
 }
 
+/** Result from a YooKassa payment sync. */
+export interface YooKassaSyncResult extends ProviderSyncResult {
+  /** YooKassa-specific payment metrics (30-day window). */
+  yookassaMetrics: {
+    failedPayments: number;
+    refunds30d: number;
+    revenue30d: number;
+  };
+}
+
 /** Result from a Postgres custom metric sync. */
 export interface PostgresSyncResult extends ProviderSyncResult {
   /** Custom metric data extracted from the prepared view. */
@@ -676,6 +686,208 @@ async function syncPostHog(config: {
 }
 
 // ---------------------------------------------------------------------------
+// YooKassa adapter — fetches payment & refund metrics
+// ---------------------------------------------------------------------------
+
+const YOOKASSA_TIMEOUT_MS = 10_000;
+const YOOKASSA_API_BASE = "https://api.yookassa.ru";
+const YOOKASSA_PAGE_LIMIT = 100;
+
+function yookassaHeaders(shopId: string, secretKey: string) {
+  return {
+    Authorization: `Basic ${btoa(`${shopId}:${secretKey}`)}`,
+    Accept: "application/json",
+  };
+}
+
+interface YooKassaListResponse {
+  items: Array<{
+    id: string;
+    status: string;
+    amount: { value: string; currency: string };
+  }>;
+  next_cursor?: string;
+  type: string;
+}
+
+async function validateYooKassaConnection(
+  headers: Record<string, string>
+): Promise<ProviderSyncResult | null> {
+  try {
+    const response = await fetchWithTimeout(
+      `${YOOKASSA_API_BASE}/v3/me`,
+      YOOKASSA_TIMEOUT_MS,
+      { method: "GET", headers }
+    );
+
+    if (response.status === 401) {
+      return invalidProviderSync(
+        "YooKassa credentials are invalid or have been revoked."
+      );
+    }
+    if (response.status === 403) {
+      return invalidProviderSync(
+        "YooKassa credentials lack the required permissions."
+      );
+    }
+    if (response.status >= 500) {
+      return invalidProviderSync(
+        "YooKassa API returned a server error. Try again shortly.",
+        true
+      );
+    }
+    if (response.status !== 200) {
+      return invalidProviderSync(
+        `YooKassa validation failed with status ${response.status}.`
+      );
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      return invalidProviderSync(
+        "YooKassa validation timed out. Try again.",
+        true
+      );
+    }
+    return invalidProviderSync(
+      "YooKassa validation request failed. Check network connectivity.",
+      true
+    );
+  }
+
+  return null;
+}
+
+async function fetchYooKassaList(
+  endpoint: string,
+  headers: Record<string, string>,
+  dateFrom: string,
+  dateTo: string
+): Promise<YooKassaListResponse["items"]> {
+  const allItems: YooKassaListResponse["items"] = [];
+  let cursor: string | undefined;
+
+  for (;;) {
+    const url = new URL(`${YOOKASSA_API_BASE}${endpoint}`);
+    url.searchParams.set("created_at.gte", dateFrom);
+    url.searchParams.set("created_at.lte", dateTo);
+    url.searchParams.set("limit", String(YOOKASSA_PAGE_LIMIT));
+    if (cursor) {
+      url.searchParams.set("cursor", cursor);
+    }
+
+    const response = await fetchWithTimeout(
+      url.toString(),
+      YOOKASSA_TIMEOUT_MS,
+      { method: "GET", headers }
+    );
+
+    if (!response.ok) {
+      break;
+    }
+
+    const data = (await response.json()) as YooKassaListResponse;
+    allItems.push(...(data.items ?? []));
+
+    if (!data.next_cursor) {
+      break;
+    }
+    cursor = data.next_cursor;
+  }
+
+  return allItems;
+}
+
+async function syncYooKassa(config: {
+  secretKey?: string;
+  shopId?: string;
+}): Promise<YooKassaSyncResult> {
+  const shopId = config.shopId?.trim() ?? "";
+  const secretKey = config.secretKey?.trim() ?? "";
+
+  if (!shopId) {
+    return {
+      ...invalidProviderSync("YooKassa shop ID is required."),
+      yookassaMetrics: { failedPayments: 0, refunds30d: 0, revenue30d: 0 },
+    };
+  }
+  if (!secretKey) {
+    return {
+      ...invalidProviderSync("YooKassa secret key is required."),
+      yookassaMetrics: { failedPayments: 0, refunds30d: 0, revenue30d: 0 },
+    };
+  }
+
+  const headers = yookassaHeaders(shopId, secretKey);
+
+  const validationError = await validateYooKassaConnection(headers);
+  if (validationError) {
+    return {
+      ...validationError,
+      yookassaMetrics: { failedPayments: 0, refunds30d: 0, revenue30d: 0 },
+    };
+  }
+
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const dateFrom = thirtyDaysAgo.toISOString();
+  const dateTo = now.toISOString();
+
+  let payments: YooKassaListResponse["items"] = [];
+  let refunds: YooKassaListResponse["items"] = [];
+
+  try {
+    payments = await fetchYooKassaList(
+      "/v3/payments",
+      headers,
+      dateFrom,
+      dateTo
+    );
+  } catch {
+    // Non-fatal: payment metrics stay at 0
+  }
+
+  try {
+    refunds = await fetchYooKassaList("/v3/refunds", headers, dateFrom, dateTo);
+  } catch {
+    // Non-fatal: refund metric stays at 0
+  }
+
+  // Sum succeeded payments for revenue, count canceled for failed_payments
+  let revenue30d = 0;
+  let failedPayments = 0;
+  for (const payment of payments) {
+    if (payment.status === "succeeded") {
+      revenue30d += Number.parseFloat(payment.amount.value) || 0;
+    } else if (payment.status === "canceled") {
+      failedPayments++;
+    }
+  }
+
+  const refunds30d = refunds.length;
+
+  // Revenue is total over 30 days; approximate MRR = revenue_30d (monthly window)
+  const mrr = Math.round(revenue30d * 100) / 100;
+
+  return {
+    valid: true,
+    mrr,
+    supportingMetrics: {},
+    funnelStages: null,
+    yookassaMetrics: {
+      failedPayments,
+      refunds30d,
+      revenue30d: mrr,
+    },
+  };
+}
+
+/** Founder-proof demo config for YooKassa. */
+export const FOUNDER_PROOF_YOOKASSA_CONFIG = {
+  shopId: "yookassa_proof_shop_001",
+  secretKey: "yookassa_proof_secret_key",
+} as const;
+
+// ---------------------------------------------------------------------------
 // Stripe adapter — fetches financial metrics
 // ---------------------------------------------------------------------------
 
@@ -813,6 +1025,10 @@ export function createProviderRouter(): ProviderValidateFn {
         };
         return syncPostgres(pg);
       }
+      case "yookassa": {
+        const yk = config as { secretKey?: string; shopId?: string };
+        return syncYooKassa(yk);
+      }
       default:
         return {
           valid: false,
@@ -862,6 +1078,10 @@ export function createProviderSyncRouter(): ProviderSyncFn {
           unit?: string;
         };
         return syncPostgres(pg);
+      }
+      case "yookassa": {
+        const yk = config as { secretKey?: string; shopId?: string };
+        return syncYooKassa(yk);
       }
       default:
         return {
@@ -986,6 +1206,14 @@ export function createFounderProofSyncRouter(): ProviderSyncFn {
           funnelStages: {
             paying_customer: 48,
           },
+        };
+      }
+      case "yookassa": {
+        return {
+          valid: true,
+          mrr: 84_200,
+          supportingMetrics: {},
+          funnelStages: null,
         };
       }
       default:
