@@ -86,12 +86,12 @@ File: `apps/web/src/components/event-filter.tsx`
 
 ### Task 6: Create comparison matrix component
 File: `apps/web/src/components/comparison-matrix.tsx`
-- [ ] Table: rows = startups, columns = universal metrics (MRR, Active Users, Churn Rate, Error Rate, Growth Rate, ARPU)
-- [ ] Cell values with delta indicators (green arrow up, red arrow down, gray dash for no change)
-- [ ] Expandable row detail showing per-source custom metrics
-- [ ] Sort by column (click column header to toggle asc/desc)
-- [ ] Health state badge per startup row
-- [ ] Empty state for no startups
+- [x] Table: rows = startups, columns = universal metrics (MRR, Active Users, Churn Rate, Error Rate, Growth Rate, ARPU)
+- [x] Cell values with delta indicators (green arrow up, red arrow down, gray dash for no change)
+- [x] Expandable row detail showing per-source custom metrics
+- [x] Sort by column (click column header to toggle asc/desc)
+- [x] Health state badge per startup row
+- [x] Empty state for no startups
 
 ### Task 7: Create AI synthesis card component
 File: `apps/web/src/components/ai-synthesis-card.tsx`
