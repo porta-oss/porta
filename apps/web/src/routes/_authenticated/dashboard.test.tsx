@@ -827,4 +827,90 @@ describe("dashboard route", () => {
     expect(view.getByLabelText("Stripe setup form")).toBeTruthy();
     expect(view.queryByLabelText("connector status")).toBeNull();
   });
+
+  test("renders mode switcher with three tabs when startups exist", async () => {
+    const api = createApi();
+    const view = render(
+      <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
+    );
+
+    expect(await view.findByRole("tab", { name: /Decide/i })).toBeTruthy();
+    expect(view.getByRole("tab", { name: /Journal/i })).toBeTruthy();
+    expect(view.getByRole("tab", { name: /Compare/i })).toBeTruthy();
+  });
+
+  test("defaults to decide mode showing overview content", async () => {
+    const api = createApi();
+    const view = render(
+      <DashboardPage api={api} authState={createAuthenticatedSnapshot()} />
+    );
+
+    const decideTab = await view.findByRole("tab", { name: /Decide/i });
+    expect(decideTab.getAttribute("aria-selected")).toBe("true");
+    expect(view.queryByLabelText("Journal mode")).toBeNull();
+    expect(view.queryByLabelText("Compare mode")).toBeNull();
+  });
+
+  test("renders journal placeholder when mode is journal", async () => {
+    const api = createApi();
+    const view = render(
+      <DashboardPage
+        api={api}
+        authState={createAuthenticatedSnapshot()}
+        mode="journal"
+      />
+    );
+
+    expect(await view.findByRole("tab", { name: /Journal/i })).toBeTruthy();
+    expect(view.getByLabelText("Journal mode")).toBeTruthy();
+    expect(view.queryByLabelText("Compare mode")).toBeNull();
+  });
+
+  test("renders compare placeholder when mode is compare", async () => {
+    const api = createApi();
+    const view = render(
+      <DashboardPage
+        api={api}
+        authState={createAuthenticatedSnapshot()}
+        mode="compare"
+      />
+    );
+
+    expect(await view.findByRole("tab", { name: /Compare/i })).toBeTruthy();
+    expect(view.getByLabelText("Compare mode")).toBeTruthy();
+    expect(view.queryByLabelText("Journal mode")).toBeNull();
+  });
+
+  test("passes onModeChange callback to mode switcher", async () => {
+    const onModeChange = mock(() => undefined);
+    const api = createApi();
+    const view = render(
+      <DashboardPage
+        api={api}
+        authState={createAuthenticatedSnapshot()}
+        mode="journal"
+        onModeChange={onModeChange}
+      />
+    );
+
+    const journalTab = await view.findByRole("tab", { name: /Journal/i });
+    expect(journalTab.getAttribute("data-state")).toBe("active");
+    expect(view.getByLabelText("Journal mode")).toBeTruthy();
+  });
+
+  test("mode switcher shows correct active state for each mode", async () => {
+    const api = createApi();
+    const view = render(
+      <DashboardPage
+        api={api}
+        authState={createAuthenticatedSnapshot()}
+        mode="compare"
+      />
+    );
+
+    const compareTab = await view.findByRole("tab", { name: /Compare/i });
+    expect(compareTab.getAttribute("data-state")).toBe("active");
+    const decideTab = view.getByRole("tab", { name: /Decide/i });
+    expect(decideTab.getAttribute("data-state")).toBe("inactive");
+  });
 });

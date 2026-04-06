@@ -112,12 +112,12 @@ File: `apps/web/src/components/system-status-section.tsx`
 
 ### Task 9: Integrate mode switcher with URL persistence
 File: `apps/web/src/routes/_authenticated/dashboard.tsx`
-- [ ] Read `?mode=` search param on mount (default: `'decide'`)
-- [ ] Validate mode is one of `decide | journal | compare`
-- [ ] Update URL search param on mode change via TanStack Router `navigate`
-- [ ] Render `ModeSwitcher` with current mode as controlled value
-- [ ] Conditionally render mode content based on current mode
-- [ ] Register Cmd+1/2/3 keyboard shortcuts via `useEffect`
+- [x] Read `?mode=` search param on mount (default: `'decide'`)
+- [x] Validate mode is one of `decide | journal | compare`
+- [x] Update URL search param on mode change via TanStack Router `navigate`
+- [x] Render `ModeSwitcher` with current mode as controlled value
+- [x] Conditionally render mode content based on current mode
+- [x] Register Cmd+1/2/3 keyboard shortcuts via `useEffect`
 
 ### Task 10: Implement Decide mode
 File: `apps/web/src/routes/_authenticated/dashboard.tsx`

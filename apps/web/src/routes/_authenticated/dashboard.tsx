@@ -31,6 +31,8 @@ import { ConnectorStatusPanel } from "../../components/connector-status-panel";
 import { CustomMetricPanel } from "../../components/custom-metric-panel";
 import { DisclosureSection } from "../../components/disclosure-section";
 import { FadeIn } from "../../components/fade-in";
+import type { DashboardMode } from "../../components/mode-switcher";
+import { ModeSwitcher } from "../../components/mode-switcher";
 import { PortfolioStartupCard } from "../../components/portfolio-startup-card";
 import type { PostgresSetupFormValues } from "../../components/postgres-custom-metric-card";
 import { PostgresCustomMetricCard } from "../../components/postgres-custom-metric-card";
@@ -133,13 +135,19 @@ export interface DashboardApi {
   triggerSync: (connectorId: string) => Promise<void>;
 }
 
+export interface DashboardSearch {
+  mode?: DashboardMode;
+}
+
 export interface DashboardPageProps {
   api?: DashboardApi;
   authState: AuthSnapshot;
+  mode?: DashboardMode;
   navigateToStartup?: (
     startupId: string,
     replace?: boolean
   ) => void | Promise<void>;
+  onModeChange?: (mode: DashboardMode) => void;
   routeStartupId?: string | null;
 }
 
@@ -1332,7 +1340,9 @@ function DashboardHealthConnectorsPanel({
 export function DashboardPage({
   authState,
   api = createDefaultDashboardApi(),
+  mode = "decide",
   navigateToStartup,
+  onModeChange,
   routeStartupId = null,
 }: DashboardPageProps) {
   const [shellStatus, setShellStatus] = useState<"loading" | "ready" | "error">(
@@ -1838,65 +1848,90 @@ export function DashboardPage({
     >
       <div className="grid gap-6">
         {showPrimaryDashboard ? (
-          <section
-            aria-labelledby="dashboard-content-heading"
-            className="grid gap-4"
-          >
-            <DashboardContentHeader
-              contentView={resolvedContentView}
-              missingCoreConnectorCount={missingCoreConnectorCount}
-              onChangeView={setContentView}
+          <>
+            <ModeSwitcher
+              onChange={onModeChange ?? ((_m: DashboardMode) => undefined)}
+              value={mode}
             />
 
-            {resolvedContentView === "overview" ? (
-              <DashboardOverviewPanel
-                creatingActionIndex={creatingActionIndex}
-                healthError={healthError}
-                healthPayload={healthPayload}
-                healthStatus={healthStatus}
-                insightError={insightError}
-                insightPayload={insightPayload}
-                insightStatus={insightStatus}
-                onCreateTask={handleCreateTaskFromAction}
-                onRetryInsight={() => {
-                  void refreshInsight(selectedStartupId);
-                }}
-                onRetryTasks={() => {
-                  void refreshTasks(selectedStartupId);
-                }}
-                primaryStartup={selectedStartup}
-                taskCreateError={taskCreateError}
-                taskListError={taskListError}
-                taskListStatus={taskListStatus}
-                tasks={tasks}
-              />
-            ) : (
-              <DashboardHealthConnectorsPanel
-                activeConnectors={activeConnectors}
-                connectorError={connectorError}
-                connectorLoading={connectorLoading}
-                healthError={healthError}
-                healthPayload={healthPayload}
-                healthStatus={healthStatus}
-                onConnectProvider={handleConnectProvider}
-                onDisconnect={handleDisconnect}
-                onPostgresSetup={handlePostgresSetup}
-                onRefreshConnectors={() => {
-                  void refreshConnectors(selectedStartupId);
-                }}
-                onResync={handleResync}
-                onRetryHealth={() => {
-                  void refreshHealth(selectedStartupId);
-                }}
-                pgSetupSubmitting={pgSetupSubmitting}
-                postgresConnector={postgresConnector}
-                posthogConnector={posthogConnector}
-                resolvedCustomMetric={resolvedCustomMetric}
-                showConnectorStatusPanel={showConnectorStatusPanel}
-                stripeConnector={stripeConnector}
-              />
-            )}
-          </section>
+            {mode === "decide" ? (
+              <section
+                aria-labelledby="dashboard-content-heading"
+                className="grid gap-4"
+              >
+                <DashboardContentHeader
+                  contentView={resolvedContentView}
+                  missingCoreConnectorCount={missingCoreConnectorCount}
+                  onChangeView={setContentView}
+                />
+
+                {resolvedContentView === "overview" ? (
+                  <DashboardOverviewPanel
+                    creatingActionIndex={creatingActionIndex}
+                    healthError={healthError}
+                    healthPayload={healthPayload}
+                    healthStatus={healthStatus}
+                    insightError={insightError}
+                    insightPayload={insightPayload}
+                    insightStatus={insightStatus}
+                    onCreateTask={handleCreateTaskFromAction}
+                    onRetryInsight={() => {
+                      void refreshInsight(selectedStartupId);
+                    }}
+                    onRetryTasks={() => {
+                      void refreshTasks(selectedStartupId);
+                    }}
+                    primaryStartup={selectedStartup}
+                    taskCreateError={taskCreateError}
+                    taskListError={taskListError}
+                    taskListStatus={taskListStatus}
+                    tasks={tasks}
+                  />
+                ) : (
+                  <DashboardHealthConnectorsPanel
+                    activeConnectors={activeConnectors}
+                    connectorError={connectorError}
+                    connectorLoading={connectorLoading}
+                    healthError={healthError}
+                    healthPayload={healthPayload}
+                    healthStatus={healthStatus}
+                    onConnectProvider={handleConnectProvider}
+                    onDisconnect={handleDisconnect}
+                    onPostgresSetup={handlePostgresSetup}
+                    onRefreshConnectors={() => {
+                      void refreshConnectors(selectedStartupId);
+                    }}
+                    onResync={handleResync}
+                    onRetryHealth={() => {
+                      void refreshHealth(selectedStartupId);
+                    }}
+                    pgSetupSubmitting={pgSetupSubmitting}
+                    postgresConnector={postgresConnector}
+                    posthogConnector={posthogConnector}
+                    resolvedCustomMetric={resolvedCustomMetric}
+                    showConnectorStatusPanel={showConnectorStatusPanel}
+                    stripeConnector={stripeConnector}
+                  />
+                )}
+              </section>
+            ) : null}
+
+            {mode === "journal" ? (
+              <section aria-label="Journal mode" className="grid gap-4">
+                <p className="text-muted-foreground text-sm">
+                  Journal mode — event log coming soon.
+                </p>
+              </section>
+            ) : null}
+
+            {mode === "compare" ? (
+              <section aria-label="Compare mode" className="grid gap-4">
+                <p className="text-muted-foreground text-sm">
+                  Compare mode — startup comparison coming soon.
+                </p>
+              </section>
+            ) : null}
+          </>
         ) : null}
 
         {showEmptyWorkspaceState ? (
