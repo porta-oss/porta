@@ -48,6 +48,7 @@ import {
 import { ConnectorSetupCard } from "../../components/connector-setup-card";
 import { ConnectorStatusPanel } from "../../components/connector-status-panel";
 import { CustomMetricPanel } from "../../components/custom-metric-panel";
+import { DataFreshnessBadge } from "../../components/data-freshness-badge";
 import { DaySeparator } from "../../components/day-separator";
 import {
   DecisionSurface,
@@ -77,6 +78,7 @@ import type { InsightDisplayStatus } from "../../components/startup-insight-card
 import { StartupMetricsGrid } from "../../components/startup-metrics-grid";
 import { StartupTaskList } from "../../components/startup-task-list";
 import { SystemStatusSection } from "../../components/system-status-section";
+import { useOnlineStatus } from "../../hooks/use-online-status";
 import {
   API_BASE_URL,
   type AuthSnapshot,
@@ -1761,6 +1763,18 @@ export function DashboardPage({
   const [compareError, setCompareError] = useState<string | null>(null);
   const compareFetchedAtRef = useRef<number>(0);
 
+  // Data freshness tracking (epoch ms when each dataset was last fetched)
+  const [healthFetchedAt, setHealthFetchedAt] = useState<number | null>(null);
+  const [alertsFetchedAt, setAlertsFetchedAt] = useState<number | null>(null);
+  const [journalFetchedAt, setJournalFetchedAt] = useState<number | null>(null);
+  const [compareFetchedAtState, setCompareFetchedAtState] = useState<
+    number | null
+  >(null);
+
+  // Online status for offline banner + auto-refetch
+  const isOnline = useOnlineStatus();
+  const wasOfflineRef = useRef(false);
+
   const activeWorkspace = useMemo(
     () =>
       workspaces.find((workspace) => workspace.id === activeWorkspaceId) ??
@@ -1936,6 +1950,7 @@ export function DashboardPage({
       const payload = await api.fetchHealth(startupId);
       setHealthPayload(payload);
       setCustomMetric(payload.customMetric);
+      setHealthFetchedAt(Date.now());
       setHealthStatus("ready");
     } catch (error) {
       // Preserve the previous payload so stale data stays visible
@@ -2004,6 +2019,7 @@ export function DashboardPage({
     try {
       const payload = await api.listAlerts(startupId, "active");
       setAlerts(sortAlertsByPriority(payload.alerts));
+      setAlertsFetchedAt(Date.now());
       setAlertStatus("ready");
     } catch (error) {
       setAlertError(getDashboardErrorMessage(error, "Failed to load alerts."));
@@ -2063,6 +2079,7 @@ export function DashboardPage({
       }
       setJournalCursor(result.pagination.cursor);
       setJournalHasMore(result.pagination.hasMore);
+      setJournalFetchedAt(Date.now());
       setJournalStatus("ready");
     } catch (error) {
       setJournalError(
@@ -2112,6 +2129,7 @@ export function DashboardPage({
       const payload = await api.fetchPortfolioSummary();
       setComparePayload(payload);
       compareFetchedAtRef.current = Date.now();
+      setCompareFetchedAtState(Date.now());
       setCompareStatus("ready");
     } catch (error) {
       setCompareError(
@@ -2342,6 +2360,26 @@ export function DashboardPage({
     }
   }, [mode]);
 
+  // Offline → online: auto-refetch all queries
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally refetch on reconnect only
+  useEffect(() => {
+    if (!isOnline) {
+      wasOfflineRef.current = true;
+      return;
+    }
+
+    if (wasOfflineRef.current) {
+      wasOfflineRef.current = false;
+      refreshSelectedStartupData(selectedStartupId);
+      if (mode === "journal") {
+        void refreshJournalEvents(journalFilters, selectedStartupId);
+      }
+      if (mode === "compare") {
+        void refreshCompareSummary(true);
+      }
+    }
+  }, [isOnline]);
+
   // Scroll-to-event: when events load, try to find the target event
   // biome-ignore lint/correctness/useExhaustiveDependencies: refreshJournalEvents is stable per render
   const handleScrollToEvent = useCallback(
@@ -2499,6 +2537,14 @@ export function DashboardPage({
       workspaces={workspaces}
     >
       <div className="grid gap-6">
+        {isOnline ? null : (
+          <Alert data-testid="offline-banner">
+            <AlertDescription>
+              You are offline. Data may not be current.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {showPrimaryDashboard ? (
           <>
             <ModeSwitcher
@@ -2516,6 +2562,17 @@ export function DashboardPage({
                   missingCoreConnectorCount={missingCoreConnectorCount}
                   onChangeView={setContentView}
                 />
+
+                <div className="flex flex-wrap gap-3">
+                  <DataFreshnessBadge
+                    fetchedAt={alertsFetchedAt}
+                    label="Alerts updated"
+                  />
+                  <DataFreshnessBadge
+                    fetchedAt={healthFetchedAt}
+                    label="Metrics updated"
+                  />
+                </div>
 
                 <DecisionSurface
                   alert={topAlert}
@@ -2592,7 +2649,13 @@ export function DashboardPage({
 
             {mode === "journal" ? (
               <section aria-label="Journal mode" className="grid gap-4">
-                <EventFilter onApply={handleJournalFilterApply} />
+                <div className="flex items-center justify-between">
+                  <EventFilter onApply={handleJournalFilterApply} />
+                  <DataFreshnessBadge
+                    fetchedAt={journalFetchedAt}
+                    label="Events updated"
+                  />
+                </div>
 
                 {scrollToEventMessage ? (
                   <Alert>
@@ -2670,6 +2733,11 @@ export function DashboardPage({
 
             {mode === "compare" ? (
               <section aria-label="Compare mode" className="grid gap-4">
+                <DataFreshnessBadge
+                  fetchedAt={compareFetchedAtState}
+                  label="Comparison updated"
+                />
+
                 {compareStatus === "loading" ? (
                   <div className="grid gap-4">
                     <div className="h-10 animate-pulse rounded bg-muted" />
