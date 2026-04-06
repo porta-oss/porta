@@ -104,11 +104,11 @@ File: `apps/web/src/components/ai-synthesis-card.tsx`
 
 ### Task 8: Create system status sidebar section
 File: `apps/web/src/components/system-status-section.tsx`
-- [ ] Last digest sent timestamp (relative: "2h ago")
-- [ ] MCP query count (today)
-- [ ] Active alert count with severity breakdown
-- [ ] Connector sync status (last sync time, any errors flagged)
-- [ ] Compact sidebar format with icon + label + value rows
+- [x] Last digest sent timestamp (relative: "2h ago")
+- [x] MCP query count (today)
+- [x] Active alert count with severity breakdown
+- [x] Connector sync status (last sync time, any errors flagged)
+- [x] Compact sidebar format with icon + label + value rows
 
 ### Task 9: Integrate mode switcher with URL persistence
 File: `apps/web/src/routes/_authenticated/dashboard.tsx`
