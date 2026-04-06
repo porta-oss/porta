@@ -77,16 +77,16 @@ File: `apps/api/tests/alert-rule.routes.test.ts`
 
 ### Task 3: Implement Z-score alert evaluator
 File: `apps/api/src/lib/alerts/evaluator.ts`
-- [ ] Create `evaluateAlerts(startupId, db)` async function
-- [ ] Load all enabled `alert_rules` for startup
-- [ ] For each rule: look up current metric value, load 30-day history, evaluate condition
-- [ ] Implement z_score calculation: `|current - mean| / stddev`
-- [ ] Handle edge cases (zero base, SD=0, insufficient data)
-- [ ] Implement dedup logic: check existing active/snoozed alert for `(rule_id, startup_id)`
-- [ ] If exists: UPDATE `occurrence_count += 1`, `last_fired_at = now()`
-- [ ] If new: INSERT alert row
-- [ ] Emit `alert.fired` event via event emitter
-- [ ] Return array of `{ alert, isNew }` for downstream notification
+- [x] Create `evaluateAlerts(startupId, db)` async function
+- [x] Load all enabled `alert_rules` for startup
+- [x] For each rule: look up current metric value, load 30-day history, evaluate condition
+- [x] Implement z_score calculation: `|current - mean| / stddev`
+- [x] Handle edge cases (zero base, SD=0, insufficient data)
+- [x] Implement dedup logic: check existing active/snoozed alert for `(rule_id, startup_id)`
+- [x] If exists: UPDATE `occurrence_count += 1`, `last_fired_at = now()`
+- [x] If new: INSERT alert row
+- [x] Emit `alert.fired` event via event emitter
+- [x] Return array of `{ alert, isNew }` for downstream notification
 
 ### Task 4: Implement default alert rule seeder
 File: `apps/api/src/lib/alerts/seeder.ts`
