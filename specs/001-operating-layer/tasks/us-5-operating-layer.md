@@ -60,11 +60,11 @@ File: `apps/api/src/lib/connectors/yookassa.ts`
 
 ### Task 4: Create Sentry validator
 File: `apps/api/src/lib/connectors/sentry.ts`
-- [ ] Define `SentryConfig` interface: `{ authToken: string, organization: string, project: string }`
-- [ ] Implement `createSentryValidator()`: GET `https://sentry.io/api/0/projects/{org}/{project}/` with Bearer token
-- [ ] 10s timeout via AbortController
-- [ ] Return `ProviderValidationResult`
-- [ ] Implement `createFounderProofSentryValidator()` -- deterministic success
+- [x] Define `SentryConfig` interface: `{ authToken: string, organization: string, project: string }`
+- [x] Implement `createSentryValidator()`: GET `https://sentry.io/api/0/projects/{org}/{project}/` with Bearer token
+- [x] 10s timeout via AbortController
+- [x] Return `ProviderValidationResult`
+- [x] Implement `createFounderProofSentryValidator()` -- deterministic success
 
 ### Task 5: Add YooKassa sync provider
 File: `apps/worker/src/providers.ts`
