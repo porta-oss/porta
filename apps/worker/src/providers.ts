@@ -47,6 +47,16 @@ export interface YooKassaSyncResult extends ProviderSyncResult {
   };
 }
 
+/** Result from a Sentry sync. */
+export interface SentrySyncResult extends ProviderSyncResult {
+  /** Sentry-specific metrics (24h window). */
+  sentryMetrics: {
+    crashFreeSessions: number | null;
+    errorRate24h: number;
+    p95Latency: number | null;
+  };
+}
+
 /** Result from a Postgres custom metric sync. */
 export interface PostgresSyncResult extends ProviderSyncResult {
   /** Custom metric data extracted from the prepared view. */
@@ -80,6 +90,20 @@ function invalidProviderSync(
     mrr: null,
     supportingMetrics: null,
     funnelStages: null,
+  };
+}
+
+function invalidSentrySync(
+  error: string,
+  retryable?: boolean
+): SentrySyncResult {
+  return {
+    ...invalidProviderSync(error, retryable),
+    sentryMetrics: {
+      crashFreeSessions: null,
+      errorRate24h: 0,
+      p95Latency: null,
+    },
   };
 }
 
@@ -888,6 +912,279 @@ export const FOUNDER_PROOF_YOOKASSA_CONFIG = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// Sentry adapter — fetches error, latency, and session metrics
+// ---------------------------------------------------------------------------
+
+const SENTRY_SYNC_TIMEOUT_MS = 10_000;
+const SENTRY_SYNC_API_BASE = "https://sentry.io";
+
+function sentryHeaders(authToken: string) {
+  return {
+    Authorization: `Bearer ${authToken}`,
+    Accept: "application/json",
+  };
+}
+
+async function validateSentryConnection(
+  authToken: string,
+  organization: string,
+  project: string
+): Promise<ProviderSyncResult | null> {
+  try {
+    const response = await fetchWithTimeout(
+      `${SENTRY_SYNC_API_BASE}/api/0/projects/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/`,
+      SENTRY_SYNC_TIMEOUT_MS,
+      { method: "GET", headers: sentryHeaders(authToken) }
+    );
+
+    if (response.status === 401) {
+      return invalidProviderSync(
+        "Sentry auth token is invalid or has been revoked."
+      );
+    }
+    if (response.status === 403) {
+      return invalidProviderSync(
+        "Sentry auth token lacks the required permissions."
+      );
+    }
+    if (response.status === 404) {
+      return invalidProviderSync(
+        "Sentry organization or project not found. Verify the slugs are correct."
+      );
+    }
+    if (response.status >= 500) {
+      return invalidProviderSync(
+        "Sentry API returned a server error. Try again shortly.",
+        true
+      );
+    }
+    if (response.status !== 200) {
+      return invalidProviderSync(
+        `Sentry validation failed with status ${response.status}.`
+      );
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      return invalidProviderSync(
+        "Sentry validation timed out. Try again.",
+        true
+      );
+    }
+    return invalidProviderSync(
+      "Sentry validation request failed. Check network connectivity.",
+      true
+    );
+  }
+
+  return null;
+}
+
+async function fetchSentryErrorCount(
+  authToken: string,
+  organization: string,
+  project: string
+): Promise<number> {
+  const now = new Date();
+  const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+  const url = new URL(
+    `${SENTRY_SYNC_API_BASE}/api/0/projects/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/stats/`
+  );
+  url.searchParams.set("stat", "received");
+  url.searchParams.set("resolution", "1h");
+  url.searchParams.set(
+    "since",
+    String(Math.floor(twentyFourHoursAgo.getTime() / 1000))
+  );
+  url.searchParams.set("until", String(Math.floor(now.getTime() / 1000)));
+
+  const response = await fetchWithTimeout(
+    url.toString(),
+    SENTRY_SYNC_TIMEOUT_MS,
+    { method: "GET", headers: sentryHeaders(authToken) }
+  );
+
+  if (!response.ok) {
+    return 0;
+  }
+
+  // Response is array of [timestamp, count] tuples
+  const data = (await response.json()) as [number, number][];
+  let total = 0;
+  for (const [, count] of data) {
+    total += count;
+  }
+  return total;
+}
+
+async function fetchSentryP95Latency(
+  authToken: string,
+  organization: string,
+  project: string
+): Promise<number | null> {
+  const url = new URL(
+    `${SENTRY_SYNC_API_BASE}/api/0/organizations/${encodeURIComponent(organization)}/events/`
+  );
+  url.searchParams.set("project", project);
+  url.searchParams.set("field", "p95(transaction.duration)");
+  url.searchParams.set("statsPeriod", "24h");
+  url.searchParams.set("dataset", "metrics");
+
+  try {
+    const response = await fetchWithTimeout(
+      url.toString(),
+      SENTRY_SYNC_TIMEOUT_MS,
+      { method: "GET", headers: sentryHeaders(authToken) }
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as {
+      data?: Record<string, number>[];
+    };
+
+    const firstRow = data.data?.[0];
+    if (!firstRow) {
+      return null;
+    }
+
+    const p95 = firstRow["p95(transaction.duration)"];
+    return typeof p95 === "number" && Number.isFinite(p95) ? p95 : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchSentryCrashFreeRate(
+  authToken: string,
+  organization: string,
+  project: string
+): Promise<number | null> {
+  const url = new URL(
+    `${SENTRY_SYNC_API_BASE}/api/0/organizations/${encodeURIComponent(organization)}/sessions/`
+  );
+  url.searchParams.set("project", project);
+  url.searchParams.set("field", "crash_free_rate(session)");
+  url.searchParams.set("statsPeriod", "24h");
+  url.searchParams.set("interval", "24h");
+
+  try {
+    const response = await fetchWithTimeout(
+      url.toString(),
+      SENTRY_SYNC_TIMEOUT_MS,
+      { method: "GET", headers: sentryHeaders(authToken) }
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as {
+      groups?: Array<{
+        totals?: Record<string, number>;
+      }>;
+    };
+
+    const crashFreeRate =
+      data.groups?.[0]?.totals?.["crash_free_rate(session)"];
+    return typeof crashFreeRate === "number" && Number.isFinite(crashFreeRate)
+      ? Math.round(crashFreeRate * 10_000) / 100 // 0.9975 -> 99.75%
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function syncSentry(config: {
+  authToken?: string;
+  organization?: string;
+  project?: string;
+}): Promise<SentrySyncResult> {
+  const authToken = config.authToken?.trim() ?? "";
+  const organization = config.organization?.trim() ?? "";
+  const project = config.project?.trim() ?? "";
+
+  if (!authToken) {
+    return invalidSentrySync("Sentry auth token is required.");
+  }
+  if (!organization) {
+    return invalidSentrySync("Sentry organization slug is required.");
+  }
+  if (!project) {
+    return invalidSentrySync("Sentry project slug is required.");
+  }
+
+  const validationError = await validateSentryConnection(
+    authToken,
+    organization,
+    project
+  );
+  if (validationError) {
+    return {
+      ...validationError,
+      sentryMetrics: {
+        crashFreeSessions: null,
+        errorRate24h: 0,
+        p95Latency: null,
+      },
+    };
+  }
+
+  let errorRate24h = 0;
+  let p95Latency: number | null = null;
+  let crashFreeSessions: number | null = null;
+
+  try {
+    errorRate24h = await fetchSentryErrorCount(
+      authToken,
+      organization,
+      project
+    );
+  } catch {
+    // Non-fatal: error count stays at 0
+  }
+
+  try {
+    p95Latency = await fetchSentryP95Latency(authToken, organization, project);
+  } catch {
+    // Non-fatal: latency stays null
+  }
+
+  try {
+    crashFreeSessions = await fetchSentryCrashFreeRate(
+      authToken,
+      organization,
+      project
+    );
+  } catch {
+    // Non-fatal: crash-free stays null
+  }
+
+  return {
+    valid: true,
+    mrr: null,
+    supportingMetrics: {
+      error_rate: errorRate24h,
+    },
+    funnelStages: null,
+    sentryMetrics: {
+      crashFreeSessions,
+      errorRate24h,
+      p95Latency,
+    },
+  };
+}
+
+/** Founder-proof demo config for Sentry. */
+export const FOUNDER_PROOF_SENTRY_CONFIG = {
+  authToken: "sentry_proof_token_001",
+  organization: "sentry_proof_org",
+  project: "sentry_proof_project",
+} as const;
+
+// ---------------------------------------------------------------------------
 // Stripe adapter — fetches financial metrics
 // ---------------------------------------------------------------------------
 
@@ -1029,6 +1326,14 @@ export function createProviderRouter(): ProviderValidateFn {
         const yk = config as { secretKey?: string; shopId?: string };
         return syncYooKassa(yk);
       }
+      case "sentry": {
+        const se = config as {
+          authToken?: string;
+          organization?: string;
+          project?: string;
+        };
+        return syncSentry(se);
+      }
       default:
         return {
           valid: false,
@@ -1082,6 +1387,14 @@ export function createProviderSyncRouter(): ProviderSyncFn {
       case "yookassa": {
         const yk = config as { secretKey?: string; shopId?: string };
         return syncYooKassa(yk);
+      }
+      case "sentry": {
+        const se = config as {
+          authToken?: string;
+          organization?: string;
+          project?: string;
+        };
+        return syncSentry(se);
       }
       default:
         return {
@@ -1213,6 +1526,16 @@ export function createFounderProofSyncRouter(): ProviderSyncFn {
           valid: true,
           mrr: 84_200,
           supportingMetrics: {},
+          funnelStages: null,
+        };
+      }
+      case "sentry": {
+        return {
+          valid: true,
+          mrr: null,
+          supportingMetrics: {
+            error_rate: 142,
+          },
           funnelStages: null,
         };
       }

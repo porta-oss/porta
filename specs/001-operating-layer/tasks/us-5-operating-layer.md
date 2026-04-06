@@ -77,12 +77,12 @@ File: `apps/worker/src/providers.ts`
 
 ### Task 6: Add Sentry sync provider
 File: `apps/worker/src/providers.ts`
-- [ ] Create `syncSentry` adapter function
-- [ ] GET `/api/0/projects/{org}/{project}/stats/` with `stat=received`, `interval=1h`, last 24h -> `error_rate`
-- [ ] GET transaction stats for p95 latency
-- [ ] GET session stats for crash-free rate
-- [ ] Return `ProviderSyncResult` with universal metric promotion (`error_rate`)
-- [ ] Add `sentry` case to `createProviderSyncRouter()` switch
+- [x] Create `syncSentry` adapter function
+- [x] GET `/api/0/projects/{org}/{project}/stats/` with `stat=received`, `interval=1h`, last 24h -> `error_rate`
+- [x] GET transaction stats for p95 latency
+- [x] GET session stats for crash-free rate
+- [x] Return `ProviderSyncResult` with universal metric promotion (`error_rate`)
+- [x] Add `sentry` case to `createProviderSyncRouter()` switch
 
 ### Task 7: Refactor Postgres connector to multi-metric
 Files: `apps/api/src/lib/connectors/postgres.ts`, `apps/worker/src/providers.ts`
