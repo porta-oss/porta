@@ -67,6 +67,7 @@ import {
 } from "./routes/connector";
 import { handleListEvents } from "./routes/event-log";
 import { handleCreateTask, handleListTasks } from "./routes/internal-task";
+import { createMcpPlugin } from "./routes/mcp";
 import {
   handleMcpCreateTask,
   handleMcpGetActivityLog,
@@ -2075,6 +2076,16 @@ export async function createApiApp(
         request,
         body as { startupId?: string; connectorId?: string },
         set
+      )
+    )
+    .mount(
+      new Elysia().use(
+        createMcpPlugin({
+          db: runtime.db.db,
+          queueProducer: runtime.queueProducer,
+          taskSyncQueueProducer: runtime.taskSyncQueueProducer,
+          rateLimiter: runtime.mcpRateLimiter,
+        })
       )
     )
     .all("/auth", ({ request }) => auth.auth.handler(request))

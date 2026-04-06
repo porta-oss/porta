@@ -116,11 +116,11 @@ File: `apps/api/src/routes/mcp-rest.ts`
 
 ### Task 8: Mount elysia-mcp plugin
 File: `apps/api/src/routes/mcp.ts`
-- [ ] Import `elysia-mcp` plugin
-- [ ] Register all 8 tools with Zod input schemas from `@porta/shared`
-- [ ] Configure Bearer token auth
-- [ ] Mount at `/mcp` path
-- [ ] If `elysia-mcp` is not mature enough, skip this task (REST fallback covers it)
+- [x] Import `elysia-mcp` plugin
+- [x] Register all 8 tools with Zod input schemas from `@porta/shared`
+- [x] Configure Bearer token auth
+- [x] Mount at `/mcp` path (via Elysia .mount() for lifecycle isolation)
+- [x] If `elysia-mcp` is not mature enough, skip this task (REST fallback covers it) -- plugin is v0.1.1 and works
 
 ### Task 9: Create API key settings page
 File: `apps/web/src/routes/_authenticated/settings/api-keys.tsx`
