@@ -67,6 +67,12 @@ import {
   serializeStartupRecord,
   validateStartupDraft,
 } from "./routes/startup";
+import {
+  handleCreateWebhookConfig,
+  handleDeleteWebhookConfig,
+  handleGetWebhookConfig,
+  handleUpdateWebhookConfig,
+} from "./routes/webhook-config";
 
 interface AuthenticatedSession {
   session: {
@@ -120,6 +126,7 @@ interface ApiRuntime {
   sentryValidator: SentryValidator;
   stripeValidator: StripeValidator;
   taskSyncQueueProducer: TaskSyncQueueProducer;
+  webhookResolver?: (hostname: string) => Promise<string[]>;
   yookassaValidator: YooKassaValidator;
 }
 
@@ -465,6 +472,7 @@ export async function createApiApp(
     queueProducer?: SyncQueueProducer;
     taskSyncQueueProducer?: TaskSyncQueueProducer;
     yookassaValidator?: YooKassaValidator;
+    webhookResolver?: (hostname: string) => Promise<string[]>;
   }
 ): Promise<ApiApp> {
   const env = options?.env ?? readApiEnv(envSource, { strict: true });
@@ -513,6 +521,7 @@ export async function createApiApp(
     sentryValidator,
     queueProducer,
     taskSyncQueueProducer,
+    webhookResolver: options?.webhookResolver,
   };
 
   console.info("[auth] bootstrap ready", {
@@ -1760,6 +1769,110 @@ export async function createApiApp(
           alertIds: t.Optional(t.Array(t.String())),
           snoozeDurationHours: t.Optional(t.Number()),
         }),
+      }
+    )
+    .post(
+      "/startups/:startupId/webhook",
+      async ({ authContext, request, set, params, body }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/webhook"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleCreateWebhookConfig(
+          { db: runtime.db, resolver: runtime.webhookResolver },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          body,
+          set
+        );
+      },
+      {
+        body: t.Object({
+          url: t.String(),
+          eventTypes: t.Array(t.String()),
+          enabled: t.Optional(t.Boolean()),
+        }),
+      }
+    )
+    .get(
+      "/startups/:startupId/webhook",
+      async ({ authContext, request, set, params }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/webhook"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleGetWebhookConfig(
+          { db: runtime.db, resolver: runtime.webhookResolver },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          set
+        );
+      }
+    )
+    .patch(
+      "/startups/:startupId/webhook",
+      async ({ authContext, request, set, params, body }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/webhook"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleUpdateWebhookConfig(
+          { db: runtime.db, resolver: runtime.webhookResolver },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          body,
+          set
+        );
+      },
+      {
+        body: t.Object({
+          url: t.Optional(t.String()),
+          eventTypes: t.Optional(t.Array(t.String())),
+          enabled: t.Optional(t.Boolean()),
+        }),
+      }
+    )
+    .delete(
+      "/startups/:startupId/webhook",
+      async ({ authContext, request, set, params }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/webhook"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleDeleteWebhookConfig(
+          { db: runtime.db, resolver: runtime.webhookResolver },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          set
+        );
       }
     )
     .all("/auth", ({ request }) => auth.auth.handler(request))

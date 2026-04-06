@@ -76,10 +76,10 @@ File: `apps/api/src/lib/webhooks/delivery.ts`
 
 ### Task 3: Implement webhook config CRUD routes
 File: `apps/api/src/routes/webhook-config.ts`
-- [ ] `POST /api/startups/:startupId/webhook` -- validate URL (HTTPS + SSRF check), auto-gen 32-char secret, insert, return config WITH secret (shown once)
-- [ ] `GET /api/startups/:startupId/webhook` -- return config WITHOUT secret
-- [ ] `PATCH /api/startups/:startupId/webhook` -- update URL and/or eventTypes, re-validate URL
-- [ ] `DELETE /api/startups/:startupId/webhook` -- remove config
+- [x] `POST /api/startups/:startupId/webhook` -- validate URL (HTTPS + SSRF check), auto-gen 32-char secret, insert, return config WITH secret (shown once)
+- [x] `GET /api/startups/:startupId/webhook` -- return config WITHOUT secret
+- [x] `PATCH /api/startups/:startupId/webhook` -- update URL and/or eventTypes, re-validate URL
+- [x] `DELETE /api/startups/:startupId/webhook` -- remove config
 
 ### Task 4: Implement webhook delivery processor
 File: `apps/worker/src/processors/webhook.ts`
@@ -110,6 +110,6 @@ File: `apps/web/src/routes/_authenticated/settings/webhooks.tsx`
 
 ### Task 7: Register webhook routes in app
 File: `apps/api/src/app.ts`
-- [ ] Import webhook config route handlers
-- [ ] Add POST/GET/PATCH/DELETE `/api/startups/:startupId/webhook` routes
-- [ ] Wire `WebhookRuntime` with db instance
+- [x] Import webhook config route handlers
+- [x] Add POST/GET/PATCH/DELETE `/api/startups/:startupId/webhook` routes
+- [x] Wire `WebhookRuntime` with db instance
