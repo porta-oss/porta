@@ -101,12 +101,12 @@ File: `apps/worker/src/processors/sync.ts`
 
 ### Task 6: Create webhook settings page
 File: `apps/web/src/routes/_authenticated/settings/webhooks.tsx`
-- [ ] URL input field with HTTPS validation
-- [ ] Event type multi-select checkboxes (from `EVENT_TYPES`)
-- [ ] Display circuit breaker status (if `circuit_broken_at` set, show warning)
-- [ ] Show secret on initial creation only (copy button)
-- [ ] Delivery log section (recent `webhook.delivered`/`webhook.failed` events)
-- [ ] Delete webhook button with confirmation
+- [x] URL input field with HTTPS validation
+- [x] Event type multi-select checkboxes (from `EVENT_TYPES`)
+- [x] Display circuit breaker status (if `circuit_broken_at` set, show warning)
+- [x] Show secret on initial creation only (copy button)
+- [x] Delivery log section (recent `webhook.delivered`/`webhook.failed` events)
+- [x] Delete webhook button with confirmation
 
 ### Task 7: Register webhook routes in app
 File: `apps/api/src/app.ts`
