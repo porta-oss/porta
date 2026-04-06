@@ -62,6 +62,9 @@ importers:
       grammy:
         specifier: ^1.42.0
         version: 1.42.0
+      ioredis:
+        specifier: ^5.6.1
+        version: 5.10.1
       pg:
         specifier: ^8.16.3
         version: 8.20.0

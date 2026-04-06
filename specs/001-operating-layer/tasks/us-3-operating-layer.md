@@ -86,9 +86,9 @@ File: `apps/api/src/lib/mcp/auth.ts`
 
 ### Task 4: Implement rate limiting
 File: `apps/api/src/lib/mcp/auth.ts` (same file)
-- [ ] Redis sliding window counter: key = `rate:mcp:{keyPrefix}`, window = 60s
-- [ ] INCR + EXPIRE pattern or ZRANGEBYSCORE for sliding window
-- [ ] If count > 60: return 429 with `Retry-After` header (seconds until window resets)
+- [x] Redis sliding window counter: key = `rate:mcp:{keyPrefix}`, window = 60s
+- [x] INCR + EXPIRE pattern or ZRANGEBYSCORE for sliding window
+- [x] If count > 60: return 429 with `Retry-After` header (seconds until window resets)
 
 ### Task 5: Implement API key management routes
 File: `apps/api/src/routes/api-key.ts`
