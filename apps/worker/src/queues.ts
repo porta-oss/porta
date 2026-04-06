@@ -98,12 +98,26 @@ export function createTaskSyncWorker(
 // Telegram queue — digest & alert delivery
 // ---------------------------------------------------------------------------
 
-export interface TelegramJobPayload {
-  chatId: string;
-  message: string;
-  type: "digest" | "alert";
+export interface TelegramDigestPayload {
+  type: "digest";
+}
+
+export interface TelegramAlertPayload {
+  alertId: string;
+  dashboardUrl: string;
+  eventId: string;
+  metricKey: string;
+  occurrenceCount: number;
+  severity: string;
+  startupId: string;
+  startupName: string;
+  threshold: string;
+  type: "alert";
+  value: string;
   workspaceId: string;
 }
+
+export type TelegramJobPayload = TelegramDigestPayload | TelegramAlertPayload;
 
 export function createTelegramQueue(
   redisUrl: string

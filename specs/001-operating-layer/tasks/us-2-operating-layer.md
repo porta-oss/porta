@@ -96,12 +96,12 @@ File: `apps/worker/src/processors/telegram.ts`
 
 ### Task 6: Implement alert notification processor
 File: `apps/worker/src/processors/telegram.ts` (same file)
-- [ ] Create handler for alert notification job type
-- [ ] Format alert message: severity, startup name, metric, value, threshold, occurrence count
-- [ ] Build InlineKeyboard with Ack/Snooze/Dismiss buttons
-- [ ] Send via `sendMessage` with `reply_markup`
-- [ ] Include deep link to journal mode: `{dashboardUrl}?startup={id}&mode=journal&event={eventId}`
-- [ ] Log `telegram.alert` event
+- [x] Create handler for alert notification job type
+- [x] Format alert message: severity, startup name, metric, value, threshold, occurrence count
+- [x] Build InlineKeyboard with Ack/Snooze/Dismiss buttons
+- [x] Send via `sendMessage` with `reply_markup`
+- [x] Include deep link to journal mode: `{dashboardUrl}?startup={id}&mode=journal&event={eventId}`
+- [x] Log `telegram.alert` event
 
 ### Task 7: Create Telegram settings page
 File: `apps/web/src/routes/_authenticated/settings/telegram.tsx`

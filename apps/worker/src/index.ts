@@ -20,6 +20,7 @@ import {
 } from "./processors/task-sync";
 import {
   createDefaultTelegramSender,
+  createTelegramAlertProcessor,
   createTelegramDigestProcessor,
 } from "./processors/telegram";
 import { createWebhookDeliveryProcessor } from "./processors/webhook";
@@ -350,17 +351,27 @@ async function main() {
   // Telegram digest worker (daily portfolio digest via Telegram Bot API)
   // ---------------------------------------------------------------------------
 
+  const telegramSender = createDefaultTelegramSender();
   const telegramDigestProcessor = createTelegramDigestProcessor({
     db: db as unknown as Parameters<
       typeof createTelegramDigestProcessor
     >[0]["db"],
     log,
-    sender: createDefaultTelegramSender(),
+    sender: telegramSender,
   });
-  const telegramWorker = createTelegramWorker(
-    env.redisUrl,
-    telegramDigestProcessor
-  );
+  const telegramAlertProcessor = createTelegramAlertProcessor({
+    db: db as unknown as Parameters<
+      typeof createTelegramAlertProcessor
+    >[0]["db"],
+    log,
+    sender: telegramSender,
+  });
+  const telegramWorker = createTelegramWorker(env.redisUrl, async (job) => {
+    if (job.data.type === "alert") {
+      return telegramAlertProcessor(job);
+    }
+    return telegramDigestProcessor(job);
+  });
 
   telegramWorker.on("ready", () => {
     log.info("telegram worker ready", { queue: "telegram", concurrency: 1 });
@@ -388,10 +399,7 @@ async function main() {
     { pattern: "* * * * *" },
     {
       data: {
-        chatId: "",
-        message: "",
         type: "digest" as const,
-        workspaceId: "",
       },
     }
   );

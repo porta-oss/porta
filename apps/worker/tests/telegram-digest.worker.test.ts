@@ -157,7 +157,7 @@ function createMockSender(
 
   return {
     calls,
-    async sendMessage(botToken, chatId, text, _parseMode) {
+    async sendMessage(botToken, chatId, text, _parseMode, _replyMarkup) {
       calls.push({ method: "sendMessage", botToken, chatId, text });
       return response;
     },
@@ -175,10 +175,7 @@ function createMockSender(
 }
 
 const digestJobPayload: TelegramJobPayload = {
-  chatId: "",
-  message: "",
   type: "digest",
-  workspaceId: "",
 };
 
 // ---------- unit tests ----------
@@ -226,9 +223,17 @@ describe("telegram digest processor", () => {
 
     await processor(
       makeJob({
-        chatId: "123",
-        message: "alert",
         type: "alert",
+        alertId: "alert-1",
+        dashboardUrl: "http://localhost:5173",
+        eventId: "evt-1",
+        metricKey: "mrr",
+        occurrenceCount: 1,
+        severity: "medium",
+        startupId: "s-1",
+        startupName: "Test",
+        threshold: "100",
+        value: "50",
         workspaceId: "ws-1",
       })
     );

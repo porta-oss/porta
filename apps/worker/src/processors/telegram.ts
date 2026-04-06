@@ -5,7 +5,7 @@
 
 import type { Job } from "bullmq";
 import { sql } from "drizzle-orm";
-import type { TelegramJobPayload } from "../queues";
+import type { TelegramAlertPayload, TelegramJobPayload } from "../queues";
 import { renderSparkline } from "../sparklines";
 
 // ---------------------------------------------------------------------------
@@ -17,12 +17,22 @@ interface DrizzleHandle {
   execute: (query: ReturnType<typeof sql>) => Promise<{ rows: unknown[] }>;
 }
 
+export interface InlineKeyboardButton {
+  callback_data: string;
+  text: string;
+}
+
+export interface InlineKeyboardMarkup {
+  inline_keyboard: InlineKeyboardButton[][];
+}
+
 export interface TelegramSender {
   sendMessage(
     botToken: string,
     chatId: string,
     text: string,
-    parseMode?: string
+    parseMode?: string,
+    replyMarkup?: InlineKeyboardMarkup
   ): Promise<TelegramApiResponse>;
   sendPhoto(
     botToken: string,
@@ -155,16 +165,20 @@ export function getCurrentTimeInTimezone(
 
 export function createDefaultTelegramSender(): TelegramSender {
   return {
-    async sendMessage(botToken, chatId, text, parseMode) {
+    async sendMessage(botToken, chatId, text, parseMode, replyMarkup) {
       const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+      const payload: Record<string, unknown> = {
+        chat_id: chatId,
+        text,
+        parse_mode: parseMode,
+      };
+      if (replyMarkup) {
+        payload.reply_markup = replyMarkup;
+      }
       const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-          parse_mode: parseMode,
-        }),
+        body: JSON.stringify(payload),
         signal: AbortSignal.timeout(10_000),
       });
       return response.json() as Promise<TelegramApiResponse>;
@@ -497,4 +511,169 @@ async function deactivateConfig(
   await db.execute(
     sql`UPDATE telegram_config SET is_active = false WHERE id = ${config.id}`
   );
+}
+
+// ---------------------------------------------------------------------------
+// Alert notification processor
+// ---------------------------------------------------------------------------
+
+export interface TelegramAlertProcessorDeps {
+  db: DrizzleHandle;
+  log: {
+    error: (msg: string, meta?: Record<string, unknown>) => void;
+    info: (msg: string, meta?: Record<string, unknown>) => void;
+    warn: (msg: string, meta?: Record<string, unknown>) => void;
+  };
+  sender: TelegramSender;
+}
+
+function severityEmoji(severity: string): string {
+  switch (severity) {
+    case "critical":
+      return "🔴";
+    case "high":
+      return "🟠";
+    case "medium":
+      return "🟡";
+    case "low":
+      return "🔵";
+    default:
+      return "⚪";
+  }
+}
+
+/** Escape only `)` and `\` for use inside MarkdownV2 inline link URLs. */
+function escMd2Url(url: string): string {
+  return url.replace(/[)\\]/g, "\\$&");
+}
+
+export function formatAlertMessage(data: TelegramAlertPayload): string {
+  const emoji = severityEmoji(data.severity);
+  const sev = escMd2(data.severity.toUpperCase());
+  const name = escMd2(data.startupName);
+  const metric = escMd2(data.metricKey.toUpperCase().replace(/_/g, " "));
+  const value = escMd2(data.value);
+  const threshold = escMd2(data.threshold);
+
+  let msg = `${emoji} *${sev} Alert — ${name}*\n\n`;
+  msg += `Metric: ${metric}\n`;
+  msg += `Value: ${value} \\(threshold: ${threshold}\\)\n`;
+  msg += `Occurrences: ${data.occurrenceCount}\n`;
+
+  if (data.dashboardUrl && data.eventId) {
+    const url = `${data.dashboardUrl}?startup=${data.startupId}&mode=journal&event=${data.eventId}`;
+    msg += `\n[View in Journal →](${escMd2Url(url)})`;
+  }
+
+  return msg;
+}
+
+export function createTelegramAlertProcessor(deps: TelegramAlertProcessorDeps) {
+  return async function processTelegramAlertJob(
+    job: Job<TelegramJobPayload>
+  ): Promise<void> {
+    if (job.data.type !== "alert") {
+      return;
+    }
+
+    const data = job.data;
+    deps.log.info("telegram alert notification started", {
+      alertId: data.alertId,
+      workspaceId: data.workspaceId,
+    });
+
+    // Look up active telegram config for the workspace
+    const configResult = await deps.db.execute(
+      sql`SELECT id, workspace_id, bot_token, chat_id
+          FROM telegram_config
+          WHERE workspace_id = ${data.workspaceId}
+            AND is_active = true
+            AND chat_id IS NOT NULL
+          LIMIT 1`
+    );
+    const configs = configResult.rows as Array<{
+      bot_token: string;
+      chat_id: string;
+      id: string;
+      workspace_id: string;
+    }>;
+
+    if (configs.length === 0) {
+      deps.log.info("no active telegram config for workspace, skipping alert", {
+        workspaceId: data.workspaceId,
+      });
+      return;
+    }
+
+    const config = configs[0];
+
+    // Format alert message in MarkdownV2
+    const message = formatAlertMessage(data);
+
+    // Build inline keyboard with triage buttons
+    const keyboard: InlineKeyboardMarkup = {
+      inline_keyboard: [
+        [
+          {
+            text: "✅ Ack",
+            callback_data: `triage:ack:${data.alertId}`,
+          },
+          {
+            text: "💤 Snooze 24h",
+            callback_data: `triage:snooze:${data.alertId}`,
+          },
+          {
+            text: "🚫 Dismiss",
+            callback_data: `triage:dismiss:${data.alertId}`,
+          },
+        ],
+      ],
+    };
+
+    // Send message with inline keyboard
+    const result = await deps.sender.sendMessage(
+      config.bot_token,
+      config.chat_id,
+      message,
+      "MarkdownV2",
+      keyboard
+    );
+
+    if (!result.ok) {
+      if (result.error_code === 403) {
+        await deactivateConfig(
+          deps.db,
+          deps.log,
+          config as unknown as TelegramConfigRow
+        );
+        return;
+      }
+      throw new Error(
+        `Telegram sendMessage failed: ${result.description ?? "unknown error"}`
+      );
+    }
+
+    // Log telegram.alert event (fire-and-forget)
+    const eventPayload = JSON.stringify({
+      alertId: data.alertId,
+      chatId: config.chat_id,
+      metricKey: data.metricKey,
+      severity: data.severity,
+      startupId: data.startupId,
+    });
+    deps.db
+      .execute(
+        sql`INSERT INTO event_log (id, workspace_id, startup_id, event_type, actor_type, actor_id, payload, created_at)
+          VALUES (gen_random_uuid(), ${data.workspaceId}, ${data.startupId}, 'telegram.alert', 'system', NULL, ${eventPayload}::jsonb, NOW())`
+      )
+      .catch(() => {
+        // Fire-and-forget — event log failures must not block alert delivery
+      });
+
+    deps.log.info("telegram alert sent", {
+      alertId: data.alertId,
+      startupId: data.startupId,
+      workspaceId: data.workspaceId,
+    });
+  };
 }
