@@ -54,6 +54,16 @@ export interface ReplaceSnapshotInput {
   syncJobId: string | null;
 }
 
+/** Input for recording metric history entries after a snapshot recompute. */
+export interface RecordHistoryInput {
+  capturedAt: Date;
+  northStarKey: string;
+  northStarValue: number;
+  snapshotId: string;
+  startupId: string;
+  supportingMetrics: Record<string, number>;
+}
+
 /** Health snapshot read/write operations for the worker and API. */
 export interface HealthSnapshotRepository {
   /** Check whether the health tables exist in the database. */
@@ -67,9 +77,16 @@ export interface HealthSnapshotRepository {
 
   /** Load the latest health snapshot for a startup. Returns undefined if none exists. */
   findSnapshot(startupId: string): Promise<HealthSnapshotRow | undefined>;
+
+  /**
+   * Record metric values into health_snapshot_history for trend tracking.
+   * Inserts one row per metric (north star + supporting metrics).
+   */
+  recordHistory(input: RecordHistoryInput): Promise<void>;
   /**
    * Atomically replace the health snapshot + funnel stages for a startup.
    * Deletes existing rows and inserts the new set within a single transaction.
+   * Preserves health_snapshot_history rows by re-parenting them to the new snapshot.
    */
   replaceSnapshot(input: ReplaceSnapshotInput): Promise<void>;
 }
@@ -172,13 +189,26 @@ export function createHealthSnapshotRepository(
     async replaceSnapshot(input: ReplaceSnapshotInput): Promise<void> {
       const metricsJson = JSON.stringify(input.supportingMetrics);
 
+      // Preserve health_snapshot_history rows (30-day window) before cascade delete.
+      // The FK on snapshot_id has ON DELETE CASCADE, so deleting the old snapshot
+      // would wipe all history. We read, delete, recreate with the new snapshot_id.
+      const cutoff30d = new Date(
+        Date.now() - 30 * 24 * 60 * 60 * 1000
+      ).toISOString();
+      const savedHistory = await db.execute(
+        sql`SELECT startup_id, metric_key, value, captured_at
+            FROM health_snapshot_history
+            WHERE startup_id = ${input.startupId}
+              AND captured_at >= ${cutoff30d}`
+      );
+
       // Delete existing funnel stages for this startup first (FK cascade would handle it,
       // but explicit deletion keeps intent clear and works even without cascade).
       await db.execute(
         sql`DELETE FROM health_funnel_stage WHERE startup_id = ${input.startupId}`
       );
 
-      // Delete existing snapshot for this startup.
+      // Delete existing snapshot for this startup (cascades history rows).
       await db.execute(
         sql`DELETE FROM health_snapshot WHERE startup_id = ${input.startupId}`
       );
@@ -188,6 +218,20 @@ export function createHealthSnapshotRepository(
         sql`INSERT INTO health_snapshot (id, startup_id, health_state, blocked_reason, north_star_key, north_star_value, north_star_previous_value, supporting_metrics, sync_job_id, computed_at)
             VALUES (${input.snapshotId}, ${input.startupId}, ${input.healthState}, ${input.blockedReason}, ${input.northStarKey}, ${input.northStarValue}, ${input.northStarPreviousValue}, ${metricsJson}::jsonb, ${input.syncJobId}, ${input.computedAt})`
       );
+
+      // Re-insert preserved history rows referencing the new snapshot.
+      const historyRows = savedHistory.rows as Array<{
+        startup_id: string;
+        metric_key: string;
+        value: string;
+        captured_at: Date;
+      }>;
+      for (const row of historyRows) {
+        await db.execute(
+          sql`INSERT INTO health_snapshot_history (id, startup_id, metric_key, value, snapshot_id, captured_at)
+              VALUES (gen_random_uuid(), ${row.startup_id}, ${row.metric_key}, ${row.value}, ${input.snapshotId}, ${row.captured_at})`
+        );
+      }
 
       // Insert funnel stage rows.
       for (const stage of input.funnel) {
@@ -263,6 +307,27 @@ export function createHealthSnapshotRepository(
         value: row.value,
         position: row.position,
       }));
+    },
+
+    async recordHistory(input: RecordHistoryInput): Promise<void> {
+      // Record north star metric
+      const northStarStr = String(input.northStarValue);
+      await db.execute(
+        sql`INSERT INTO health_snapshot_history (id, startup_id, metric_key, value, snapshot_id, captured_at)
+            VALUES (gen_random_uuid(), ${input.startupId}, ${input.northStarKey}, ${northStarStr}, ${input.snapshotId}, ${input.capturedAt})`
+      );
+
+      // Record each supporting metric
+      for (const [key, val] of Object.entries(input.supportingMetrics)) {
+        if (val == null || !Number.isFinite(val)) {
+          continue;
+        }
+        const valStr = String(val);
+        await db.execute(
+          sql`INSERT INTO health_snapshot_history (id, startup_id, metric_key, value, snapshot_id, captured_at)
+              VALUES (gen_random_uuid(), ${input.startupId}, ${key}, ${valStr}, ${input.snapshotId}, ${input.capturedAt})`
+        );
+      }
     },
 
     async checkHealthTablesExist(): Promise<{
@@ -771,6 +836,445 @@ export function createCustomMetricRepository(
             SET updated_at = ${now}
             WHERE startup_id = ${input.startupId}`
       );
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Alert Repository — z-score evaluation, seeding, and streak tracking
+// ---------------------------------------------------------------------------
+
+/** Result of evaluating a single alert rule. */
+export interface AlertEvaluationResult {
+  alertId: string;
+  isNew: boolean;
+  metricKey: string;
+  ruleId: string;
+  severity: string;
+  value: number;
+}
+
+/** Alert evaluation, seeding, and streak operations for the worker. */
+export interface AlertRepository {
+  /** Count active alerts for a startup. */
+  countActiveAlerts(startupId: string): Promise<number>;
+  /** Evaluate all enabled alert rules for a startup using z-score anomaly detection. */
+  evaluateAlerts(startupId: string): Promise<AlertEvaluationResult[]>;
+  /** Seed default alert rules if startup has none. Returns count of rules seeded. */
+  seedDefaultAlerts(startupId: string, metricKeys: string[]): Promise<number>;
+  /** Update the health streak for a startup based on active alert count. */
+  updateStreak(startupId: string, hasActiveAlerts: boolean): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Z-score evaluation helpers (pure computation)
+// ---------------------------------------------------------------------------
+
+const Z_SCORE_THRESHOLD = 2.5;
+const HISTORY_WINDOW_DAYS = 30;
+const Z_GUARDED_CONDITIONS = new Set(["drop_wow_pct", "spike_vs_avg"]);
+
+interface HistoryStats {
+  mean: number;
+  previousValue: number;
+  stddev: number;
+}
+
+function computeStats(values: number[]): HistoryStats {
+  const n = values.length;
+  const mean = values.reduce((s, v) => s + v, 0) / n;
+  const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
+  const stddev = Math.sqrt(variance);
+  return { mean, previousValue: values[0], stddev };
+}
+
+function evaluateCondition(
+  condition: string,
+  current: number,
+  threshold: number,
+  stats: HistoryStats
+): boolean {
+  switch (condition) {
+    case "drop_wow_pct": {
+      const prev = stats.previousValue;
+      if (prev === 0) {
+        return false;
+      }
+      const dropPct = ((prev - current) / prev) * 100;
+      return dropPct >= threshold;
+    }
+    case "spike_vs_avg": {
+      if (stats.mean === 0) {
+        return false;
+      }
+      return current / stats.mean >= threshold;
+    }
+    case "below_threshold":
+      return current < threshold;
+    case "above_threshold":
+      return current > threshold;
+    default:
+      return false;
+  }
+}
+
+function passesZScoreGuard(
+  condition: string,
+  current: number,
+  stats: HistoryStats
+): boolean {
+  if (!Z_GUARDED_CONDITIONS.has(condition)) {
+    return true;
+  }
+  if (stats.stddev === 0) {
+    return true; // SD=0 → bypass guard
+  }
+  const z = Math.abs(current - stats.mean) / stats.stddev;
+  return z >= Z_SCORE_THRESHOLD;
+}
+
+// ---------------------------------------------------------------------------
+// Default alert rules for seeding
+// ---------------------------------------------------------------------------
+
+const DEFAULT_ALERT_RULES: ReadonlyArray<{
+  condition: string;
+  metricKey: string;
+  severity: string;
+  threshold: number;
+}> = [
+  {
+    condition: "drop_wow_pct",
+    metricKey: "mrr",
+    severity: "critical",
+    threshold: 20,
+  },
+  {
+    condition: "drop_wow_pct",
+    metricKey: "active_users",
+    severity: "high",
+    threshold: 25,
+  },
+  {
+    condition: "above_threshold",
+    metricKey: "churn_rate",
+    severity: "high",
+    threshold: 10,
+  },
+  {
+    condition: "spike_vs_avg",
+    metricKey: "error_rate",
+    severity: "critical",
+    threshold: 3,
+  },
+  {
+    condition: "spike_vs_avg",
+    metricKey: "yookassa_failed_payments",
+    severity: "high",
+    threshold: 2,
+  },
+  {
+    condition: "drop_wow_pct",
+    metricKey: "active_installs",
+    severity: "high",
+    threshold: 25,
+  },
+  {
+    condition: "drop_wow_pct",
+    metricKey: "active_families",
+    severity: "high",
+    threshold: 25,
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Alert Repository implementation
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Alert rule evaluation — extracted to reduce cognitive complexity
+// ---------------------------------------------------------------------------
+
+interface AlertRuleRow {
+  condition: string;
+  id: string;
+  metric_key: string;
+  min_data_points: number;
+  severity: string;
+  threshold: string;
+}
+
+interface SnapshotMetrics {
+  northStarKey: string;
+  northStarValue: string | null;
+  supportingMetrics: Record<string, number>;
+}
+
+function lookupMetricValue(
+  metricKey: string,
+  snap: SnapshotMetrics
+): number | undefined {
+  if (metricKey in snap.supportingMetrics) {
+    return snap.supportingMetrics[metricKey];
+  }
+  if (metricKey === snap.northStarKey && snap.northStarValue != null) {
+    return Number(snap.northStarValue);
+  }
+  return undefined;
+}
+
+async function evaluateSingleRule(
+  db: DrizzleHandle,
+  rule: AlertRuleRow,
+  startupId: string,
+  workspaceId: string,
+  snap: SnapshotMetrics,
+  cutoff: Date
+): Promise<AlertEvaluationResult | null> {
+  const currentValue = lookupMetricValue(rule.metric_key, snap);
+  if (currentValue === undefined) {
+    return null;
+  }
+
+  // Load 30-day history (most recent first)
+  const histResult = await db.execute(
+    sql`SELECT value FROM health_snapshot_history
+        WHERE startup_id = ${startupId}
+          AND metric_key = ${rule.metric_key}
+          AND captured_at >= ${cutoff}
+        ORDER BY captured_at DESC`
+  );
+  const historyValues = (histResult.rows as Array<{ value: string }>).map((r) =>
+    Number(r.value)
+  );
+
+  if (historyValues.length < rule.min_data_points) {
+    return null;
+  }
+
+  const stats = computeStats(historyValues);
+  const threshold = Number(rule.threshold);
+
+  if (!evaluateCondition(rule.condition, currentValue, threshold, stats)) {
+    return null;
+  }
+  if (!passesZScoreGuard(rule.condition, currentValue, stats)) {
+    return null;
+  }
+
+  // Dedup: check for existing active/snoozed alert
+  const dedupResult = await db.execute(
+    sql`SELECT id, occurrence_count FROM alert
+        WHERE rule_id = ${rule.id}
+          AND startup_id = ${startupId}
+          AND status IN ('active', 'snoozed')
+        LIMIT 1`
+  );
+  const existing = dedupResult.rows[0] as
+    | { id: string; occurrence_count: number }
+    | undefined;
+
+  const now = new Date();
+  const valueStr = String(currentValue);
+  let result: AlertEvaluationResult;
+
+  if (existing) {
+    await db.execute(
+      sql`UPDATE alert
+          SET occurrence_count = occurrence_count + 1,
+              last_fired_at = ${now},
+              value = ${valueStr}
+          WHERE id = ${existing.id}`
+    );
+    result = {
+      alertId: existing.id,
+      isNew: false,
+      metricKey: rule.metric_key,
+      ruleId: rule.id,
+      severity: rule.severity,
+      value: currentValue,
+    };
+  } else {
+    const alertId = crypto.randomUUID();
+    await db.execute(
+      sql`INSERT INTO alert (id, startup_id, rule_id, metric_key, severity, value, threshold, status, occurrence_count, fired_at, last_fired_at, created_at)
+          VALUES (${alertId}, ${startupId}, ${rule.id}, ${rule.metric_key}, ${rule.severity}, ${valueStr}, ${rule.threshold}, 'active', 1, ${now}, ${now}, ${now})`
+    );
+    result = {
+      alertId,
+      isNew: true,
+      metricKey: rule.metric_key,
+      ruleId: rule.id,
+      severity: rule.severity,
+      value: currentValue,
+    };
+  }
+
+  // Emit alert.fired event (fire-and-forget)
+  const payloadJson = JSON.stringify({
+    ruleId: rule.id,
+    metricKey: rule.metric_key,
+    severity: rule.severity,
+    value: currentValue,
+    threshold,
+  });
+  db.execute(
+    sql`INSERT INTO event_log (id, workspace_id, startup_id, event_type, actor_type, actor_id, payload, created_at)
+        VALUES (gen_random_uuid(), ${workspaceId}, ${startupId}, 'alert.fired', 'system', NULL, ${payloadJson}::jsonb, ${now})`
+  ).catch(() => {
+    // Silent — event log failures must not block alert evaluation
+  });
+
+  return result;
+}
+
+/**
+ * Create an alert repository backed by a Drizzle db instance.
+ * Uses parameterized SQL and mirrors the z-score algorithm from the API evaluator.
+ */
+export function createAlertRepository(db: DrizzleHandle): AlertRepository {
+  return {
+    async countActiveAlerts(startupId: string): Promise<number> {
+      const result = await db.execute(
+        sql`SELECT COUNT(*)::int AS cnt FROM alert
+            WHERE startup_id = ${startupId} AND status = 'active'`
+      );
+      const row = result.rows[0] as { cnt: number } | undefined;
+      return row?.cnt ?? 0;
+    },
+
+    async evaluateAlerts(startupId: string): Promise<AlertEvaluationResult[]> {
+      // 0. Fetch workspace_id for event emission
+      const startupResult = await db.execute(
+        sql`SELECT workspace_id FROM startup WHERE id = ${startupId} LIMIT 1`
+      );
+      const startupRow = startupResult.rows[0] as
+        | { workspace_id: string }
+        | undefined;
+      if (!startupRow) {
+        return [];
+      }
+
+      // 1. Load enabled alert rules
+      const rulesResult = await db.execute(
+        sql`SELECT id, metric_key, condition, threshold, severity, min_data_points
+            FROM alert_rule
+            WHERE startup_id = ${startupId} AND enabled = true`
+      );
+      const rules = rulesResult.rows as AlertRuleRow[];
+      if (rules.length === 0) {
+        return [];
+      }
+
+      // 2. Load current health snapshot metrics
+      const snapResult = await db.execute(
+        sql`SELECT north_star_key, north_star_value, supporting_metrics
+            FROM health_snapshot
+            WHERE startup_id = ${startupId} LIMIT 1`
+      );
+      const snapRow = snapResult.rows[0] as
+        | {
+            north_star_key: string;
+            north_star_value: string | null;
+            supporting_metrics: Record<string, number>;
+          }
+        | undefined;
+      if (!snapRow) {
+        return [];
+      }
+
+      const snap: SnapshotMetrics = {
+        northStarKey: snapRow.north_star_key,
+        northStarValue: snapRow.north_star_value,
+        supportingMetrics: (snapRow.supporting_metrics ?? {}) as Record<
+          string,
+          number
+        >,
+      };
+
+      const cutoff = new Date(
+        Date.now() - HISTORY_WINDOW_DAYS * 24 * 60 * 60 * 1000
+      );
+      const results: AlertEvaluationResult[] = [];
+
+      // 3. Evaluate each rule
+      for (const rule of rules) {
+        const result = await evaluateSingleRule(
+          db,
+          rule,
+          startupId,
+          startupRow.workspace_id,
+          snap,
+          cutoff
+        );
+        if (result) {
+          results.push(result);
+        }
+      }
+
+      return results;
+    },
+
+    async seedDefaultAlerts(
+      startupId: string,
+      metricKeys: string[]
+    ): Promise<number> {
+      // Check if startup already has any alert rules
+      const existingResult = await db.execute(
+        sql`SELECT id FROM alert_rule WHERE startup_id = ${startupId} LIMIT 1`
+      );
+      if ((existingResult.rows as unknown[]).length > 0) {
+        return 0;
+      }
+
+      const metricSet = new Set(metricKeys);
+      const toSeed = DEFAULT_ALERT_RULES.filter((r) =>
+        metricSet.has(r.metricKey)
+      );
+      if (toSeed.length === 0) {
+        return 0;
+      }
+
+      const now = new Date();
+      for (const rule of toSeed) {
+        const thresholdStr = String(rule.threshold);
+        await db.execute(
+          sql`INSERT INTO alert_rule (id, startup_id, metric_key, condition, threshold, severity, enabled, min_data_points, created_at, updated_at)
+              VALUES (gen_random_uuid(), ${startupId}, ${rule.metricKey}, ${rule.condition}, ${thresholdStr}, ${rule.severity}, true, 7, ${now}, ${now})`
+        );
+      }
+
+      return toSeed.length;
+    },
+
+    async updateStreak(
+      startupId: string,
+      hasActiveAlerts: boolean
+    ): Promise<void> {
+      const now = new Date();
+
+      if (hasActiveAlerts) {
+        // Reset streak: set current_days to 0, record broken_at
+        await db.execute(
+          sql`INSERT INTO streak (id, startup_id, current_days, longest_days, started_at, broken_at, updated_at)
+              VALUES (gen_random_uuid(), ${startupId}, 0, 0, NULL, ${now}, ${now})
+              ON CONFLICT (startup_id) DO UPDATE
+                SET current_days = 0,
+                    broken_at = ${now},
+                    updated_at = ${now}`
+        );
+      } else {
+        // Increment streak: current_days + 1, update longest if needed, set started_at if new streak
+        await db.execute(
+          sql`INSERT INTO streak (id, startup_id, current_days, longest_days, started_at, updated_at)
+              VALUES (gen_random_uuid(), ${startupId}, 1, 1, ${now}, ${now})
+              ON CONFLICT (startup_id) DO UPDATE
+                SET current_days = streak.current_days + 1,
+                    longest_days = GREATEST(streak.longest_days, streak.current_days + 1),
+                    started_at = COALESCE(streak.started_at, ${now}),
+                    updated_at = ${now}`
+        );
+      }
     },
   };
 }

@@ -209,6 +209,9 @@ function createInMemoryHealthRepo(
   return {
     snapshots,
     snapshotRows,
+    async recordHistory(): Promise<void> {
+      // no-op for tests
+    },
     async replaceSnapshot(input: ReplaceSnapshotInput): Promise<void> {
       snapshots.set(input.startupId, input);
       snapshotRows.set(input.startupId, {

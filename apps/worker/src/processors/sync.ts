@@ -21,6 +21,7 @@ import { generateInsight } from "../insights";
 import type { PostgresSyncResult, ProviderSyncResult } from "../providers";
 import { mergeFunnel, mergeMetrics } from "../providers";
 import type {
+  AlertRepository,
   CustomMetricRepository,
   HealthSnapshotRepository,
   InsightRepository,
@@ -69,6 +70,9 @@ export type ProviderValidateFn = (
 ) => Promise<ProviderValidationResult>;
 
 export interface SyncProcessorDeps {
+  /** Optional alert repository — when provided, the processor evaluates
+   *  alert rules, seeds defaults, and updates streaks after snapshot recompute. */
+  alertRepo?: AlertRepository;
   /** Optional custom metric repository — when provided, the processor
    *  updates custom metric data after successful Postgres syncs. */
   customMetricRepo?: CustomMetricRepository;
@@ -114,9 +118,9 @@ async function recomputeSnapshot(
   syncJobId: string,
   syncResult: ProviderSyncResult,
   logCtx: Record<string, unknown>
-): Promise<void> {
+): Promise<UniversalMetrics | null> {
   if (!deps.healthRepo) {
-    return;
+    return null;
   }
 
   try {
@@ -170,6 +174,16 @@ async function recomputeSnapshot(
 
     await deps.healthRepo.replaceSnapshot(input);
 
+    // Record metric values into health_snapshot_history for trend tracking.
+    await deps.healthRepo.recordHistory({
+      startupId,
+      snapshotId,
+      northStarKey: "mrr",
+      northStarValue: mrr,
+      supportingMetrics: mergedMetrics as Record<string, number>,
+      capturedAt: computedAt,
+    });
+
     deps.log.info("health snapshot recomputed", {
       ...logCtx,
       snapshotId,
@@ -177,6 +191,8 @@ async function recomputeSnapshot(
       mrr,
       computedAt: computedAt.toISOString(),
     });
+
+    return mergedMetrics;
   } catch (err) {
     // Snapshot recompute failure must not fail the sync job.
     // The previous snapshot (if any) stays intact.
@@ -187,6 +203,7 @@ async function recomputeSnapshot(
         error: err instanceof Error ? err.message : String(err),
       }
     );
+    return null;
   }
 }
 
@@ -331,6 +348,71 @@ async function maybeGenerateInsight(
         error: err instanceof Error ? err.message : String(err),
       }
     );
+  }
+}
+
+const ALERT_EVALUATION_TIMEOUT_MS = 30_000;
+
+/**
+ * Process alerts after a successful sync: seed defaults on first sync,
+ * evaluate rules with z-score anomaly detection, and update the health streak.
+ * Failures are logged but never cause the sync job to fail.
+ */
+async function maybeProcessAlerts(
+  deps: SyncProcessorDeps,
+  startupId: string,
+  mergedMetrics: UniversalMetrics,
+  logCtx: Record<string, unknown>
+) {
+  if (!deps.alertRepo) {
+    return;
+  }
+
+  try {
+    // Seed default alert rules on first sync (if startup has none)
+    const metricKeys = Object.keys(mergedMetrics).filter(
+      (k) => mergedMetrics[k as keyof UniversalMetrics] != null
+    );
+    // Always include "mrr" as a known metric key
+    if (!metricKeys.includes("mrr")) {
+      metricKeys.push("mrr");
+    }
+    const seeded = await deps.alertRepo.seedDefaultAlerts(
+      startupId,
+      metricKeys
+    );
+    if (seeded > 0) {
+      deps.log.info("default alert rules seeded", {
+        ...logCtx,
+        rulesSeeded: seeded,
+      });
+    }
+
+    // Evaluate alert rules with 30s timeout
+    const evaluationPromise = deps.alertRepo.evaluateAlerts(startupId);
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(
+        () => reject(new Error("alert evaluation timed out (30s)")),
+        ALERT_EVALUATION_TIMEOUT_MS
+      );
+    });
+    const results = await Promise.race([evaluationPromise, timeoutPromise]);
+
+    deps.log.info("alert evaluation complete", {
+      ...logCtx,
+      alertsFired: results.length,
+      newAlerts: results.filter((r) => r.isNew).length,
+    });
+
+    // Update streak: count active alerts to decide increment vs reset
+    const activeCount = await deps.alertRepo.countActiveAlerts(startupId);
+    await deps.alertRepo.updateStreak(startupId, activeCount > 0);
+  } catch (err) {
+    // Alert processing failure must not fail the sync job.
+    deps.log.error("alert processing failed — sync job unaffected", {
+      ...logCtx,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
@@ -482,7 +564,7 @@ export function createSyncProcessor(deps: SyncProcessorDeps) {
       // Recompute health snapshot if the result includes sync data
       const syncResult = result as ProviderSyncResult;
       if ("mrr" in syncResult || "supportingMetrics" in syncResult) {
-        await recomputeSnapshot(
+        const mergedMetrics = await recomputeSnapshot(
           deps,
           job.data.startupId,
           syncJobId,
@@ -490,6 +572,16 @@ export function createSyncProcessor(deps: SyncProcessorDeps) {
           logCtx
         );
         await maybeGenerateInsight(deps, job.data.startupId, syncJobId, logCtx);
+
+        // Evaluate alerts after snapshot recompute + history recording
+        if (mergedMetrics) {
+          await maybeProcessAlerts(
+            deps,
+            job.data.startupId,
+            mergedMetrics,
+            logCtx
+          );
+        }
       }
 
       await maybeUpdatePostgresMetricOnSuccess(

@@ -158,6 +158,10 @@ function createInMemoryHealthRepo(): HealthSnapshotRepository & {
       shouldFail = v;
     },
 
+    async recordHistory(): Promise<void> {
+      // no-op for tests
+    },
+
     async replaceSnapshot(input: ReplaceSnapshotInput): Promise<void> {
       replaceCalls.push(input);
       if (shouldFail) {

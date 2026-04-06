@@ -117,11 +117,11 @@ File: `apps/api/src/routes/alert-rule.ts` (same file)
 
 ### Task 7: Integrate alert evaluation into post-sync pipeline
 File: `apps/worker/src/processors/sync.ts`
-- [ ] After health snapshot recompute, call `evaluateAlerts(startupId, db)`
-- [ ] Store metric values in `health_snapshot_history` table
-- [ ] Call `seedDefaultAlerts` on first sync (check if startup has zero alert rules)
-- [ ] Update streak: if zero active alerts -> increment `current_days`, else reset to 0
-- [ ] 30s timeout for alert evaluation per startup
+- [x] After health snapshot recompute, call `evaluateAlerts(startupId, db)`
+- [x] Store metric values in `health_snapshot_history` table
+- [x] Call `seedDefaultAlerts` on first sync (check if startup has zero alert rules)
+- [x] Update streak: if zero active alerts -> increment `current_days`, else reset to 0
+- [x] 30s timeout for alert evaluation per startup
 
 ### Task 8: Register alert routes in app
 File: `apps/api/src/app.ts`

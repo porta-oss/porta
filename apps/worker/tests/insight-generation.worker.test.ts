@@ -68,6 +68,9 @@ function createInMemoryHealthRepo(
     snapshot: HealthSnapshotRow | undefined;
   } = {
     snapshot,
+    async recordHistory(): Promise<void> {
+      // no-op for tests
+    },
     async replaceSnapshot(input: ReplaceSnapshotInput): Promise<void> {
       repo.snapshot = {
         id: input.snapshotId,

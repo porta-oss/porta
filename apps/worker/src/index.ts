@@ -28,6 +28,7 @@ import {
   createTaskSyncWorker,
 } from "./queues";
 import {
+  createAlertRepository,
   createHealthSnapshotRepository,
   createInsightRepository,
   createInternalTaskRepository,
@@ -99,6 +100,9 @@ async function main() {
   const insightRepo = createInsightRepository(
     db as unknown as Parameters<typeof createInsightRepository>[0]
   );
+  const alertRepo = createAlertRepository(
+    db as unknown as Parameters<typeof createAlertRepository>[0]
+  );
 
   // Provider sync router — deterministic stubs in founder-proof mode
   const validateProvider = env.founderProofMode
@@ -131,6 +135,7 @@ async function main() {
 
   // Build processor
   const processor = createSyncProcessor({
+    alertRepo,
     repo,
     encryptionKey: env.connectorEncryptionKey,
     validateProvider,
