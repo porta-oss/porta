@@ -67,12 +67,12 @@ File: `apps/api/src/routes/telegram.ts` (same file)
 
 ### Task 3: Implement inline keyboard triage callback
 File: `apps/api/src/routes/telegram.ts` (same file)
-- [ ] Handle `callback_query` events
-- [ ] Parse `callback_data` format: `triage:ack|snooze|dismiss:alertId`
-- [ ] Look up alert, update status (`ack` -> `acknowledged`, `snooze` -> `snoozed` with `snoozedUntil` +24h, `dismiss` -> `dismissed`)
-- [ ] Answer callback query with confirmation text
-- [ ] Edit original message to remove inline keyboard
-- [ ] Emit `telegram.reaction` event via emitter
+- [x] Handle `callback_query` events
+- [x] Parse `callback_data` format: `triage:ack|snooze|dismiss:alertId`
+- [x] Look up alert, update status (`ack` -> `acknowledged`, `snooze` -> `snoozed` with `snoozedUntil` +24h, `dismiss` -> `dismissed`)
+- [x] Answer callback query with confirmation text
+- [x] Edit original message to remove inline keyboard
+- [x] Emit `telegram.reaction` event via emitter
 
 ### Task 4: Implement sparkline generation
 File: `apps/worker/src/sparklines.ts`

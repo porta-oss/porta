@@ -11,6 +11,9 @@ import type { Transformer } from "grammy";
 import { Bot } from "grammy";
 import type { Update, UserFromGetMe } from "grammy/types";
 
+import { alert } from "../db/schema/alert-rule";
+import { eventLog } from "../db/schema/event-log";
+import { startup } from "../db/schema/startup";
 import { telegramConfig } from "../db/schema/telegram-config";
 
 // ------------------------------------------------------------------
@@ -378,6 +381,100 @@ export async function handleTelegramWebhook(
       .where(eq(telegramConfig.id, config.id));
 
     await ctx.reply("Linked!");
+  });
+
+  // Handle callback_query — inline keyboard triage (ack/snooze/dismiss)
+  bot.on("callback_query:data", async (ctx) => {
+    const data = ctx.callbackQuery.data;
+
+    // Expected format: triage:ack|snooze|dismiss:alertId
+    const parts = data.split(":");
+    if (parts.length !== 3 || parts[0] !== "triage") {
+      await ctx.answerCallbackQuery({ text: "Unknown action" });
+      return;
+    }
+
+    const action = parts[1];
+    const alertId = parts[2];
+
+    if (!["ack", "snooze", "dismiss"].includes(action)) {
+      await ctx.answerCallbackQuery({ text: "Invalid triage action" });
+      return;
+    }
+
+    // Look up the alert
+    const alertRows = await runtime.db.db
+      .select()
+      .from(alert)
+      .where(eq(alert.id, alertId));
+
+    const alertRow = alertRows[0];
+    if (!alertRow) {
+      await ctx.answerCallbackQuery({ text: "Alert not found" });
+      return;
+    }
+
+    // Build status update
+    const updates: Record<string, unknown> = {};
+    let confirmText: string;
+
+    switch (action) {
+      case "ack":
+        updates.status = "acknowledged";
+        confirmText = "Alert acknowledged";
+        break;
+      case "snooze":
+        updates.status = "snoozed";
+        updates.snoozedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        confirmText = "Alert snoozed for 24h";
+        break;
+      case "dismiss":
+        updates.status = "dismissed";
+        confirmText = "Alert dismissed";
+        break;
+      default:
+        await ctx.answerCallbackQuery({ text: "Unknown action" });
+        return;
+    }
+
+    // Update alert status
+    await runtime.db.db.update(alert).set(updates).where(eq(alert.id, alertId));
+
+    // Answer callback query with confirmation
+    await ctx.answerCallbackQuery({ text: confirmText });
+
+    // Edit message to remove inline keyboard
+    try {
+      await ctx.editMessageReplyMarkup({ reply_markup: undefined });
+    } catch {
+      // Message may have already been edited or deleted
+    }
+
+    // Emit telegram.reaction event (fire-and-forget)
+    try {
+      // Look up startup to get workspaceId
+      const startupRows = await runtime.db.db
+        .select({ workspaceId: startup.workspaceId })
+        .from(startup)
+        .where(eq(startup.id, alertRow.startupId));
+
+      const workspaceId = startupRows[0]?.workspaceId ?? "";
+
+      await runtime.db.db.insert(eventLog).values({
+        workspaceId,
+        startupId: alertRow.startupId,
+        eventType: "telegram.reaction",
+        actorType: "user",
+        actorId: null,
+        payload: {
+          chatId: String(ctx.callbackQuery.from.id),
+          messageId: String(ctx.callbackQuery.message?.message_id ?? ""),
+          reaction: action,
+        },
+      });
+    } catch {
+      // Fire-and-forget — don't fail triage on event log errors
+    }
   });
 
   // Process the update through grammY middleware stack
