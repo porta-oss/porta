@@ -132,7 +132,7 @@ File: `apps/web/src/routes/_authenticated/settings/api-keys.tsx`
 
 ### Task 10: Register API key and MCP routes in app
 File: `apps/api/src/app.ts`
-- [ ] Import API key route handlers
-- [ ] Import MCP REST route handlers
-- [ ] Import MCP plugin mount (if available)
-- [ ] Add all routes with appropriate auth (API key auth for MCP, session auth for key management)
+- [x] Import API key route handlers
+- [x] Import MCP REST route handlers
+- [x] Import MCP plugin mount (if available)
+- [x] Add all routes with appropriate auth (API key auth for MCP, session auth for key management)
