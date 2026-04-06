@@ -86,12 +86,12 @@ File: `apps/worker/src/providers.ts`
 
 ### Task 7: Refactor Postgres connector to multi-metric
 Files: `apps/api/src/lib/connectors/postgres.ts`, `apps/worker/src/providers.ts`
-- [ ] Simplify Postgres config to `connectionUri`-only (remove schema/view fields)
-- [ ] Update validator to test connection with `connectionUri` only
-- [ ] Update sync provider: `SELECT key, label, value, unit, category FROM porta_metrics`
-- [ ] Each row -> `custom_metric` entry with `(startupId, key)` unique constraint
-- [ ] Promote rows whose key matches `UNIVERSAL_METRIC_KEYS` into universal metrics
-- [ ] Compute delta from previous `custom_metric` value
+- [x] Simplify Postgres config to `connectionUri`-only (remove schema/view fields)
+- [x] Update validator to test connection with `connectionUri` only
+- [x] Update sync provider: `SELECT key, label, value, unit, category FROM porta_metrics`
+- [x] Each row -> `custom_metric` entry with `(startupId, key)` unique constraint
+- [x] Promote rows whose key matches `UNIVERSAL_METRIC_KEYS` into universal metrics
+- [x] Compute delta from previous `custom_metric` value
 
 ### Task 8: Update connector routes for new providers
 File: `apps/api/src/routes/connector.ts`

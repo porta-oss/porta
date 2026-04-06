@@ -10,7 +10,10 @@ import type {
   ProviderValidationResult,
 } from "@shared/connectors";
 import type { FunnelStageRow } from "@shared/startup-health";
-import type { UniversalMetrics } from "@shared/universal-metrics";
+import {
+  isUniversalMetricKey,
+  type UniversalMetrics,
+} from "@shared/universal-metrics";
 
 // ---------------------------------------------------------------------------
 // Default funnel stage definitions (free-form, no enum)
@@ -57,14 +60,19 @@ export interface SentrySyncResult extends ProviderSyncResult {
   };
 }
 
+/** A single row from the porta_metrics view. */
+export interface PostgresMetricRow {
+  category: string;
+  key: string;
+  label: string;
+  unit: string;
+  value: number;
+}
+
 /** Result from a Postgres custom metric sync. */
 export interface PostgresSyncResult extends ProviderSyncResult {
-  /** Custom metric data extracted from the prepared view. */
-  customMetric: {
-    metricValue: number;
-    previousValue: number | null;
-    capturedAt: string;
-  } | null;
+  /** Custom metric rows extracted from the porta_metrics view. */
+  customMetrics: PostgresMetricRow[];
 }
 
 export type ProviderValidateFn = (
@@ -76,8 +84,6 @@ export type ProviderSyncFn = (
   provider: ConnectorProvider,
   configJson: string
 ) => Promise<ProviderSyncResult>;
-
-const SQL_IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/;
 
 function invalidProviderSync(
   error: string,
@@ -113,7 +119,7 @@ function invalidPostgresSync(
 ): PostgresSyncResult {
   return {
     ...invalidProviderSync(error, retryable),
-    customMetric: null,
+    customMetrics: [],
   };
 }
 
@@ -434,59 +440,16 @@ function parseRequiredNumericCell(value: unknown, fieldName: string): number {
   return parsed;
 }
 
-function parseOptionalNumericCell(
-  value: unknown,
-  fieldName: string
-): number | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-
-  return parseRequiredNumericCell(value, fieldName);
-}
-
-function parseCapturedAtCell(value: unknown): string {
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-  if (typeof value === "string") {
-    const parsedDate = new Date(value);
-    if (!Number.isNaN(parsedDate.getTime())) {
-      return parsedDate.toISOString();
-    }
-  }
-
-  throw new Error(`captured_at is missing or invalid: ${String(value)}`);
-}
-
 function parsePostgresSyncConfig(config: {
   connectionUri?: string;
-  schema?: string;
-  view?: string;
-}):
-  | { connectionUri: string; schema: string; view: string }
-  | PostgresSyncResult {
+}): { connectionUri: string } | PostgresSyncResult {
   const connectionUri = config.connectionUri?.trim() ?? "";
-  const schema = config.schema?.trim() ?? "";
-  const view = config.view?.trim() ?? "";
 
   if (!connectionUri) {
     return invalidPostgresSync("Postgres connection URI is required.");
   }
 
-  if (!(schema && view)) {
-    return invalidPostgresSync("Postgres schema and view are required.");
-  }
-
-  if (!(SQL_IDENTIFIER_RE.test(schema) && SQL_IDENTIFIER_RE.test(view))) {
-    return invalidPostgresSync("Schema or view identifier is not SQL-safe.");
-  }
-
-  return {
-    connectionUri,
-    schema,
-    view,
-  };
+  return { connectionUri };
 }
 
 async function connectPostgresReadonlyClient(connectionUri: string): Promise<
@@ -525,49 +488,47 @@ async function connectPostgresReadonlyClient(connectionUri: string): Promise<
   return { client };
 }
 
-async function queryPostgresCustomMetric(
-  client: { query: (sql: string) => Promise<{ rows: unknown[] }> },
-  schema: string,
-  view: string
-): Promise<PostgresSyncResult> {
+async function queryPostgresMetrics(client: {
+  query: (sql: string) => Promise<{ rows: unknown[] }>;
+}): Promise<PostgresSyncResult> {
   await client.query("SET TRANSACTION READ ONLY");
 
-  const quotedSchema = `"${schema}"`;
-  const quotedView = `"${view}"`;
-  const queryText = `SELECT metric_value, previous_value, captured_at FROM ${quotedSchema}.${quotedView} LIMIT 1`;
-  const result = await client.query(queryText);
+  const result = await client.query(
+    "SELECT key, label, value, unit, category FROM porta_metrics"
+  );
 
   if (result.rows.length === 0) {
-    return invalidPostgresSync(
-      `Prepared view ${schema}.${view} returned no rows.`,
-      true
-    );
+    return invalidPostgresSync("porta_metrics view returned no rows.", true);
   }
 
-  const row = result.rows[0] as Record<string, unknown>;
+  const metrics: PostgresMetricRow[] = [];
+  const universalMetrics: Partial<UniversalMetrics> = {};
 
-  try {
-    return {
-      valid: true,
-      mrr: null,
-      supportingMetrics: null,
-      funnelStages: null,
-      customMetric: {
-        metricValue: parseRequiredNumericCell(
-          row.metric_value,
-          `metric_value from ${schema}.${view}`
-        ),
-        previousValue: parseOptionalNumericCell(
-          row.previous_value,
-          `previous_value from ${schema}.${view}`
-        ),
-        capturedAt: parseCapturedAtCell(row.captured_at),
-      },
-    };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return invalidPostgresSync(message);
+  for (const rawRow of result.rows) {
+    const row = rawRow as Record<string, unknown>;
+    const key = String(row.key ?? "");
+    const value = parseRequiredNumericCell(row.value, `value for key "${key}"`);
+    const label = String(row.label ?? key);
+    const unit = String(row.unit ?? "");
+    const category = String(row.category ?? "custom");
+
+    metrics.push({ key, label, value, unit, category });
+
+    if (isUniversalMetricKey(key)) {
+      universalMetrics[key] = value;
+    }
   }
+
+  const mrr = universalMetrics.mrr ?? null;
+
+  return {
+    valid: true,
+    mrr: typeof mrr === "number" ? mrr : null,
+    supportingMetrics:
+      Object.keys(universalMetrics).length > 0 ? universalMetrics : null,
+    funnelStages: null,
+    customMetrics: metrics,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1232,27 +1193,19 @@ const POSTGRES_TIMEOUT_MS = 10_000;
 
 /**
  * Connect read-only to an external Postgres database and query the
- * narrow prepared view contract: SELECT metric_value, previous_value,
- * captured_at FROM <schema>.<view> LIMIT 1.
+ * porta_metrics view: SELECT key, label, value, unit, category FROM porta_metrics.
  *
- * The config JSON shape mirrors the API setup contract:
- *   { connectionUri, schema, view, label, unit }
- *
- * Returns a PostgresSyncResult — valid:true with custom metric data on success,
- * valid:false with a descriptive error on failure.
+ * Each row becomes a custom_metric entry. Rows whose key matches a
+ * UNIVERSAL_METRIC_KEY are promoted into supportingMetrics.
  */
 async function syncPostgres(config: {
   connectionUri?: string;
-  schema?: string;
-  view?: string;
-  label?: string;
-  unit?: string;
 }): Promise<PostgresSyncResult> {
   const parsedConfig = parsePostgresSyncConfig(config);
   if ("valid" in parsedConfig) {
     return parsedConfig;
   }
-  const { connectionUri, schema, view } = parsedConfig;
+  const { connectionUri } = parsedConfig;
 
   const clientResult = await connectPostgresReadonlyClient(connectionUri);
   if ("error" in clientResult) {
@@ -1261,13 +1214,13 @@ async function syncPostgres(config: {
   const { client } = clientResult;
 
   try {
-    return await queryPostgresCustomMetric(client, schema, view);
+    return await queryPostgresMetrics(client);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const isTimeout =
       message.includes("timeout") || message.includes("ETIMEDOUT");
     return invalidPostgresSync(
-      `Postgres query failed on ${schema}.${view}: ${message}`,
+      `Postgres query failed on porta_metrics: ${message}`,
       isTimeout
     );
   } finally {
@@ -1313,13 +1266,7 @@ export function createProviderRouter(): ProviderValidateFn {
         return syncStripe(st);
       }
       case "postgres": {
-        const pg = config as {
-          connectionUri?: string;
-          schema?: string;
-          view?: string;
-          label?: string;
-          unit?: string;
-        };
+        const pg = config as { connectionUri?: string };
         return syncPostgres(pg);
       }
       case "yookassa": {
@@ -1375,13 +1322,7 @@ export function createProviderSyncRouter(): ProviderSyncFn {
         return syncStripe(st);
       }
       case "postgres": {
-        const pg = config as {
-          connectionUri?: string;
-          schema?: string;
-          view?: string;
-          label?: string;
-          unit?: string;
-        };
+        const pg = config as { connectionUri?: string };
         return syncPostgres(pg);
       }
       case "yookassa": {
@@ -1538,6 +1479,38 @@ export function createFounderProofSyncRouter(): ProviderSyncFn {
           },
           funnelStages: null,
         };
+      }
+      case "postgres": {
+        const pgResult: PostgresSyncResult = {
+          valid: true,
+          mrr: 9500,
+          supportingMetrics: { mrr: 9500, active_users: 320 },
+          funnelStages: null,
+          customMetrics: [
+            {
+              key: "mrr",
+              label: "MRR",
+              value: 9500,
+              unit: "$",
+              category: "revenue",
+            },
+            {
+              key: "active_users",
+              label: "Active Users",
+              value: 320,
+              unit: "count",
+              category: "engagement",
+            },
+            {
+              key: "nps_score",
+              label: "NPS Score",
+              value: 72,
+              unit: "score",
+              category: "health",
+            },
+          ],
+        };
+        return pgResult;
       }
       default:
         return {

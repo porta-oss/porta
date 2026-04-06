@@ -339,6 +339,7 @@ async function maybeUpdatePostgresMetricOnSuccess(
   provider: ConnectorProvider,
   result: ProviderValidationResult,
   startupId: string,
+  connectorId: string,
   logCtx: Record<string, unknown>
 ) {
   if (!(provider === "postgres" && deps.customMetricRepo)) {
@@ -346,21 +347,19 @@ async function maybeUpdatePostgresMetricOnSuccess(
   }
 
   const pgResult = result as PostgresSyncResult;
-  if (!pgResult.customMetric) {
+  if (!pgResult.customMetrics || pgResult.customMetrics.length === 0) {
     return;
   }
 
   try {
-    await deps.customMetricRepo.updateOnSyncSuccess({
+    await deps.customMetricRepo.upsertMetrics({
       startupId,
-      metricValue: pgResult.customMetric.metricValue,
-      previousValue: pgResult.customMetric.previousValue,
-      capturedAt: new Date(pgResult.customMetric.capturedAt),
+      connectorId,
+      metrics: pgResult.customMetrics,
     });
-    deps.log.info("custom metric synced", {
+    deps.log.info("custom metrics synced", {
       ...logCtx,
-      metricValue: pgResult.customMetric.metricValue,
-      capturedAt: pgResult.customMetric.capturedAt,
+      metricCount: pgResult.customMetrics.length,
     });
   } catch (err) {
     deps.log.error("custom metric update failed — previous data preserved", {
@@ -498,6 +497,7 @@ export function createSyncProcessor(deps: SyncProcessorDeps) {
         provider,
         result,
         job.data.startupId,
+        connectorId,
         logCtx
       );
     } else {

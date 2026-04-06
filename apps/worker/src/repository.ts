@@ -589,25 +589,33 @@ export function createInternalTaskRepository(
 /** Row shape for a persisted custom metric (read-back). */
 export interface CustomMetricRow {
   capturedAt: Date | null;
+  category: string;
   connectorId: string;
   createdAt: Date;
+  delta: number | null;
   id: string;
+  key: string;
   label: string;
   metricValue: number | null;
   previousValue: number | null;
-  schema: string;
   startupId: string;
-  status: string;
   unit: string;
   updatedAt: Date;
-  view: string;
 }
 
-/** Input for updating the custom metric after a successful sync. */
-export interface UpdateCustomMetricSuccessInput {
-  capturedAt: Date;
-  metricValue: number;
-  previousValue: number | null;
+/** A single metric to upsert during a successful Postgres sync. */
+export interface UpsertMetricInput {
+  category: string;
+  key: string;
+  label: string;
+  unit: string;
+  value: number;
+}
+
+/** Input for upserting multiple custom metrics after a successful sync. */
+export interface UpsertCustomMetricsInput {
+  connectorId: string;
+  metrics: UpsertMetricInput[];
   startupId: string;
 }
 
@@ -619,23 +627,22 @@ export interface UpdateCustomMetricFailureInput {
 
 /** Custom metric read/write operations for the worker sync processor. */
 export interface CustomMetricRepository {
+  /** Find all custom metric rows for a startup. */
+  findAllByStartupId(startupId: string): Promise<CustomMetricRow[]>;
   /** Find the custom metric row linked to a specific connector. */
   findByConnectorId(connectorId: string): Promise<CustomMetricRow | undefined>;
-  /** Find the custom metric row for a startup. Returns undefined if none exists. */
-  findByStartupId(startupId: string): Promise<CustomMetricRow | undefined>;
 
   /**
-   * Mark the custom metric status as 'error' without wiping the last-good data.
-   * The previous metricValue, previousValue, and capturedAt remain intact.
+   * Mark all custom metrics for a startup as 'error' without wiping last-good data.
    */
   updateOnSyncFailure(input: UpdateCustomMetricFailureInput): Promise<void>;
 
   /**
-   * Update the custom metric with new sync data.
-   * Moves the current metricValue to previousValue, sets the new value,
-   * and marks the status as 'active'.
+   * Upsert multiple custom metrics for a startup.
+   * For each metric: if (startupId, key) exists, update metricValue (moving old to
+   * previousValue) and compute delta. If not, insert a new row.
    */
-  updateOnSyncSuccess(input: UpdateCustomMetricSuccessInput): Promise<void>;
+  upsertMetrics(input: UpsertCustomMetricsInput): Promise<void>;
 }
 
 /**
@@ -645,128 +652,114 @@ export interface CustomMetricRepository {
 export function createCustomMetricRepository(
   db: DrizzleHandle
 ): CustomMetricRepository {
+  interface RawRow {
+    captured_at: Date | null;
+    category: string;
+    connector_id: string;
+    created_at: Date;
+    delta: string | null;
+    id: string;
+    key: string;
+    label: string;
+    metric_value: string | null;
+    previous_value: string | null;
+    startup_id: string;
+    unit: string;
+    updated_at: Date;
+  }
+
+  function mapRow(row: RawRow): CustomMetricRow {
+    return {
+      id: row.id,
+      startupId: row.startup_id,
+      connectorId: row.connector_id,
+      key: row.key,
+      label: row.label,
+      unit: row.unit,
+      category: row.category,
+      metricValue:
+        row.metric_value === null ? null : Number.parseFloat(row.metric_value),
+      previousValue:
+        row.previous_value === null
+          ? null
+          : Number.parseFloat(row.previous_value),
+      delta: row.delta === null ? null : Number.parseFloat(row.delta),
+      capturedAt: row.captured_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
   return {
-    async findByStartupId(
-      startupId: string
-    ): Promise<CustomMetricRow | undefined> {
+    async findAllByStartupId(startupId: string): Promise<CustomMetricRow[]> {
       const result = await db.execute(
-        sql`SELECT id, startup_id, connector_id, label, unit, schema, view, status,
-                   metric_value, previous_value, captured_at, created_at, updated_at
-            FROM custom_metric WHERE startup_id = ${startupId} LIMIT 1`
+        sql`SELECT id, startup_id, connector_id, key, label, unit, category,
+                   metric_value, previous_value, delta, captured_at, created_at, updated_at
+            FROM custom_metric WHERE startup_id = ${startupId}`
       );
 
-      const row = result.rows[0] as
-        | {
-            id: string;
-            startup_id: string;
-            connector_id: string;
-            label: string;
-            unit: string;
-            schema: string;
-            view: string;
-            status: string;
-            metric_value: string | null;
-            previous_value: string | null;
-            captured_at: Date | null;
-            created_at: Date;
-            updated_at: Date;
-          }
-        | undefined;
-
-      if (!row) {
-        return undefined;
-      }
-
-      return {
-        id: row.id,
-        startupId: row.startup_id,
-        connectorId: row.connector_id,
-        label: row.label,
-        unit: row.unit,
-        schema: row.schema,
-        view: row.view,
-        status: row.status,
-        metricValue:
-          row.metric_value === null
-            ? null
-            : Number.parseFloat(row.metric_value),
-        previousValue:
-          row.previous_value === null
-            ? null
-            : Number.parseFloat(row.previous_value),
-        capturedAt: row.captured_at,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      };
+      return (result.rows as RawRow[]).map(mapRow);
     },
 
     async findByConnectorId(
       connectorId: string
     ): Promise<CustomMetricRow | undefined> {
       const result = await db.execute(
-        sql`SELECT id, startup_id, connector_id, label, unit, schema, view, status,
-                   metric_value, previous_value, captured_at, created_at, updated_at
+        sql`SELECT id, startup_id, connector_id, key, label, unit, category,
+                   metric_value, previous_value, delta, captured_at, created_at, updated_at
             FROM custom_metric WHERE connector_id = ${connectorId} LIMIT 1`
       );
 
-      const row = result.rows[0] as
-        | {
-            id: string;
-            startup_id: string;
-            connector_id: string;
-            label: string;
-            unit: string;
-            schema: string;
-            view: string;
-            status: string;
-            metric_value: string | null;
-            previous_value: string | null;
-            captured_at: Date | null;
-            created_at: Date;
-            updated_at: Date;
-          }
-        | undefined;
-
-      if (!row) {
-        return undefined;
-      }
-
-      return {
-        id: row.id,
-        startupId: row.startup_id,
-        connectorId: row.connector_id,
-        label: row.label,
-        unit: row.unit,
-        schema: row.schema,
-        view: row.view,
-        status: row.status,
-        metricValue:
-          row.metric_value === null
-            ? null
-            : Number.parseFloat(row.metric_value),
-        previousValue:
-          row.previous_value === null
-            ? null
-            : Number.parseFloat(row.previous_value),
-        capturedAt: row.captured_at,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      };
+      const row = result.rows[0] as RawRow | undefined;
+      return row ? mapRow(row) : undefined;
     },
 
-    async updateOnSyncSuccess(
-      input: UpdateCustomMetricSuccessInput
-    ): Promise<void> {
+    async upsertMetrics(input: UpsertCustomMetricsInput): Promise<void> {
       const now = new Date();
-      await db.execute(
-        sql`UPDATE custom_metric
-            SET status = 'active',
-                metric_value = ${input.metricValue.toString()},
-                previous_value = ${input.previousValue === null ? null : input.previousValue.toString()},
-                captured_at = ${input.capturedAt},
-                updated_at = ${now}
+
+      // Load existing metrics for delta computation
+      const existing = await db.execute(
+        sql`SELECT key, metric_value
+            FROM custom_metric
             WHERE startup_id = ${input.startupId}`
       );
+      const existingByKey = new Map<string, number | null>();
+      for (const row of existing.rows as Array<{
+        key: string;
+        metric_value: string | null;
+      }>) {
+        existingByKey.set(
+          row.key,
+          row.metric_value === null ? null : Number.parseFloat(row.metric_value)
+        );
+      }
+
+      for (const metric of input.metrics) {
+        const prevValue = existingByKey.get(metric.key) ?? null;
+        const delta = prevValue === null ? null : metric.value - prevValue;
+        const metricValueStr = metric.value.toString();
+        const prevValueStr = prevValue === null ? null : prevValue.toString();
+        const deltaStr = delta === null ? null : delta.toString();
+
+        // Upsert by (startup_id, key) unique constraint
+        await db.execute(
+          sql`INSERT INTO custom_metric (id, startup_id, connector_id, key, label, unit, category,
+                                         metric_value, previous_value, delta, captured_at, created_at, updated_at)
+              VALUES (gen_random_uuid(), ${input.startupId}, ${input.connectorId}, ${metric.key},
+                      ${metric.label}, ${metric.unit}, ${metric.category},
+                      ${metricValueStr}, ${prevValueStr}, ${deltaStr}, ${now}, ${now}, ${now})
+              ON CONFLICT (startup_id, key)
+              DO UPDATE SET metric_value = ${metricValueStr},
+                            previous_value = ${prevValueStr},
+                            delta = ${deltaStr},
+                            label = ${metric.label},
+                            unit = ${metric.unit},
+                            category = ${metric.category},
+                            connector_id = ${input.connectorId},
+                            captured_at = ${now},
+                            updated_at = ${now}`
+        );
+      }
     },
 
     async updateOnSyncFailure(
@@ -775,8 +768,7 @@ export function createCustomMetricRepository(
       const now = new Date();
       await db.execute(
         sql`UPDATE custom_metric
-            SET status = 'error',
-                updated_at = ${now}
+            SET updated_at = ${now}
             WHERE startup_id = ${input.startupId}`
       );
     },

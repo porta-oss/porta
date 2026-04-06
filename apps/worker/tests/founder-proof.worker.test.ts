@@ -446,9 +446,24 @@ describe("founder-proof sync router", () => {
   });
 
   test("returns invalid for unsupported provider", async () => {
-    const result = await syncRouter("postgres" as any, "{}");
+    const result = await syncRouter("unknown_provider" as any, "{}");
     expect(result.valid).toBe(false);
     expect(result.error).toContain("Unsupported provider");
+  });
+
+  test("returns valid postgres result with multi-metric data", async () => {
+    const result = await syncRouter(
+      "postgres",
+      JSON.stringify({ connectionUri: "postgresql://localhost/test" })
+    );
+    expect(result.valid).toBe(true);
+    expect(result.mrr).toBe(9500);
+    expect(result.supportingMetrics).toBeDefined();
+    const pgResult = result as import("../src/providers").PostgresSyncResult;
+    expect(pgResult.customMetrics).toHaveLength(3);
+    expect(pgResult.customMetrics[0]?.key).toBe("mrr");
+    expect(pgResult.customMetrics[1]?.key).toBe("active_users");
+    expect(pgResult.customMetrics[2]?.key).toBe("nps_score");
   });
 
   test("returns invalid for malformed JSON config", async () => {
