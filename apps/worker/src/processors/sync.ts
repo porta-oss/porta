@@ -21,6 +21,7 @@ import { generateInsight } from "../insights";
 import type { PostgresSyncResult, ProviderSyncResult } from "../providers";
 import { mergeFunnel, mergeMetrics } from "../providers";
 import type {
+  AlertEvaluationResult,
   AlertRepository,
   CustomMetricRepository,
   HealthSnapshotRepository,
@@ -69,6 +70,22 @@ export type ProviderValidateFn = (
   configJson: string
 ) => Promise<ProviderValidationResult>;
 
+/** Webhook dispatch interface — abstracts config lookup and job enqueuing. */
+export interface WebhookDispatcher {
+  /** Enqueue a webhook delivery job. */
+  enqueue(job: {
+    deliveryId: string;
+    eventType: string;
+    payload: Record<string, unknown>;
+    startupId: string;
+    webhookConfigId: string;
+  }): Promise<void>;
+  /** Find enabled webhook config for a startup. Returns null if none. */
+  findEnabledConfig(
+    startupId: string
+  ): Promise<{ id: string; eventTypes: string[] } | null>;
+}
+
 export interface SyncProcessorDeps {
   /** Optional alert repository — when provided, the processor evaluates
    *  alert rules, seeds defaults, and updates streaks after snapshot recompute. */
@@ -92,6 +109,9 @@ export interface SyncProcessorDeps {
   };
   repo: SyncRepository;
   validateProvider: ProviderValidateFn;
+  /** Optional webhook dispatcher — when provided, the processor enqueues
+   *  webhook delivery jobs after alerts fire. */
+  webhookDispatcher?: WebhookDispatcher;
 }
 
 /**
@@ -356,6 +376,7 @@ const ALERT_EVALUATION_TIMEOUT_MS = 30_000;
 /**
  * Process alerts after a successful sync: seed defaults on first sync,
  * evaluate rules with z-score anomaly detection, and update the health streak.
+ * Returns fired alert results for downstream webhook dispatch.
  * Failures are logged but never cause the sync job to fail.
  */
 async function maybeProcessAlerts(
@@ -363,9 +384,9 @@ async function maybeProcessAlerts(
   startupId: string,
   mergedMetrics: UniversalMetrics,
   logCtx: Record<string, unknown>
-) {
+): Promise<AlertEvaluationResult[]> {
   if (!deps.alertRepo) {
-    return;
+    return [];
   }
 
   try {
@@ -407,9 +428,71 @@ async function maybeProcessAlerts(
     // Update streak: count active alerts to decide increment vs reset
     const activeCount = await deps.alertRepo.countActiveAlerts(startupId);
     await deps.alertRepo.updateStreak(startupId, activeCount > 0);
+
+    return results;
   } catch (err) {
     // Alert processing failure must not fail the sync job.
     deps.log.error("alert processing failed — sync job unaffected", {
+      ...logCtx,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  }
+}
+
+/**
+ * Dispatch webhook delivery jobs for fired alerts.
+ * Checks if the startup has an enabled webhook config subscribed to "alert.fired",
+ * then enqueues a delivery job per fired alert.
+ * Failures are logged but never cause the sync job to fail.
+ */
+async function maybeDispatchWebhooks(
+  deps: SyncProcessorDeps,
+  startupId: string,
+  alertResults: AlertEvaluationResult[],
+  logCtx: Record<string, unknown>
+) {
+  if (!deps.webhookDispatcher || alertResults.length === 0) {
+    return;
+  }
+
+  try {
+    const config = await deps.webhookDispatcher.findEnabledConfig(startupId);
+    if (!config) {
+      return;
+    }
+
+    // Only dispatch if the webhook is subscribed to "alert.fired"
+    if (!config.eventTypes.includes("alert.fired")) {
+      return;
+    }
+
+    for (const alert of alertResults) {
+      const deliveryId = randomUUID();
+      await deps.webhookDispatcher.enqueue({
+        deliveryId,
+        eventType: "alert.fired",
+        payload: {
+          alertId: alert.alertId,
+          isNew: alert.isNew,
+          metricKey: alert.metricKey,
+          ruleId: alert.ruleId,
+          severity: alert.severity,
+          value: alert.value,
+        },
+        startupId,
+        webhookConfigId: config.id,
+      });
+    }
+
+    deps.log.info("webhook delivery jobs enqueued for fired alerts", {
+      ...logCtx,
+      webhookConfigId: config.id,
+      jobsEnqueued: alertResults.length,
+    });
+  } catch (err) {
+    // Webhook dispatch failure must not fail the sync job.
+    deps.log.error("webhook dispatch failed — sync job unaffected", {
       ...logCtx,
       error: err instanceof Error ? err.message : String(err),
     });
@@ -575,10 +658,18 @@ export function createSyncProcessor(deps: SyncProcessorDeps) {
 
         // Evaluate alerts after snapshot recompute + history recording
         if (mergedMetrics) {
-          await maybeProcessAlerts(
+          const alertResults = await maybeProcessAlerts(
             deps,
             job.data.startupId,
             mergedMetrics,
+            logCtx
+          );
+
+          // Dispatch webhooks for fired alerts
+          await maybeDispatchWebhooks(
+            deps,
+            job.data.startupId,
+            alertResults,
             logCtx
           );
         }

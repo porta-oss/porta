@@ -94,10 +94,10 @@ File: `apps/worker/src/processors/webhook.ts`
 
 ### Task 5: Integrate webhook dispatch into alert pipeline
 File: `apps/worker/src/processors/sync.ts`
-- [ ] After alert fires, check if startup has enabled `webhook_config`
-- [ ] Filter by `webhook_config.event_types` (only dispatch matching event types)
-- [ ] Enqueue webhook delivery job to `WEBHOOK_QUEUE`
-- [ ] Build WebhookPayload: `{ event, timestamp, startupId, payload, deliveryId }`
+- [x] After alert fires, check if startup has enabled `webhook_config`
+- [x] Filter by `webhook_config.event_types` (only dispatch matching event types)
+- [x] Enqueue webhook delivery job to `WEBHOOK_QUEUE`
+- [x] Build WebhookPayload: `{ event, timestamp, startupId, payload, deliveryId }`
 
 ### Task 6: Create webhook settings page
 File: `apps/web/src/routes/_authenticated/settings/webhooks.tsx`

@@ -11,6 +11,7 @@ import {
   createFounderProofExplainer,
 } from "./insights";
 import { createEventPurgeProcessor } from "./processors/event-purge";
+import type { WebhookDispatcher } from "./processors/sync";
 import { createSyncProcessor } from "./processors/sync";
 import {
   createFounderProofLinearClient,
@@ -27,6 +28,7 @@ import {
   createEventPurgeWorker,
   createSyncWorker,
   createTaskSyncWorker,
+  createWebhookQueue,
   createWebhookWorker,
 } from "./queues";
 import {
@@ -135,6 +137,27 @@ async function main() {
     log.info("insight generation disabled (ANTHROPIC_API_KEY not set)");
   }
 
+  // Webhook dispatcher — queries webhook_config and enqueues delivery jobs
+  const webhookQueue = createWebhookQueue(env.redisUrl);
+  const webhookDispatcher: WebhookDispatcher = {
+    async findEnabledConfig(startupId: string) {
+      const result = await pool.query(
+        "SELECT id, event_types FROM webhook_config WHERE startup_id = $1 AND enabled = true LIMIT 1",
+        [startupId]
+      );
+      const row = (
+        result as { rows: Array<{ id: string; event_types: string[] }> }
+      ).rows[0];
+      if (!row) {
+        return null;
+      }
+      return { id: row.id, eventTypes: row.event_types };
+    },
+    async enqueue(job) {
+      await webhookQueue.add("webhook-delivery", job);
+    },
+  };
+
   // Build processor
   const processor = createSyncProcessor({
     alertRepo,
@@ -145,6 +168,7 @@ async function main() {
     healthRepo,
     insightRepo,
     explainer,
+    webhookDispatcher,
   });
 
   // Start BullMQ worker
@@ -330,6 +354,7 @@ async function main() {
     await eventPurgeWorker.close();
     await eventPurgeQueue.close();
     await webhookWorker.close();
+    await webhookQueue.close();
     await pool.end();
     log.info("worker stopped");
     process.exit(0);
