@@ -50,10 +50,10 @@ File: `apps/web/src/routes/_authenticated/dashboard.tsx`
 - [x] Ensure all new component files follow Biome import ordering rules
 
 ### Task 4: Run TypeScript typecheck
-- [ ] Run `pnpm typecheck` across all workspaces
-- [ ] Fix any type errors in `apps/api`, `apps/web`, `apps/worker`, `packages/shared`
-- [ ] Verify no `any` types in new Wave 3 code (use `unknown` where type is genuinely unknown)
-- [ ] Verify all shared Zod schemas infer correct TypeScript types
+- [x] Run `pnpm typecheck` across all workspaces
+- [x] Fix any type errors in `apps/api`, `apps/web`, `apps/worker`, `packages/shared`
+- [x] Verify no `any` types in new Wave 3 code (use `unknown` where type is genuinely unknown)
+- [x] Verify all shared Zod schemas infer correct TypeScript types
 
 ### Task 5: Validate quickstart flow
 - [ ] Run `pnpm services:up` (Docker Compose for Postgres + Redis)
