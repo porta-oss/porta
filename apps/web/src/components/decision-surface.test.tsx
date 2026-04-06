@@ -141,7 +141,7 @@ describe("DecisionSurface", () => {
         streak={null}
       />
     );
-    expect(view.getByText("Fired 3 times")).toBeTruthy();
+    expect(view.getByText("fired 3x this week")).toBeTruthy();
   });
 
   test("does not render occurrence count when 1", () => {
@@ -154,7 +154,7 @@ describe("DecisionSurface", () => {
         streak={null}
       />
     );
-    expect(view.queryByText(/Fired/)).toBeNull();
+    expect(view.queryByText(/fired.*this week/)).toBeNull();
   });
 
   test("calls onAck when Ack button clicked", () => {

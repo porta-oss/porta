@@ -60,8 +60,8 @@ File: `apps/web/src/routes/_authenticated/dashboard-startup.tsx`
 
 ### Task 4: Display alert dedup badges
 File: `apps/web/src/components/decision-surface.tsx`
-- [ ] Show occurrence count badge on alert cards when `occurrenceCount > 1`
-- [ ] Badge text: "fired Nx this week" (e.g., "fired 3x this week")
-- [ ] Style: small pill badge, muted background color, compact font
-- [ ] Position: below alert metric info, before action buttons
-- [ ] Also render dedup badge in Journal mode alert event entries (in `event-log-entry.tsx` alert event variant)
+- [x] Show occurrence count badge on alert cards when `occurrenceCount > 1`
+- [x] Badge text: "fired Nx this week" (e.g., "fired 3x this week")
+- [x] Style: small pill badge, muted background color, compact font
+- [x] Position: below alert metric info, before action buttons
+- [x] Also render dedup badge in Journal mode alert event entries (in `event-log-entry.tsx` alert event variant)

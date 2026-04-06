@@ -252,8 +252,8 @@ function AlertCard({
             </span>
           </div>
           {alert.occurrenceCount > 1 ? (
-            <span className="text-muted-foreground text-xs">
-              Fired {String(alert.occurrenceCount)} times
+            <span className="inline-flex w-fit items-center rounded-full bg-muted px-2 py-0.5 font-medium text-muted-foreground text-xs">
+              fired {String(alert.occurrenceCount)}x this week
             </span>
           ) : null}
         </div>

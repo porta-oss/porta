@@ -202,8 +202,9 @@ function AlertEventDetail({ event }: { event: EventLogEntrySummary }) {
     const severity = String(p.severity ?? "medium");
     const config = ALERT_SEVERITY_CONFIG[severity];
     const SevIcon = config?.icon ?? Info;
+    const occurrenceCount = Number(p.occurrenceCount ?? 1);
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Badge variant={config?.badgeVariant ?? "secondary"}>
           <SevIcon className="size-3" />
           {severity}
@@ -214,6 +215,11 @@ function AlertEventDetail({ event }: { event: EventLogEntrySummary }) {
         <span className="text-muted-foreground text-sm">
           {String(p.value ?? "")} (threshold: {String(p.threshold ?? "")})
         </span>
+        {occurrenceCount > 1 ? (
+          <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 font-medium text-muted-foreground text-xs">
+            fired {String(occurrenceCount)}x this week
+          </span>
+        ) : null}
       </div>
     );
   }
