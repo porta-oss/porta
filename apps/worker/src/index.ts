@@ -11,6 +11,7 @@ import {
   createFounderProofExplainer,
 } from "./insights";
 import { createEventPurgeProcessor } from "./processors/event-purge";
+import { createPortfolioDigestProcessor } from "./processors/portfolio-digest";
 import type { WebhookDispatcher } from "./processors/sync";
 import { createSyncProcessor } from "./processors/sync";
 import {
@@ -31,6 +32,8 @@ import {
 import {
   createEventPurgeQueue,
   createEventPurgeWorker,
+  createPortfolioDigestQueue,
+  createPortfolioDigestWorker,
   createSyncWorker,
   createTaskSyncWorker,
   createTelegramQueue,
@@ -405,6 +408,67 @@ async function main() {
   );
   log.info("telegram digest schedule registered", { cron: "* * * * *" });
 
+  // ---------------------------------------------------------------------------
+  // Portfolio digest worker (weekly AI cross-startup analysis)
+  // ---------------------------------------------------------------------------
+
+  const portfolioDigestProcessor = createPortfolioDigestProcessor({
+    db: db as unknown as Parameters<
+      typeof createPortfolioDigestProcessor
+    >[0]["db"],
+    anthropicApiKey: env.anthropicApiKey ?? null,
+    log,
+  });
+  const portfolioDigestWorker = createPortfolioDigestWorker(
+    env.redisUrl,
+    async (job) => {
+      await portfolioDigestProcessor(job);
+    }
+  );
+
+  portfolioDigestWorker.on("ready", () => {
+    log.info("portfolio-digest worker ready", {
+      queue: "portfolio-digest",
+      concurrency: 1,
+    });
+  });
+
+  portfolioDigestWorker.on("failed", (job: unknown, err: Error) => {
+    const j = job as Record<string, unknown> | undefined;
+    const data = j?.data as Record<string, unknown> | undefined;
+    log.error("portfolio-digest job failed", {
+      jobId: j?.id,
+      workspaceId: data?.workspaceId,
+      attempt: j?.attemptsMade,
+      error: err.message,
+    });
+  });
+
+  portfolioDigestWorker.on("error", (err: Error) => {
+    log.error("portfolio-digest worker error", { error: err.message });
+  });
+
+  // Register weekly repeatable job (Monday 8am UTC)
+  const portfolioDigestQueue = createPortfolioDigestQueue(env.redisUrl);
+
+  // Schedule one job per workspace — load workspace IDs and register each
+  const workspaceResult = (await pool.query("SELECT id FROM workspace")) as {
+    rows: Array<{ id: string }>;
+  };
+  const workspaceIds = workspaceResult.rows.map((r) => r.id);
+
+  for (const wsId of workspaceIds) {
+    await portfolioDigestQueue.upsertJobScheduler(
+      `portfolio-digest-weekly-${wsId}`,
+      { pattern: "0 8 * * 1" },
+      { data: { workspaceId: wsId } }
+    );
+  }
+  log.info("portfolio-digest weekly schedule registered", {
+    cron: "0 8 * * 1",
+    workspaceCount: workspaceIds.length,
+  });
+
   // Graceful shutdown
   const shutdown = async (signal: string) => {
     log.info(`received ${signal}, shutting down`);
@@ -422,6 +486,8 @@ async function main() {
     await webhookQueue.close();
     await telegramWorker.close();
     await telegramQueue.close();
+    await portfolioDigestWorker.close();
+    await portfolioDigestQueue.close();
     await pool.end();
     log.info("worker stopped");
     process.exit(0);

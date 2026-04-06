@@ -49,6 +49,7 @@ const NON_AUTH_TABLE_NAMES = [
   "telegram_config",
   "webhook_config",
   "api_key",
+  "portfolio_digest",
 ] as const;
 const APP_TABLE_NAMES = [...AUTH_TABLE_NAMES, ...NON_AUTH_TABLE_NAMES] as const;
 
