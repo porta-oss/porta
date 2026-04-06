@@ -65,15 +65,15 @@ File: `apps/api/tests/alert-evaluator.test.ts`
 
 ### Task 2: Write alert rule CRUD and triage route tests (TDD)
 File: `apps/api/tests/alert-rule.routes.test.ts`
-- [ ] Test POST create returns 201 with rule
-- [ ] Test POST duplicate (same startup+metric+condition) returns 409
-- [ ] Test GET list returns all rules for startup
-- [ ] Test PATCH update changes threshold/severity
-- [ ] Test DELETE removes rule and cascaded alerts
-- [ ] Test GET alerts returns alerts with optional status filter
-- [ ] Test POST triage ack sets status to `acknowledged`
-- [ ] Test POST triage snooze sets `snoozedUntil`
-- [ ] Test POST bulk-triage updates multiple alerts
+- [x] Test POST create returns 201 with rule
+- [x] Test POST duplicate (same startup+metric+condition) returns 409
+- [x] Test GET list returns all rules for startup
+- [x] Test PATCH update changes threshold/severity
+- [x] Test DELETE removes rule and cascaded alerts
+- [x] Test GET alerts returns alerts with optional status filter
+- [x] Test POST triage ack sets status to `acknowledged`
+- [x] Test POST triage snooze sets `snoozedUntil`
+- [x] Test POST bulk-triage updates multiple alerts
 
 ### Task 3: Implement Z-score alert evaluator
 File: `apps/api/src/lib/alerts/evaluator.ts`
