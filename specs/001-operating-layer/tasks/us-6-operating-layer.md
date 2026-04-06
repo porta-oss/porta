@@ -77,12 +77,12 @@ File: `apps/web/src/components/day-separator.tsx`
 
 ### Task 5: Create event filter bar component
 File: `apps/web/src/components/event-filter.tsx`
-- [ ] Event type checkboxes grouped by category (alert, connector, insight, telegram, mcp, task, webhook)
-- [ ] "Show all" toggle (default off: only alert + insight + task selected)
-- [ ] Date range picker (from/to) using shadcn DatePicker
-- [ ] Apply filters callback prop
-- [ ] Reset filters button
-- [ ] Compact horizontal layout
+- [x] Event type checkboxes grouped by category (alert, connector, insight, telegram, mcp, task, webhook)
+- [x] "Show all" toggle (default off: only alert + insight + task selected)
+- [x] Date range picker (from/to) using shadcn DatePicker
+- [x] Apply filters callback prop
+- [x] Reset filters button
+- [x] Compact horizontal layout
 
 ### Task 6: Create comparison matrix component
 File: `apps/web/src/components/comparison-matrix.tsx`
