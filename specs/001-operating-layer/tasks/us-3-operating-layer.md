@@ -109,10 +109,10 @@ File: `apps/api/src/services/mcp-tools.ts`
 
 ### Task 7: Implement MCP REST routes
 File: `apps/api/src/routes/mcp-rest.ts`
-- [ ] Wire all 8 tools as REST endpoints under `/api/mcp/*`
-- [ ] Apply API key auth middleware to all routes
-- [ ] Wrap responses in `McpResponse<T>` with `dataAsOf` from latest sync timestamp
-- [ ] Include `dashboardUrl` pointing to web app
+- [x] Wire all 8 tools as REST endpoints under `/api/mcp/*`
+- [x] Apply API key auth middleware to all routes
+- [x] Wrap responses in `McpResponse<T>` with `dataAsOf` from latest sync timestamp
+- [x] Include `dashboardUrl` pointing to web app
 
 ### Task 8: Mount elysia-mcp plugin
 File: `apps/api/src/routes/mcp.ts`

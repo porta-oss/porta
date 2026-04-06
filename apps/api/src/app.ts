@@ -38,6 +38,7 @@ import {
   createYooKassaValidator,
 } from "./lib/connectors/yookassa";
 import { type ApiEnv, readApiEnv } from "./lib/env";
+import { createRedisRateLimiter, type McpRateLimiter } from "./lib/mcp/auth";
 import { loadStartupHealth } from "./lib/startup-health";
 import { loadLatestInsight } from "./lib/startup-insight";
 import type { TaskSyncQueueProducer } from "./lib/tasks/queue";
@@ -66,6 +67,16 @@ import {
 } from "./routes/connector";
 import { handleListEvents } from "./routes/event-log";
 import { handleCreateTask, handleListTasks } from "./routes/internal-task";
+import {
+  handleMcpCreateTask,
+  handleMcpGetActivityLog,
+  handleMcpGetAlerts,
+  handleMcpGetAtRiskCustomers,
+  handleMcpGetMetrics,
+  handleMcpGetPortfolioSummary,
+  handleMcpSnoozeAlert,
+  handleMcpTriggerSync,
+} from "./routes/mcp-rest";
 import {
   createStartupRouteContract,
   sanitizeStartupDraft,
@@ -125,6 +136,7 @@ interface ApiRuntime {
   auth: ApiAuthRuntime;
   db: ApiDatabase;
   env: ApiEnv;
+  mcpRateLimiter: McpRateLimiter;
   postgresValidator: PostgresValidator;
   posthogValidator: PostHogValidator;
   queueProducer: SyncQueueProducer;
@@ -514,6 +526,7 @@ export async function createApiApp(
     options?.queueProducer ?? createSyncQueueProducer(env.redisUrl);
   const taskSyncQueueProducer =
     options?.taskSyncQueueProducer ?? createTaskSyncQueueProducer(env.redisUrl);
+  const mcpRateLimiter = createRedisRateLimiter(env.redisUrl);
   const startupRoutes = createStartupRouteContract();
   const runtime: ApiRuntime = {
     env,
@@ -526,6 +539,7 @@ export async function createApiApp(
     sentryValidator,
     queueProducer,
     taskSyncQueueProducer,
+    mcpRateLimiter,
     webhookResolver: options?.webhookResolver,
   };
 
@@ -554,7 +568,7 @@ export async function createApiApp(
         origin: [env.webUrl],
         credentials: true,
         methods: ["GET", "POST", "OPTIONS"],
-        allowedHeaders: ["Content-Type", "Cookie"],
+        allowedHeaders: ["Content-Type", "Cookie", "Authorization"],
       })
     )
     .derive(async ({ request }) => ({
@@ -1937,6 +1951,131 @@ export async function createApiApp(
           set
         );
       }
+    )
+    // -----------------------------------------------------------------
+    // MCP REST endpoints (API key auth, not session auth)
+    // -----------------------------------------------------------------
+    .get("/mcp/metrics", ({ request, query, set }) =>
+      handleMcpGetMetrics(
+        {
+          db: runtime.db,
+          env: runtime.env,
+          queueProducer: runtime.queueProducer,
+          taskSyncQueueProducer: runtime.taskSyncQueueProducer,
+          rateLimiter: runtime.mcpRateLimiter,
+        },
+        request,
+        query as { startupId?: string; metricKeys?: string; category?: string },
+        set
+      )
+    )
+    .get("/mcp/alerts", ({ request, query, set }) =>
+      handleMcpGetAlerts(
+        {
+          db: runtime.db,
+          env: runtime.env,
+          queueProducer: runtime.queueProducer,
+          taskSyncQueueProducer: runtime.taskSyncQueueProducer,
+          rateLimiter: runtime.mcpRateLimiter,
+        },
+        request,
+        query as { startupId?: string; status?: string },
+        set
+      )
+    )
+    .get("/mcp/at-risk-customers", ({ request, query, set }) =>
+      handleMcpGetAtRiskCustomers(
+        {
+          db: runtime.db,
+          env: runtime.env,
+          queueProducer: runtime.queueProducer,
+          taskSyncQueueProducer: runtime.taskSyncQueueProducer,
+          rateLimiter: runtime.mcpRateLimiter,
+        },
+        request,
+        query as { startupId?: string },
+        set
+      )
+    )
+    .get("/mcp/activity-log", ({ request, query, set }) =>
+      handleMcpGetActivityLog(
+        {
+          db: runtime.db,
+          env: runtime.env,
+          queueProducer: runtime.queueProducer,
+          taskSyncQueueProducer: runtime.taskSyncQueueProducer,
+          rateLimiter: runtime.mcpRateLimiter,
+        },
+        request,
+        query as {
+          startupId?: string;
+          eventTypes?: string;
+          cursor?: string;
+          limit?: string;
+        },
+        set
+      )
+    )
+    .get("/mcp/portfolio-summary", ({ request, set }) =>
+      handleMcpGetPortfolioSummary(
+        {
+          db: runtime.db,
+          env: runtime.env,
+          queueProducer: runtime.queueProducer,
+          taskSyncQueueProducer: runtime.taskSyncQueueProducer,
+          rateLimiter: runtime.mcpRateLimiter,
+        },
+        request,
+        set
+      )
+    )
+    .post("/mcp/tasks", ({ request, body, set }) =>
+      handleMcpCreateTask(
+        {
+          db: runtime.db,
+          env: runtime.env,
+          queueProducer: runtime.queueProducer,
+          taskSyncQueueProducer: runtime.taskSyncQueueProducer,
+          rateLimiter: runtime.mcpRateLimiter,
+        },
+        request,
+        body as {
+          startupId?: string;
+          title?: string;
+          description?: string;
+          priority?: string;
+        },
+        set
+      )
+    )
+    .post("/mcp/alerts/:alertId/snooze", ({ request, params, body, set }) =>
+      handleMcpSnoozeAlert(
+        {
+          db: runtime.db,
+          env: runtime.env,
+          queueProducer: runtime.queueProducer,
+          taskSyncQueueProducer: runtime.taskSyncQueueProducer,
+          rateLimiter: runtime.mcpRateLimiter,
+        },
+        request,
+        params.alertId,
+        body as { durationHours?: number },
+        set
+      )
+    )
+    .post("/mcp/sync", ({ request, body, set }) =>
+      handleMcpTriggerSync(
+        {
+          db: runtime.db,
+          env: runtime.env,
+          queueProducer: runtime.queueProducer,
+          taskSyncQueueProducer: runtime.taskSyncQueueProducer,
+          rateLimiter: runtime.mcpRateLimiter,
+        },
+        request,
+        body as { startupId?: string; connectorId?: string },
+        set
+      )
     )
     .all("/auth", ({ request }) => auth.auth.handler(request))
     .all("/auth/*", ({ request }) => auth.auth.handler(request));
