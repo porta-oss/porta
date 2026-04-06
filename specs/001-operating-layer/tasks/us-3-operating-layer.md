@@ -66,13 +66,13 @@ File: `apps/api/tests/api-key.routes.test.ts`
 
 ### Task 2: Write MCP tool route tests (TDD)
 File: `apps/api/tests/mcp.routes.test.ts`
-- [ ] Test each of 8 tools returns correct data shape
-- [ ] Test read key can access read tools (200)
-- [ ] Test read key cannot access write tools (403)
-- [ ] Test write key can access all tools (200)
-- [ ] Test rate limiting returns 429 after 60 requests
-- [ ] Test `McpResponse` wrapper has `data`, `dataAsOf`, `dashboardUrl`
-- [ ] Test `McpErrorResponse` shape for NOT_FOUND, FORBIDDEN
+- [x] Test each of 8 tools returns correct data shape
+- [x] Test read key can access read tools (200)
+- [x] Test read key cannot access write tools (403)
+- [x] Test write key can access all tools (200)
+- [x] Test rate limiting returns 429 after 60 requests
+- [x] Test `McpResponse` wrapper has `data`, `dataAsOf`, `dashboardUrl`
+- [x] Test `McpErrorResponse` shape for NOT_FOUND, FORBIDDEN
 
 ### Task 3: Implement API key auth middleware
 File: `apps/api/src/lib/mcp/auth.ts`
