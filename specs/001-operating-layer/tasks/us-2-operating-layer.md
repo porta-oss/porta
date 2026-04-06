@@ -84,15 +84,15 @@ File: `apps/worker/src/sparklines.ts`
 
 ### Task 5: Implement daily digest processor
 File: `apps/worker/src/processors/telegram.ts`
-- [ ] Create processor for `TELEGRAM_QUEUE` (digest job type)
-- [ ] Query active `telegram_configs` where current time matches `digest_time` in `digest_timezone`
-- [ ] Per workspace: load all startups with health snapshots, alerts, at-risk customers
-- [ ] Per startup: render sparkline PNG (7-day north star trend)
-- [ ] Format MarkdownV2 message with health state, metrics, alerts, customers
-- [ ] Send via Telegram Bot API: `sendPhoto` (sparkline) then `sendMessage` (details)
-- [ ] Update `last_digest_at`
-- [ ] Log `telegram.digest` event
-- [ ] Handle 403 (bot removed): set `is_active=false`
+- [x] Create processor for `TELEGRAM_QUEUE` (digest job type)
+- [x] Query active `telegram_configs` where current time matches `digest_time` in `digest_timezone`
+- [x] Per workspace: load all startups with health snapshots, alerts, at-risk customers
+- [x] Per startup: render sparkline PNG (7-day north star trend)
+- [x] Format MarkdownV2 message with health state, metrics, alerts, customers
+- [x] Send via Telegram Bot API: `sendPhoto` (sparkline) then `sendMessage` (details)
+- [x] Update `last_digest_at`
+- [x] Log `telegram.digest` event
+- [x] Handle 403 (bot removed): set `is_active=false`
 
 ### Task 6: Implement alert notification processor
 File: `apps/worker/src/processors/telegram.ts` (same file)

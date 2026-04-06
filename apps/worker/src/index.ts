@@ -18,6 +18,10 @@ import {
   createLinearIssueClient,
   createTaskSyncProcessor,
 } from "./processors/task-sync";
+import {
+  createDefaultTelegramSender,
+  createTelegramDigestProcessor,
+} from "./processors/telegram";
 import { createWebhookDeliveryProcessor } from "./processors/webhook";
 import {
   createFounderProofSyncRouter,
@@ -28,6 +32,8 @@ import {
   createEventPurgeWorker,
   createSyncWorker,
   createTaskSyncWorker,
+  createTelegramQueue,
+  createTelegramWorker,
   createWebhookQueue,
   createWebhookWorker,
 } from "./queues";
@@ -340,6 +346,57 @@ async function main() {
 
   log.info("webhook delivery worker started");
 
+  // ---------------------------------------------------------------------------
+  // Telegram digest worker (daily portfolio digest via Telegram Bot API)
+  // ---------------------------------------------------------------------------
+
+  const telegramDigestProcessor = createTelegramDigestProcessor({
+    db: db as unknown as Parameters<
+      typeof createTelegramDigestProcessor
+    >[0]["db"],
+    log,
+    sender: createDefaultTelegramSender(),
+  });
+  const telegramWorker = createTelegramWorker(
+    env.redisUrl,
+    telegramDigestProcessor
+  );
+
+  telegramWorker.on("ready", () => {
+    log.info("telegram worker ready", { queue: "telegram", concurrency: 1 });
+  });
+
+  telegramWorker.on("failed", (job: unknown, err: Error) => {
+    const j = job as Record<string, unknown> | undefined;
+    const data = j?.data as Record<string, unknown> | undefined;
+    log.error("telegram job failed", {
+      jobId: j?.id,
+      type: data?.type,
+      attempt: j?.attemptsMade,
+      error: err.message,
+    });
+  });
+
+  telegramWorker.on("error", (err: Error) => {
+    log.error("telegram worker error", { error: err.message });
+  });
+
+  // Register repeatable digest check (every minute)
+  const telegramQueue = createTelegramQueue(env.redisUrl);
+  await telegramQueue.upsertJobScheduler(
+    "telegram-digest-check",
+    { pattern: "* * * * *" },
+    {
+      data: {
+        chatId: "",
+        message: "",
+        type: "digest" as const,
+        workspaceId: "",
+      },
+    }
+  );
+  log.info("telegram digest schedule registered", { cron: "* * * * *" });
+
   // Graceful shutdown
   const shutdown = async (signal: string) => {
     log.info(`received ${signal}, shutting down`);
@@ -355,6 +412,8 @@ async function main() {
     await eventPurgeQueue.close();
     await webhookWorker.close();
     await webhookQueue.close();
+    await telegramWorker.close();
+    await telegramQueue.close();
     await pool.end();
     log.info("worker stopped");
     process.exit(0);
