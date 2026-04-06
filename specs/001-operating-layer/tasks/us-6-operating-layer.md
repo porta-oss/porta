@@ -61,12 +61,12 @@ File: `apps/web/src/components/decision-surface.tsx`
 
 ### Task 3: Create event log entry component
 File: `apps/web/src/components/event-log-entry.tsx`
-- [ ] Render based on `eventType` discriminated union from `@shared/event-log`
-- [ ] Alert events: severity icon + metric + value + action taken
-- [ ] Connector events: provider icon + sync duration/error
-- [ ] Insight events: insight summary + severity
-- [ ] Telegram/MCP/task/webhook events: appropriate icons + key details
-- [ ] Timestamp display (relative: "2h ago", absolute on hover via tooltip)
+- [x] Render based on `eventType` discriminated union from `@shared/event-log`
+- [x] Alert events: severity icon + metric + value + action taken
+- [x] Connector events: provider icon + sync duration/error
+- [x] Insight events: insight summary + severity
+- [x] Telegram/MCP/task/webhook events: appropriate icons + key details
+- [x] Timestamp display (relative: "2h ago", absolute on hover via tooltip)
 
 ### Task 4: Create day separator component
 File: `apps/web/src/components/day-separator.tsx`
