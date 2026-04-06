@@ -76,13 +76,13 @@ File: `apps/api/tests/mcp.routes.test.ts`
 
 ### Task 3: Implement API key auth middleware
 File: `apps/api/src/lib/mcp/auth.ts`
-- [ ] Extract Bearer token from Authorization header
-- [ ] SHA-256 hash the token
-- [ ] Look up `api_key` by `key_hash`
-- [ ] Check `revoked_at` is null (else 401)
-- [ ] Check scope (read vs write) against required scope for endpoint
-- [ ] Update `last_used_at`
-- [ ] Return workspace context from `api_key.workspace_id`
+- [x] Extract Bearer token from Authorization header
+- [x] SHA-256 hash the token
+- [x] Look up `api_key` by `key_hash`
+- [x] Check `revoked_at` is null (else 401)
+- [x] Check scope (read vs write) against required scope for endpoint
+- [x] Update `last_used_at`
+- [x] Return workspace context from `api_key.workspace_id`
 
 ### Task 4: Implement rate limiting
 File: `apps/api/src/lib/mcp/auth.ts` (same file)
