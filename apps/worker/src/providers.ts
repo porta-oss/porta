@@ -9,15 +9,22 @@ import type {
   ConnectorProvider,
   ProviderValidationResult,
 } from "@shared/connectors";
-import type {
-  FunnelStageRow,
-  MetricValue,
-  SupportingMetricsSnapshot,
-} from "@shared/startup-health";
+import type { FunnelStageRow } from "@shared/startup-health";
 import {
-  emptyFunnelStages,
-  emptySupportingMetrics,
-} from "@shared/startup-health";
+  isUniversalMetricKey,
+  type UniversalMetrics,
+} from "@shared/universal-metrics";
+
+// ---------------------------------------------------------------------------
+// Default funnel stage definitions (free-form, no enum)
+// ---------------------------------------------------------------------------
+
+const DEFAULT_FUNNEL_STAGES: FunnelStageRow[] = [
+  { key: "visitor", label: "Visitors", value: 0, position: 0 },
+  { key: "signup", label: "Sign-ups", value: 0, position: 1 },
+  { key: "activation", label: "Activated", value: 0, position: 2 },
+  { key: "paying_customer", label: "Paying Customers", value: 0, position: 3 },
+];
 
 // ---------------------------------------------------------------------------
 // Sync result — extends validation with health metric data
@@ -30,17 +37,42 @@ export interface ProviderSyncResult extends ProviderValidationResult {
   /** MRR value extracted from the provider. Null on failure. */
   mrr: number | null;
   /** Supporting metrics snapshot. Null on failure. */
-  supportingMetrics: Partial<SupportingMetricsSnapshot> | null;
+  supportingMetrics: Partial<UniversalMetrics> | null;
+}
+
+/** Result from a YooKassa payment sync. */
+export interface YooKassaSyncResult extends ProviderSyncResult {
+  /** YooKassa-specific payment metrics (30-day window). */
+  yookassaMetrics: {
+    failedPayments: number;
+    refunds30d: number;
+    revenue30d: number;
+  };
+}
+
+/** Result from a Sentry sync. */
+export interface SentrySyncResult extends ProviderSyncResult {
+  /** Sentry-specific metrics (24h window). */
+  sentryMetrics: {
+    crashFreeSessions: number | null;
+    errorRate24h: number;
+    p95Latency: number | null;
+  };
+}
+
+/** A single row from the porta_metrics view. */
+export interface PostgresMetricRow {
+  category: string;
+  key: string;
+  label: string;
+  unit: string;
+  value: number;
 }
 
 /** Result from a Postgres custom metric sync. */
 export interface PostgresSyncResult extends ProviderSyncResult {
-  /** Custom metric data extracted from the prepared view. */
-  customMetric: {
-    metricValue: number;
-    previousValue: number | null;
-    capturedAt: string;
-  } | null;
+  /** Custom metric rows extracted from the porta_metrics view. */
+  customMetrics: PostgresMetricRow[];
 }
 
 export type ProviderValidateFn = (
@@ -52,8 +84,6 @@ export type ProviderSyncFn = (
   provider: ConnectorProvider,
   configJson: string
 ) => Promise<ProviderSyncResult>;
-
-const SQL_IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/;
 
 function invalidProviderSync(
   error: string,
@@ -69,13 +99,27 @@ function invalidProviderSync(
   };
 }
 
+function invalidSentrySync(
+  error: string,
+  retryable?: boolean
+): SentrySyncResult {
+  return {
+    ...invalidProviderSync(error, retryable),
+    sentryMetrics: {
+      crashFreeSessions: null,
+      errorRate24h: 0,
+      p95Latency: null,
+    },
+  };
+}
+
 function invalidPostgresSync(
   error: string,
   retryable?: boolean
 ): PostgresSyncResult {
   return {
     ...invalidProviderSync(error, retryable),
-    customMetric: null,
+    customMetrics: [],
   };
 }
 
@@ -367,9 +411,8 @@ function buildStripeSyncResult(args: {
     valid: true,
     mrr: args.mrr,
     supportingMetrics: {
-      customer_count: { value: args.customerCount, previous: null },
-      churn_rate: { value: Math.round(churnRate * 100) / 100, previous: null },
-      arpu: { value: Math.round(arpu * 100) / 100, previous: null },
+      churn_rate: Math.round(churnRate * 100) / 100,
+      arpu: Math.round(arpu * 100) / 100,
     },
     funnelStages: {
       paying_customer: args.customerCount,
@@ -397,59 +440,16 @@ function parseRequiredNumericCell(value: unknown, fieldName: string): number {
   return parsed;
 }
 
-function parseOptionalNumericCell(
-  value: unknown,
-  fieldName: string
-): number | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-
-  return parseRequiredNumericCell(value, fieldName);
-}
-
-function parseCapturedAtCell(value: unknown): string {
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-  if (typeof value === "string") {
-    const parsedDate = new Date(value);
-    if (!Number.isNaN(parsedDate.getTime())) {
-      return parsedDate.toISOString();
-    }
-  }
-
-  throw new Error(`captured_at is missing or invalid: ${String(value)}`);
-}
-
 function parsePostgresSyncConfig(config: {
   connectionUri?: string;
-  schema?: string;
-  view?: string;
-}):
-  | { connectionUri: string; schema: string; view: string }
-  | PostgresSyncResult {
+}): { connectionUri: string } | PostgresSyncResult {
   const connectionUri = config.connectionUri?.trim() ?? "";
-  const schema = config.schema?.trim() ?? "";
-  const view = config.view?.trim() ?? "";
 
   if (!connectionUri) {
     return invalidPostgresSync("Postgres connection URI is required.");
   }
 
-  if (!(schema && view)) {
-    return invalidPostgresSync("Postgres schema and view are required.");
-  }
-
-  if (!(SQL_IDENTIFIER_RE.test(schema) && SQL_IDENTIFIER_RE.test(view))) {
-    return invalidPostgresSync("Schema or view identifier is not SQL-safe.");
-  }
-
-  return {
-    connectionUri,
-    schema,
-    view,
-  };
+  return { connectionUri };
 }
 
 async function connectPostgresReadonlyClient(connectionUri: string): Promise<
@@ -488,49 +488,47 @@ async function connectPostgresReadonlyClient(connectionUri: string): Promise<
   return { client };
 }
 
-async function queryPostgresCustomMetric(
-  client: { query: (sql: string) => Promise<{ rows: unknown[] }> },
-  schema: string,
-  view: string
-): Promise<PostgresSyncResult> {
+async function queryPostgresMetrics(client: {
+  query: (sql: string) => Promise<{ rows: unknown[] }>;
+}): Promise<PostgresSyncResult> {
   await client.query("SET TRANSACTION READ ONLY");
 
-  const quotedSchema = `"${schema}"`;
-  const quotedView = `"${view}"`;
-  const queryText = `SELECT metric_value, previous_value, captured_at FROM ${quotedSchema}.${quotedView} LIMIT 1`;
-  const result = await client.query(queryText);
+  const result = await client.query(
+    "SELECT key, label, value, unit, category FROM porta_metrics"
+  );
 
   if (result.rows.length === 0) {
-    return invalidPostgresSync(
-      `Prepared view ${schema}.${view} returned no rows.`,
-      true
-    );
+    return invalidPostgresSync("porta_metrics view returned no rows.", true);
   }
 
-  const row = result.rows[0] as Record<string, unknown>;
+  const metrics: PostgresMetricRow[] = [];
+  const universalMetrics: Partial<UniversalMetrics> = {};
 
-  try {
-    return {
-      valid: true,
-      mrr: null,
-      supportingMetrics: null,
-      funnelStages: null,
-      customMetric: {
-        metricValue: parseRequiredNumericCell(
-          row.metric_value,
-          `metric_value from ${schema}.${view}`
-        ),
-        previousValue: parseOptionalNumericCell(
-          row.previous_value,
-          `previous_value from ${schema}.${view}`
-        ),
-        capturedAt: parseCapturedAtCell(row.captured_at),
-      },
-    };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return invalidPostgresSync(message);
+  for (const rawRow of result.rows) {
+    const row = rawRow as Record<string, unknown>;
+    const key = String(row.key ?? "");
+    const value = parseRequiredNumericCell(row.value, `value for key "${key}"`);
+    const label = String(row.label ?? key);
+    const unit = String(row.unit ?? "");
+    const category = String(row.category ?? "custom");
+
+    metrics.push({ key, label, value, unit, category });
+
+    if (isUniversalMetricKey(key)) {
+      universalMetrics[key] = value;
+    }
   }
+
+  const mrr = universalMetrics.mrr ?? null;
+
+  return {
+    valid: true,
+    mrr: typeof mrr === "number" ? mrr : null,
+    supportingMetrics:
+      Object.keys(universalMetrics).length > 0 ? universalMetrics : null,
+    funnelStages: null,
+    customMetrics: metrics,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -538,37 +536,23 @@ async function queryPostgresCustomMetric(
 // ---------------------------------------------------------------------------
 
 /**
- * Merge partial provider metrics into a full SupportingMetricsSnapshot,
- * filling missing keys with zeros. Carries forward previous values
- * from an existing snapshot when available.
+ * Merge partial provider metrics into a full UniversalMetrics object,
+ * combining data from multiple providers.
  */
 export function mergeMetrics(
-  stripe: Partial<SupportingMetricsSnapshot> | null,
-  posthog: Partial<SupportingMetricsSnapshot> | null,
-  previous: SupportingMetricsSnapshot | null
-): SupportingMetricsSnapshot {
-  const base = emptySupportingMetrics();
+  stripe: Partial<UniversalMetrics> | null,
+  posthog: Partial<UniversalMetrics> | null
+): UniversalMetrics {
+  const base: UniversalMetrics = {};
   const sources = [stripe, posthog];
 
   for (const src of sources) {
     if (!src) {
       continue;
     }
-    for (const [key, mv] of Object.entries(src)) {
-      const k = key as keyof SupportingMetricsSnapshot;
-      if (k in base) {
-        base[k] = mv as MetricValue;
-      }
-    }
-  }
-
-  // Carry forward previous values for delta computation
-  if (previous) {
-    for (const key of Object.keys(base) as Array<
-      keyof SupportingMetricsSnapshot
-    >) {
-      if (base[key].previous === null && previous[key]) {
-        base[key] = { ...base[key], previous: previous[key].value };
+    for (const [key, value] of Object.entries(src)) {
+      if (value !== undefined) {
+        (base as Record<string, unknown>)[key] = value;
       }
     }
   }
@@ -582,13 +566,13 @@ export function mergeMetrics(
 export function mergeFunnel(
   posthogFunnel: Partial<Record<string, number>> | null
 ): FunnelStageRow[] {
-  const base = emptyFunnelStages();
+  const base = DEFAULT_FUNNEL_STAGES.map((s) => ({ ...s }));
   if (!posthogFunnel) {
     return base;
   }
 
   return base.map((row) => {
-    const override = posthogFunnel[row.stage];
+    const override = posthogFunnel[row.key];
     if (override !== undefined && Number.isFinite(override)) {
       return { ...row, value: override };
     }
@@ -676,7 +660,7 @@ async function syncPostHog(config: {
     valid: true,
     mrr: null, // MRR comes from Stripe, not PostHog
     supportingMetrics: {
-      active_users: { value: activeUsers, previous: null },
+      active_users: activeUsers,
     },
     funnelStages: {
       visitor: visitors,
@@ -685,6 +669,481 @@ async function syncPostHog(config: {
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// YooKassa adapter — fetches payment & refund metrics
+// ---------------------------------------------------------------------------
+
+const YOOKASSA_TIMEOUT_MS = 10_000;
+const YOOKASSA_API_BASE = "https://api.yookassa.ru";
+const YOOKASSA_PAGE_LIMIT = 100;
+
+function yookassaHeaders(shopId: string, secretKey: string) {
+  return {
+    Authorization: `Basic ${btoa(`${shopId}:${secretKey}`)}`,
+    Accept: "application/json",
+  };
+}
+
+interface YooKassaListResponse {
+  items: Array<{
+    id: string;
+    status: string;
+    amount: { value: string; currency: string };
+  }>;
+  next_cursor?: string;
+  type: string;
+}
+
+async function validateYooKassaConnection(
+  headers: Record<string, string>
+): Promise<ProviderSyncResult | null> {
+  try {
+    const response = await fetchWithTimeout(
+      `${YOOKASSA_API_BASE}/v3/me`,
+      YOOKASSA_TIMEOUT_MS,
+      { method: "GET", headers }
+    );
+
+    if (response.status === 401) {
+      return invalidProviderSync(
+        "YooKassa credentials are invalid or have been revoked."
+      );
+    }
+    if (response.status === 403) {
+      return invalidProviderSync(
+        "YooKassa credentials lack the required permissions."
+      );
+    }
+    if (response.status >= 500) {
+      return invalidProviderSync(
+        "YooKassa API returned a server error. Try again shortly.",
+        true
+      );
+    }
+    if (response.status !== 200) {
+      return invalidProviderSync(
+        `YooKassa validation failed with status ${response.status}.`
+      );
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      return invalidProviderSync(
+        "YooKassa validation timed out. Try again.",
+        true
+      );
+    }
+    return invalidProviderSync(
+      "YooKassa validation request failed. Check network connectivity.",
+      true
+    );
+  }
+
+  return null;
+}
+
+async function fetchYooKassaList(
+  endpoint: string,
+  headers: Record<string, string>,
+  dateFrom: string,
+  dateTo: string
+): Promise<YooKassaListResponse["items"]> {
+  const allItems: YooKassaListResponse["items"] = [];
+  let cursor: string | undefined;
+
+  for (;;) {
+    const url = new URL(`${YOOKASSA_API_BASE}${endpoint}`);
+    url.searchParams.set("created_at.gte", dateFrom);
+    url.searchParams.set("created_at.lte", dateTo);
+    url.searchParams.set("limit", String(YOOKASSA_PAGE_LIMIT));
+    if (cursor) {
+      url.searchParams.set("cursor", cursor);
+    }
+
+    const response = await fetchWithTimeout(
+      url.toString(),
+      YOOKASSA_TIMEOUT_MS,
+      { method: "GET", headers }
+    );
+
+    if (!response.ok) {
+      break;
+    }
+
+    const data = (await response.json()) as YooKassaListResponse;
+    allItems.push(...(data.items ?? []));
+
+    if (!data.next_cursor) {
+      break;
+    }
+    cursor = data.next_cursor;
+  }
+
+  return allItems;
+}
+
+async function syncYooKassa(config: {
+  secretKey?: string;
+  shopId?: string;
+}): Promise<YooKassaSyncResult> {
+  const shopId = config.shopId?.trim() ?? "";
+  const secretKey = config.secretKey?.trim() ?? "";
+
+  if (!shopId) {
+    return {
+      ...invalidProviderSync("YooKassa shop ID is required."),
+      yookassaMetrics: { failedPayments: 0, refunds30d: 0, revenue30d: 0 },
+    };
+  }
+  if (!secretKey) {
+    return {
+      ...invalidProviderSync("YooKassa secret key is required."),
+      yookassaMetrics: { failedPayments: 0, refunds30d: 0, revenue30d: 0 },
+    };
+  }
+
+  const headers = yookassaHeaders(shopId, secretKey);
+
+  const validationError = await validateYooKassaConnection(headers);
+  if (validationError) {
+    return {
+      ...validationError,
+      yookassaMetrics: { failedPayments: 0, refunds30d: 0, revenue30d: 0 },
+    };
+  }
+
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const dateFrom = thirtyDaysAgo.toISOString();
+  const dateTo = now.toISOString();
+
+  let payments: YooKassaListResponse["items"] = [];
+  let refunds: YooKassaListResponse["items"] = [];
+
+  try {
+    payments = await fetchYooKassaList(
+      "/v3/payments",
+      headers,
+      dateFrom,
+      dateTo
+    );
+  } catch {
+    // Non-fatal: payment metrics stay at 0
+  }
+
+  try {
+    refunds = await fetchYooKassaList("/v3/refunds", headers, dateFrom, dateTo);
+  } catch {
+    // Non-fatal: refund metric stays at 0
+  }
+
+  // Sum succeeded payments for revenue, count canceled for failed_payments
+  let revenue30d = 0;
+  let failedPayments = 0;
+  for (const payment of payments) {
+    if (payment.status === "succeeded") {
+      revenue30d += Number.parseFloat(payment.amount.value) || 0;
+    } else if (payment.status === "canceled") {
+      failedPayments++;
+    }
+  }
+
+  const refunds30d = refunds.length;
+
+  // Revenue is total over 30 days; approximate MRR = revenue_30d (monthly window)
+  const mrr = Math.round(revenue30d * 100) / 100;
+
+  return {
+    valid: true,
+    mrr,
+    supportingMetrics: {},
+    funnelStages: null,
+    yookassaMetrics: {
+      failedPayments,
+      refunds30d,
+      revenue30d: mrr,
+    },
+  };
+}
+
+/** Founder-proof demo config for YooKassa. */
+export const FOUNDER_PROOF_YOOKASSA_CONFIG = {
+  shopId: "yookassa_proof_shop_001",
+  secretKey: "yookassa_proof_secret_key",
+} as const;
+
+// ---------------------------------------------------------------------------
+// Sentry adapter — fetches error, latency, and session metrics
+// ---------------------------------------------------------------------------
+
+const SENTRY_SYNC_TIMEOUT_MS = 10_000;
+const SENTRY_SYNC_API_BASE = "https://sentry.io";
+
+function sentryHeaders(authToken: string) {
+  return {
+    Authorization: `Bearer ${authToken}`,
+    Accept: "application/json",
+  };
+}
+
+async function validateSentryConnection(
+  authToken: string,
+  organization: string,
+  project: string
+): Promise<ProviderSyncResult | null> {
+  try {
+    const response = await fetchWithTimeout(
+      `${SENTRY_SYNC_API_BASE}/api/0/projects/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/`,
+      SENTRY_SYNC_TIMEOUT_MS,
+      { method: "GET", headers: sentryHeaders(authToken) }
+    );
+
+    if (response.status === 401) {
+      return invalidProviderSync(
+        "Sentry auth token is invalid or has been revoked."
+      );
+    }
+    if (response.status === 403) {
+      return invalidProviderSync(
+        "Sentry auth token lacks the required permissions."
+      );
+    }
+    if (response.status === 404) {
+      return invalidProviderSync(
+        "Sentry organization or project not found. Verify the slugs are correct."
+      );
+    }
+    if (response.status >= 500) {
+      return invalidProviderSync(
+        "Sentry API returned a server error. Try again shortly.",
+        true
+      );
+    }
+    if (response.status !== 200) {
+      return invalidProviderSync(
+        `Sentry validation failed with status ${response.status}.`
+      );
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      return invalidProviderSync(
+        "Sentry validation timed out. Try again.",
+        true
+      );
+    }
+    return invalidProviderSync(
+      "Sentry validation request failed. Check network connectivity.",
+      true
+    );
+  }
+
+  return null;
+}
+
+async function fetchSentryErrorCount(
+  authToken: string,
+  organization: string,
+  project: string
+): Promise<number> {
+  const now = new Date();
+  const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+  const url = new URL(
+    `${SENTRY_SYNC_API_BASE}/api/0/projects/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/stats/`
+  );
+  url.searchParams.set("stat", "received");
+  url.searchParams.set("resolution", "1h");
+  url.searchParams.set(
+    "since",
+    String(Math.floor(twentyFourHoursAgo.getTime() / 1000))
+  );
+  url.searchParams.set("until", String(Math.floor(now.getTime() / 1000)));
+
+  const response = await fetchWithTimeout(
+    url.toString(),
+    SENTRY_SYNC_TIMEOUT_MS,
+    { method: "GET", headers: sentryHeaders(authToken) }
+  );
+
+  if (!response.ok) {
+    return 0;
+  }
+
+  // Response is array of [timestamp, count] tuples
+  const data = (await response.json()) as [number, number][];
+  let total = 0;
+  for (const [, count] of data) {
+    total += count;
+  }
+  return total;
+}
+
+async function fetchSentryP95Latency(
+  authToken: string,
+  organization: string,
+  project: string
+): Promise<number | null> {
+  const url = new URL(
+    `${SENTRY_SYNC_API_BASE}/api/0/organizations/${encodeURIComponent(organization)}/events/`
+  );
+  url.searchParams.set("project", project);
+  url.searchParams.set("field", "p95(transaction.duration)");
+  url.searchParams.set("statsPeriod", "24h");
+  url.searchParams.set("dataset", "metrics");
+
+  try {
+    const response = await fetchWithTimeout(
+      url.toString(),
+      SENTRY_SYNC_TIMEOUT_MS,
+      { method: "GET", headers: sentryHeaders(authToken) }
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as {
+      data?: Record<string, number>[];
+    };
+
+    const firstRow = data.data?.[0];
+    if (!firstRow) {
+      return null;
+    }
+
+    const p95 = firstRow["p95(transaction.duration)"];
+    return typeof p95 === "number" && Number.isFinite(p95) ? p95 : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchSentryCrashFreeRate(
+  authToken: string,
+  organization: string,
+  project: string
+): Promise<number | null> {
+  const url = new URL(
+    `${SENTRY_SYNC_API_BASE}/api/0/organizations/${encodeURIComponent(organization)}/sessions/`
+  );
+  url.searchParams.set("project", project);
+  url.searchParams.set("field", "crash_free_rate(session)");
+  url.searchParams.set("statsPeriod", "24h");
+  url.searchParams.set("interval", "24h");
+
+  try {
+    const response = await fetchWithTimeout(
+      url.toString(),
+      SENTRY_SYNC_TIMEOUT_MS,
+      { method: "GET", headers: sentryHeaders(authToken) }
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as {
+      groups?: Array<{
+        totals?: Record<string, number>;
+      }>;
+    };
+
+    const crashFreeRate =
+      data.groups?.[0]?.totals?.["crash_free_rate(session)"];
+    return typeof crashFreeRate === "number" && Number.isFinite(crashFreeRate)
+      ? Math.round(crashFreeRate * 10_000) / 100 // 0.9975 -> 99.75%
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function syncSentry(config: {
+  authToken?: string;
+  organization?: string;
+  project?: string;
+}): Promise<SentrySyncResult> {
+  const authToken = config.authToken?.trim() ?? "";
+  const organization = config.organization?.trim() ?? "";
+  const project = config.project?.trim() ?? "";
+
+  if (!authToken) {
+    return invalidSentrySync("Sentry auth token is required.");
+  }
+  if (!organization) {
+    return invalidSentrySync("Sentry organization slug is required.");
+  }
+  if (!project) {
+    return invalidSentrySync("Sentry project slug is required.");
+  }
+
+  const validationError = await validateSentryConnection(
+    authToken,
+    organization,
+    project
+  );
+  if (validationError) {
+    return {
+      ...validationError,
+      sentryMetrics: {
+        crashFreeSessions: null,
+        errorRate24h: 0,
+        p95Latency: null,
+      },
+    };
+  }
+
+  let errorRate24h = 0;
+  let p95Latency: number | null = null;
+  let crashFreeSessions: number | null = null;
+
+  try {
+    errorRate24h = await fetchSentryErrorCount(
+      authToken,
+      organization,
+      project
+    );
+  } catch {
+    // Non-fatal: error count stays at 0
+  }
+
+  try {
+    p95Latency = await fetchSentryP95Latency(authToken, organization, project);
+  } catch {
+    // Non-fatal: latency stays null
+  }
+
+  try {
+    crashFreeSessions = await fetchSentryCrashFreeRate(
+      authToken,
+      organization,
+      project
+    );
+  } catch {
+    // Non-fatal: crash-free stays null
+  }
+
+  return {
+    valid: true,
+    mrr: null,
+    supportingMetrics: {
+      error_rate: errorRate24h,
+    },
+    funnelStages: null,
+    sentryMetrics: {
+      crashFreeSessions,
+      errorRate24h,
+      p95Latency,
+    },
+  };
+}
+
+/** Founder-proof demo config for Sentry. */
+export const FOUNDER_PROOF_SENTRY_CONFIG = {
+  authToken: "sentry_proof_token_001",
+  organization: "sentry_proof_org",
+  project: "sentry_proof_project",
+} as const;
 
 // ---------------------------------------------------------------------------
 // Stripe adapter — fetches financial metrics
@@ -734,27 +1193,19 @@ const POSTGRES_TIMEOUT_MS = 10_000;
 
 /**
  * Connect read-only to an external Postgres database and query the
- * narrow prepared view contract: SELECT metric_value, previous_value,
- * captured_at FROM <schema>.<view> LIMIT 1.
+ * porta_metrics view: SELECT key, label, value, unit, category FROM porta_metrics.
  *
- * The config JSON shape mirrors the API setup contract:
- *   { connectionUri, schema, view, label, unit }
- *
- * Returns a PostgresSyncResult — valid:true with custom metric data on success,
- * valid:false with a descriptive error on failure.
+ * Each row becomes a custom_metric entry. Rows whose key matches a
+ * UNIVERSAL_METRIC_KEY are promoted into supportingMetrics.
  */
 async function syncPostgres(config: {
   connectionUri?: string;
-  schema?: string;
-  view?: string;
-  label?: string;
-  unit?: string;
 }): Promise<PostgresSyncResult> {
   const parsedConfig = parsePostgresSyncConfig(config);
   if ("valid" in parsedConfig) {
     return parsedConfig;
   }
-  const { connectionUri, schema, view } = parsedConfig;
+  const { connectionUri } = parsedConfig;
 
   const clientResult = await connectPostgresReadonlyClient(connectionUri);
   if ("error" in clientResult) {
@@ -763,13 +1214,13 @@ async function syncPostgres(config: {
   const { client } = clientResult;
 
   try {
-    return await queryPostgresCustomMetric(client, schema, view);
+    return await queryPostgresMetrics(client);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const isTimeout =
       message.includes("timeout") || message.includes("ETIMEDOUT");
     return invalidPostgresSync(
-      `Postgres query failed on ${schema}.${view}: ${message}`,
+      `Postgres query failed on porta_metrics: ${message}`,
       isTimeout
     );
   } finally {
@@ -815,14 +1266,20 @@ export function createProviderRouter(): ProviderValidateFn {
         return syncStripe(st);
       }
       case "postgres": {
-        const pg = config as {
-          connectionUri?: string;
-          schema?: string;
-          view?: string;
-          label?: string;
-          unit?: string;
-        };
+        const pg = config as { connectionUri?: string };
         return syncPostgres(pg);
+      }
+      case "yookassa": {
+        const yk = config as { secretKey?: string; shopId?: string };
+        return syncYooKassa(yk);
+      }
+      case "sentry": {
+        const se = config as {
+          authToken?: string;
+          organization?: string;
+          project?: string;
+        };
+        return syncSentry(se);
       }
       default:
         return {
@@ -865,14 +1322,20 @@ export function createProviderSyncRouter(): ProviderSyncFn {
         return syncStripe(st);
       }
       case "postgres": {
-        const pg = config as {
-          connectionUri?: string;
-          schema?: string;
-          view?: string;
-          label?: string;
-          unit?: string;
-        };
+        const pg = config as { connectionUri?: string };
         return syncPostgres(pg);
+      }
+      case "yookassa": {
+        const yk = config as { secretKey?: string; shopId?: string };
+        return syncYooKassa(yk);
+      }
+      case "sentry": {
+        const se = config as {
+          authToken?: string;
+          organization?: string;
+          project?: string;
+        };
+        return syncSentry(se);
       }
       default:
         return {
@@ -910,7 +1373,7 @@ export function createStubSyncRouter(
   result: ProviderSyncResult = {
     valid: true,
     mrr: 5000,
-    supportingMetrics: emptySupportingMetrics(),
+    supportingMetrics: {},
     funnelStages: null,
   }
 ): ProviderSyncFn & {
@@ -959,9 +1422,8 @@ export const FOUNDER_PROOF_STRIPE_CONFIG = {
  */
 export function createFounderProofSyncRouter(): ProviderSyncFn {
   return async (provider, configJson): Promise<ProviderSyncResult> => {
-    let _config: unknown;
     try {
-      _config = JSON.parse(configJson);
+      JSON.parse(configJson);
     } catch {
       return {
         valid: false,
@@ -978,7 +1440,7 @@ export function createFounderProofSyncRouter(): ProviderSyncFn {
           valid: true,
           mrr: null,
           supportingMetrics: {
-            active_users: { value: 1420, previous: 1380 },
+            active_users: 1420,
           },
           funnelStages: {
             visitor: 8500,
@@ -992,14 +1454,63 @@ export function createFounderProofSyncRouter(): ProviderSyncFn {
           valid: true,
           mrr: 12_400,
           supportingMetrics: {
-            customer_count: { value: 48, previous: 45 },
-            churn_rate: { value: 3.2, previous: 2.8 },
-            arpu: { value: 258.33, previous: 244.44 },
+            churn_rate: 3.2,
+            arpu: 258.33,
           },
           funnelStages: {
             paying_customer: 48,
           },
         };
+      }
+      case "yookassa": {
+        return {
+          valid: true,
+          mrr: 84_200,
+          supportingMetrics: {},
+          funnelStages: null,
+        };
+      }
+      case "sentry": {
+        return {
+          valid: true,
+          mrr: null,
+          supportingMetrics: {
+            error_rate: 142,
+          },
+          funnelStages: null,
+        };
+      }
+      case "postgres": {
+        const pgResult: PostgresSyncResult = {
+          valid: true,
+          mrr: 9500,
+          supportingMetrics: { mrr: 9500, active_users: 320 },
+          funnelStages: null,
+          customMetrics: [
+            {
+              key: "mrr",
+              label: "MRR",
+              value: 9500,
+              unit: "$",
+              category: "revenue",
+            },
+            {
+              key: "active_users",
+              label: "Active Users",
+              value: 320,
+              unit: "count",
+              category: "engagement",
+            },
+            {
+              key: "nps_score",
+              label: "NPS Score",
+              value: 72,
+              unit: "score",
+              category: "health",
+            },
+          ],
+        };
+        return pgResult;
       }
       default:
         return {

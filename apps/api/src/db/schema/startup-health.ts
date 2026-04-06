@@ -12,6 +12,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   text,
   timestamp,
@@ -30,9 +31,9 @@ export const healthSnapshot = pgTable(
     healthState: text("health_state").notNull(),
     blockedReason: text("blocked_reason"),
     northStarKey: text("north_star_key").notNull(),
-    northStarValue: integer("north_star_value").notNull(),
-    northStarPreviousValue: integer("north_star_previous_value"),
-    /** JSONB: SupportingMetricsSnapshot from @shared/startup-health */
+    northStarValue: numeric("north_star_value"),
+    northStarPreviousValue: numeric("north_star_previous_value"),
+    /** JSONB: UniversalMetrics from @shared/universal-metrics */
     supportingMetrics: jsonb("supporting_metrics").notNull(),
     syncJobId: text("sync_job_id"),
     computedAt: timestamp("computed_at").notNull(),
@@ -59,7 +60,7 @@ export const healthFunnelStage = pgTable(
     startupId: text("startup_id")
       .notNull()
       .references(() => startup.id, { onDelete: "cascade" }),
-    stage: text("stage").notNull(),
+    key: text("key").notNull(),
     label: text("label").notNull(),
     value: integer("value").notNull(),
     position: integer("position").notNull(),
@@ -71,9 +72,9 @@ export const healthFunnelStage = pgTable(
   },
   (table) => [
     index("health_funnel_stage_startupId_idx").on(table.startupId),
-    uniqueIndex("health_funnel_stage_startup_stage_uidx").on(
+    uniqueIndex("health_funnel_stage_startup_key_uidx").on(
       table.startupId,
-      table.stage
+      table.key
     ),
     index("health_funnel_stage_snapshotId_idx").on(table.snapshotId),
   ]
@@ -88,6 +89,50 @@ export const healthFunnelStageRelations = relations(
     }),
     snapshot: one(healthSnapshot, {
       fields: [healthFunnelStage.snapshotId],
+      references: [healthSnapshot.id],
+    }),
+  })
+);
+
+// ---------------------------------------------------------------------------
+// health_snapshot_history — time-series metric values for sparklines / trends
+// ---------------------------------------------------------------------------
+
+export const healthSnapshotHistory = pgTable(
+  "health_snapshot_history",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    startupId: text("startup_id")
+      .notNull()
+      .references(() => startup.id, { onDelete: "cascade" }),
+    metricKey: text("metric_key").notNull(),
+    value: numeric("value").notNull(),
+    snapshotId: text("snapshot_id")
+      .notNull()
+      .references(() => healthSnapshot.id, { onDelete: "cascade" }),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("health_snapshot_history_startup_metric_idx").on(
+      table.startupId,
+      table.metricKey,
+      table.capturedAt
+    ),
+    index("health_snapshot_history_captured_idx").on(table.capturedAt),
+  ]
+);
+
+export const healthSnapshotHistoryRelations = relations(
+  healthSnapshotHistory,
+  ({ one }) => ({
+    startup: one(startup, {
+      fields: [healthSnapshotHistory.startupId],
+      references: [startup.id],
+    }),
+    snapshot: one(healthSnapshot, {
+      fields: [healthSnapshotHistory.snapshotId],
       references: [healthSnapshot.id],
     }),
   })

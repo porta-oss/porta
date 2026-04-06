@@ -1,18 +1,20 @@
-import type { HealthState, NorthStarMetric } from "@shared/startup-health";
+import type { HealthState } from "@shared/startup-health";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { StreakBadge } from "./streak-badge";
 
 export interface StartupHealthHeroProps {
   blockedReasons: Array<{ code: string; message: string }>;
   healthState: HealthState;
   lastSnapshotAt: string | null;
-  northStarKey: NorthStarMetric;
+  northStarKey: string;
   northStarPreviousValue: number | null;
-  northStarValue: number;
+  northStarValue: number | null;
+  streakDays?: number | null;
 }
 
-const NORTH_STAR_LABELS: Record<NorthStarMetric, string> = {
+const NORTH_STAR_LABELS: Record<string, string> = {
   mrr: "Monthly Recurring Revenue",
 };
 
@@ -26,10 +28,10 @@ function formatCurrency(value: number): string {
 }
 
 function computeDelta(
-  current: number,
+  current: number | null,
   previous: number | null
 ): { label: string; direction: "up" | "down" | "flat" } | null {
-  if (previous === null || previous === 0) {
+  if (current === null || previous === null || previous === 0) {
     return null;
   }
   const pct = ((current - previous) / previous) * 100;
@@ -115,6 +117,7 @@ export function StartupHealthHero({
   northStarPreviousValue,
   lastSnapshotAt,
   blockedReasons,
+  streakDays,
 }: StartupHealthHeroProps) {
   const banner = healthBannerConfig(healthState);
   const delta = computeDelta(northStarValue, northStarPreviousValue);
@@ -134,9 +137,14 @@ export function StartupHealthHero({
     <Card aria-label="startup health hero" className={banner.cardClass}>
       <CardContent className="grid gap-3 pt-5">
         <div className="flex items-center justify-between">
-          <Badge role="status" variant={banner.badgeVariant}>
-            {banner.text}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge role="status" variant={banner.badgeVariant}>
+              {banner.text}
+            </Badge>
+            {streakDays != null && streakDays >= 7 ? (
+              <StreakBadge streakDays={streakDays} />
+            ) : null}
+          </div>
           <span className="text-muted-foreground text-xs">
             {formatSnapshotAge(lastSnapshotAt)}
           </span>
@@ -144,13 +152,13 @@ export function StartupHealthHero({
 
         <div>
           <p className="text-muted-foreground text-sm uppercase tracking-wide">
-            {NORTH_STAR_LABELS[northStarKey]}
+            {NORTH_STAR_LABELS[northStarKey] ?? northStarKey}
           </p>
           <p
             className={`mt-1 font-bold text-2xl tabular-nums leading-tight tracking-display ${isBlocked ? "text-muted-foreground" : "text-foreground"}`}
             data-testid="north-star-value"
           >
-            {formatCurrency(northStarValue)}
+            {formatCurrency(northStarValue ?? 0)}
           </p>
           {delta ? (
             <span

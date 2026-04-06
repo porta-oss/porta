@@ -10,6 +10,9 @@ import {
   createAnthropicExplainer,
   createFounderProofExplainer,
 } from "./insights";
+import { createEventPurgeProcessor } from "./processors/event-purge";
+import { createPortfolioDigestProcessor } from "./processors/portfolio-digest";
+import type { WebhookDispatcher } from "./processors/sync";
 import { createSyncProcessor } from "./processors/sync";
 import {
   createFounderProofLinearClient,
@@ -17,11 +20,29 @@ import {
   createTaskSyncProcessor,
 } from "./processors/task-sync";
 import {
+  createDefaultTelegramSender,
+  createTelegramAlertProcessor,
+  createTelegramDigestProcessor,
+} from "./processors/telegram";
+import { createWebhookDeliveryProcessor } from "./processors/webhook";
+import {
   createFounderProofSyncRouter,
   createProviderSyncRouter,
 } from "./providers";
-import { createSyncWorker, createTaskSyncWorker } from "./queues";
 import {
+  createEventPurgeQueue,
+  createEventPurgeWorker,
+  createPortfolioDigestQueue,
+  createPortfolioDigestWorker,
+  createSyncWorker,
+  createTaskSyncWorker,
+  createTelegramQueue,
+  createTelegramWorker,
+  createWebhookQueue,
+  createWebhookWorker,
+} from "./queues";
+import {
+  createAlertRepository,
   createHealthSnapshotRepository,
   createInsightRepository,
   createInternalTaskRepository,
@@ -93,6 +114,9 @@ async function main() {
   const insightRepo = createInsightRepository(
     db as unknown as Parameters<typeof createInsightRepository>[0]
   );
+  const alertRepo = createAlertRepository(
+    db as unknown as Parameters<typeof createAlertRepository>[0]
+  );
 
   // Provider sync router — deterministic stubs in founder-proof mode
   const validateProvider = env.founderProofMode
@@ -123,8 +147,30 @@ async function main() {
     log.info("insight generation disabled (ANTHROPIC_API_KEY not set)");
   }
 
+  // Webhook dispatcher — queries webhook_config and enqueues delivery jobs
+  const webhookQueue = createWebhookQueue(env.redisUrl);
+  const webhookDispatcher: WebhookDispatcher = {
+    async findEnabledConfig(startupId: string) {
+      const result = await pool.query(
+        "SELECT id, event_types FROM webhook_config WHERE startup_id = $1 AND enabled = true LIMIT 1",
+        [startupId]
+      );
+      const row = (
+        result as { rows: Array<{ id: string; event_types: string[] }> }
+      ).rows[0];
+      if (!row) {
+        return null;
+      }
+      return { id: row.id, eventTypes: row.event_types };
+    },
+    async enqueue(job) {
+      await webhookQueue.add("webhook-delivery", job);
+    },
+  };
+
   // Build processor
   const processor = createSyncProcessor({
+    alertRepo,
     repo,
     encryptionKey: env.connectorEncryptionKey,
     validateProvider,
@@ -132,6 +178,7 @@ async function main() {
     healthRepo,
     insightRepo,
     explainer,
+    webhookDispatcher,
   });
 
   // Start BullMQ worker
@@ -232,6 +279,196 @@ async function main() {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Event purge worker (daily cleanup of old event_log rows)
+  // ---------------------------------------------------------------------------
+
+  const eventPurgeProcessor = createEventPurgeProcessor({ db, log });
+  const eventPurgeWorker = createEventPurgeWorker(
+    env.redisUrl,
+    eventPurgeProcessor
+  );
+
+  eventPurgeWorker.on("ready", () => {
+    log.info("event-purge worker ready", { queue: "event-purge" });
+  });
+
+  eventPurgeWorker.on("failed", (job: unknown, err: Error) => {
+    const j = job as Record<string, unknown> | undefined;
+    log.error("event-purge job failed", {
+      jobId: j?.id,
+      attempt: j?.attemptsMade,
+      error: err.message,
+    });
+  });
+
+  eventPurgeWorker.on("error", (err: Error) => {
+    log.error("event-purge worker error", { error: err.message });
+  });
+
+  // Register daily repeatable job (3am UTC)
+  const eventPurgeQueue = createEventPurgeQueue(env.redisUrl);
+  await eventPurgeQueue.upsertJobScheduler(
+    "event-purge-daily",
+    { pattern: "0 3 * * *" },
+    { data: {} }
+  );
+  log.info("event-purge daily schedule registered", { cron: "0 3 * * *" });
+
+  // ---------------------------------------------------------------------------
+  // Webhook delivery worker (outbound webhook events with circuit breaker)
+  // ---------------------------------------------------------------------------
+
+  const webhookProcessor = createWebhookDeliveryProcessor({
+    db: db as unknown as Parameters<
+      typeof createWebhookDeliveryProcessor
+    >[0]["db"],
+    pool,
+    log,
+  });
+  const webhookWorker = createWebhookWorker(env.redisUrl, webhookProcessor);
+
+  webhookWorker.on("ready", () => {
+    log.info("webhook worker ready", { queue: "webhook", concurrency: 5 });
+  });
+
+  webhookWorker.on("failed", (job: unknown, err: Error) => {
+    const j = job as Record<string, unknown> | undefined;
+    const data = j?.data as Record<string, unknown> | undefined;
+    log.error("webhook job failed", {
+      jobId: j?.id,
+      deliveryId: data?.deliveryId,
+      webhookConfigId: data?.webhookConfigId,
+      attempt: j?.attemptsMade,
+      error: err.message,
+    });
+  });
+
+  webhookWorker.on("error", (err: Error) => {
+    log.error("webhook worker error", { error: err.message });
+  });
+
+  log.info("webhook delivery worker started");
+
+  // ---------------------------------------------------------------------------
+  // Telegram digest worker (daily portfolio digest via Telegram Bot API)
+  // ---------------------------------------------------------------------------
+
+  const telegramSender = createDefaultTelegramSender();
+  const telegramDigestProcessor = createTelegramDigestProcessor({
+    db: db as unknown as Parameters<
+      typeof createTelegramDigestProcessor
+    >[0]["db"],
+    log,
+    sender: telegramSender,
+  });
+  const telegramAlertProcessor = createTelegramAlertProcessor({
+    db: db as unknown as Parameters<
+      typeof createTelegramAlertProcessor
+    >[0]["db"],
+    log,
+    sender: telegramSender,
+  });
+  const telegramWorker = createTelegramWorker(env.redisUrl, async (job) => {
+    if (job.data.type === "alert") {
+      return telegramAlertProcessor(job);
+    }
+    return telegramDigestProcessor(job);
+  });
+
+  telegramWorker.on("ready", () => {
+    log.info("telegram worker ready", { queue: "telegram", concurrency: 1 });
+  });
+
+  telegramWorker.on("failed", (job: unknown, err: Error) => {
+    const j = job as Record<string, unknown> | undefined;
+    const data = j?.data as Record<string, unknown> | undefined;
+    log.error("telegram job failed", {
+      jobId: j?.id,
+      type: data?.type,
+      attempt: j?.attemptsMade,
+      error: err.message,
+    });
+  });
+
+  telegramWorker.on("error", (err: Error) => {
+    log.error("telegram worker error", { error: err.message });
+  });
+
+  // Register repeatable digest check (every minute)
+  const telegramQueue = createTelegramQueue(env.redisUrl);
+  await telegramQueue.upsertJobScheduler(
+    "telegram-digest-check",
+    { pattern: "* * * * *" },
+    {
+      data: {
+        type: "digest" as const,
+      },
+    }
+  );
+  log.info("telegram digest schedule registered", { cron: "* * * * *" });
+
+  // ---------------------------------------------------------------------------
+  // Portfolio digest worker (weekly AI cross-startup analysis)
+  // ---------------------------------------------------------------------------
+
+  const portfolioDigestProcessor = createPortfolioDigestProcessor({
+    db: db as unknown as Parameters<
+      typeof createPortfolioDigestProcessor
+    >[0]["db"],
+    anthropicApiKey: env.anthropicApiKey ?? null,
+    log,
+  });
+  const portfolioDigestWorker = createPortfolioDigestWorker(
+    env.redisUrl,
+    async (job) => {
+      await portfolioDigestProcessor(job);
+    }
+  );
+
+  portfolioDigestWorker.on("ready", () => {
+    log.info("portfolio-digest worker ready", {
+      queue: "portfolio-digest",
+      concurrency: 1,
+    });
+  });
+
+  portfolioDigestWorker.on("failed", (job: unknown, err: Error) => {
+    const j = job as Record<string, unknown> | undefined;
+    const data = j?.data as Record<string, unknown> | undefined;
+    log.error("portfolio-digest job failed", {
+      jobId: j?.id,
+      workspaceId: data?.workspaceId,
+      attempt: j?.attemptsMade,
+      error: err.message,
+    });
+  });
+
+  portfolioDigestWorker.on("error", (err: Error) => {
+    log.error("portfolio-digest worker error", { error: err.message });
+  });
+
+  // Register weekly repeatable job (Monday 8am UTC)
+  const portfolioDigestQueue = createPortfolioDigestQueue(env.redisUrl);
+
+  // Schedule one job per workspace — load workspace IDs and register each
+  const workspaceResult = (await pool.query("SELECT id FROM workspace")) as {
+    rows: Array<{ id: string }>;
+  };
+  const workspaceIds = workspaceResult.rows.map((r) => r.id);
+
+  for (const wsId of workspaceIds) {
+    await portfolioDigestQueue.upsertJobScheduler(
+      `portfolio-digest-weekly-${wsId}`,
+      { pattern: "0 8 * * 1" },
+      { data: { workspaceId: wsId } }
+    );
+  }
+  log.info("portfolio-digest weekly schedule registered", {
+    cron: "0 8 * * 1",
+    workspaceCount: workspaceIds.length,
+  });
+
   // Graceful shutdown
   const shutdown = async (signal: string) => {
     log.info(`received ${signal}, shutting down`);
@@ -243,6 +480,14 @@ async function main() {
     if (taskSyncWorker) {
       await taskSyncWorker.close();
     }
+    await eventPurgeWorker.close();
+    await eventPurgeQueue.close();
+    await webhookWorker.close();
+    await webhookQueue.close();
+    await telegramWorker.close();
+    await telegramQueue.close();
+    await portfolioDigestWorker.close();
+    await portfolioDigestQueue.close();
     await pool.end();
     log.info("worker stopped");
     process.exit(0);

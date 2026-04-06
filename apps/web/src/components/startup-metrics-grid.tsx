@@ -1,20 +1,20 @@
 import type {
-  SupportingMetric,
-  SupportingMetricsSnapshot,
-} from "@shared/startup-health";
+  UniversalMetricKey,
+  UniversalMetrics,
+} from "@shared/universal-metrics";
 import {
-  SUPPORTING_METRIC_LABELS,
-  SUPPORTING_METRIC_UNITS,
-  SUPPORTING_METRICS,
-} from "@shared/startup-health";
+  METRIC_LABELS,
+  METRIC_UNITS,
+  UNIVERSAL_METRIC_KEYS,
+} from "@shared/universal-metrics";
 
 export interface StartupMetricsGridProps {
-  metrics: SupportingMetricsSnapshot;
+  metrics: UniversalMetrics;
   muted?: boolean;
 }
 
-function formatMetricValue(key: SupportingMetric, value: number): string {
-  const unit = SUPPORTING_METRIC_UNITS[key];
+function formatMetricValue(key: UniversalMetricKey, value: number): string {
+  const unit = METRIC_UNITS[key];
   switch (unit) {
     case "currency":
       return new Intl.NumberFormat("en-US", {
@@ -32,21 +32,6 @@ function formatMetricValue(key: SupportingMetric, value: number): string {
   }
 }
 
-function computeChange(
-  current: number,
-  previous: number | null
-): string | null {
-  if (previous === null || previous === 0) {
-    return null;
-  }
-  const pct = ((current - previous) / previous) * 100;
-  if (Math.abs(pct) < 0.01) {
-    return "0%";
-  }
-  const sign = pct > 0 ? "+" : "";
-  return `${sign}${pct.toFixed(1)}%`;
-}
-
 export function StartupMetricsGrid({
   metrics,
   muted = false,
@@ -56,24 +41,23 @@ export function StartupMetricsGrid({
       aria-label="supporting metrics"
       className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-3"
     >
-      {SUPPORTING_METRICS.map((key) => {
-        const metric = metrics[key];
-        const change = computeChange(metric.value, metric.previous);
+      {UNIVERSAL_METRIC_KEYS.map((key) => {
+        const value = metrics[key];
+        if (value === undefined || value === null) {
+          return null;
+        }
 
         return (
           <div className="grid gap-1 rounded-lg bg-muted/50 p-3" key={key}>
             <span className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-              {SUPPORTING_METRIC_LABELS[key]}
+              {METRIC_LABELS[key]}
             </span>
             <span
               className={`font-semibold text-lg tabular-nums leading-snug ${muted ? "text-muted-foreground" : "text-foreground"}`}
               data-testid={`metric-${key}`}
             >
-              {formatMetricValue(key, metric.value)}
+              {formatMetricValue(key, value)}
             </span>
-            {change ? (
-              <span className="text-muted-foreground text-xs">{change}</span>
-            ) : null}
           </div>
         );
       })}

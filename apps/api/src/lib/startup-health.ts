@@ -8,24 +8,15 @@
 // blocked-state reasons instead of blank metrics.
 
 import type { ConnectorProvider, ConnectorStatus } from "@shared/connectors";
-import type {
-  CustomMetricStatus,
-  CustomMetricSummary,
-} from "@shared/custom-metric";
-import { isCustomMetricStatus } from "@shared/custom-metric";
+import type { CustomMetricSummary } from "@shared/custom-metric";
+import { isCustomMetricCategory } from "@shared/custom-metric";
 import type {
   FunnelStageRow,
   HealthSnapshotSummary,
   HealthState,
-  SupportingMetricsSnapshot,
 } from "@shared/startup-health";
-import {
-  emptyFunnelStages,
-  FUNNEL_STAGE_LABELS,
-  isFunnelStage,
-  isHealthState,
-  validateSupportingMetrics,
-} from "@shared/startup-health";
+import { isHealthState } from "@shared/startup-health";
+import type { UniversalMetrics } from "@shared/universal-metrics";
 import { sql } from "drizzle-orm";
 
 // ---------------------------------------------------------------------------
@@ -83,9 +74,9 @@ interface SnapshotRow {
 }
 
 interface FunnelRow {
+  key: string;
   label: string;
   position: number;
-  stage: string;
   value: number;
 }
 
@@ -117,7 +108,7 @@ async function loadFunnelStages(
   startupId: string
 ): Promise<FunnelRow[]> {
   const result = await db.execute(
-    sql`SELECT stage, label, value, position
+    sql`SELECT key, label, value, position
         FROM health_funnel_stage
         WHERE startup_id = ${startupId}
         ORDER BY position ASC`
@@ -140,18 +131,18 @@ async function loadConnectorFreshness(
 
 interface CustomMetricDbRow {
   captured_at: string | Date | null;
+  category: string | null;
   connector_id: string;
   created_at: string | Date;
+  delta: string | null;
   id: string;
+  key: string | null;
   label: string;
   metric_value: string | null;
   previous_value: string | null;
-  schema: string;
   startup_id: string;
-  status: string;
   unit: string;
   updated_at: string | Date;
-  view: string;
 }
 
 async function loadCustomMetric(
@@ -159,8 +150,8 @@ async function loadCustomMetric(
   startupId: string
 ): Promise<CustomMetricDbRow | null> {
   const result = await db.execute(
-    sql`SELECT id, startup_id, connector_id, label, unit, schema, view, status,
-               metric_value, previous_value, captured_at, created_at, updated_at
+    sql`SELECT id, startup_id, connector_id, key, category, label, unit,
+               metric_value, previous_value, delta, captured_at, created_at, updated_at
         FROM custom_metric
         WHERE startup_id = ${startupId}
         LIMIT 1`
@@ -170,23 +161,30 @@ async function loadCustomMetric(
 }
 
 function serializeCustomMetricRow(row: CustomMetricDbRow): CustomMetricSummary {
+  const metricValue =
+    row.metric_value === null ? null : Number.parseFloat(row.metric_value);
+  const previousValue =
+    row.previous_value === null ? null : Number.parseFloat(row.previous_value);
+  let delta: number | null = null;
+  if (row.delta != null) {
+    delta = Number.parseFloat(row.delta);
+  } else if (metricValue != null && previousValue != null) {
+    delta = metricValue - previousValue;
+  }
+
   return {
     id: row.id,
     startupId: row.startup_id,
     connectorId: row.connector_id,
+    key: row.key ?? "",
+    category: (isCustomMetricCategory(row.category ?? "")
+      ? row.category
+      : "custom") as CustomMetricSummary["category"],
     label: row.label,
     unit: row.unit,
-    schema: row.schema,
-    view: row.view,
-    status: (isCustomMetricStatus(row.status)
-      ? row.status
-      : "pending") as CustomMetricStatus,
-    metricValue:
-      row.metric_value === null ? null : Number.parseFloat(row.metric_value),
-    previousValue:
-      row.previous_value === null
-        ? null
-        : Number.parseFloat(row.previous_value),
+    metricValue,
+    previousValue,
+    delta,
     capturedAt: toIsoString(row.captured_at),
     createdAt: toIsoString(row.created_at) ?? new Date().toISOString(),
     updatedAt: toIsoString(row.updated_at) ?? new Date().toISOString(),
@@ -221,19 +219,12 @@ function requireIsoString(
 }
 
 function serializeFunnelRows(rows: FunnelRow[]): FunnelStageRow[] {
-  const validated: FunnelStageRow[] = [];
-  for (const row of rows) {
-    if (!isFunnelStage(row.stage)) {
-      continue;
-    }
-    validated.push({
-      stage: row.stage,
-      label: row.label || FUNNEL_STAGE_LABELS[row.stage],
-      value: row.value,
-      position: row.position,
-    });
-  }
-  return validated;
+  return rows.map((row) => ({
+    key: row.key,
+    label: row.label,
+    value: row.value,
+    position: row.position,
+  }));
 }
 
 function serializeConnectors(rows: ConnectorRow[]): ConnectorFreshness[] {
@@ -381,34 +372,27 @@ export async function loadStartupHealth(
     };
   }
 
-  // Validate supporting metrics from JSONB
-  const metricsError = validateSupportingMetrics(snapshot.supporting_metrics);
-  if (metricsError) {
-    console.error("[startup-health] malformed supporting metrics in snapshot", {
-      startupId,
-      snapshotId: snapshot.id,
-      error: metricsError,
-    });
-    // Surface error state — malformed snapshot is a 5xx contract failure
-    throw new Error(
-      `Malformed health snapshot for startup ${startupId}: ${metricsError}`
-    );
-  }
   const supportingMetrics =
-    snapshot.supporting_metrics as SupportingMetricsSnapshot;
+    typeof snapshot.supporting_metrics === "object" &&
+    snapshot.supporting_metrics !== null
+      ? (snapshot.supporting_metrics as UniversalMetrics)
+      : null;
 
-  const funnel =
-    funnelRows.length > 0
-      ? serializeFunnelRows(funnelRows)
-      : emptyFunnelStages();
+  const funnel = serializeFunnelRows(funnelRows);
 
   const health: HealthSnapshotSummary = {
     startupId: snapshot.startup_id,
     healthState: status,
     blockedReason: snapshot.blocked_reason,
-    northStarKey: "mrr",
-    northStarValue: snapshot.north_star_value,
-    northStarPreviousValue: snapshot.north_star_previous_value,
+    northStarKey: snapshot.north_star_key,
+    northStarValue:
+      snapshot.north_star_value == null
+        ? null
+        : Number(snapshot.north_star_value),
+    northStarPreviousValue:
+      snapshot.north_star_previous_value == null
+        ? null
+        : Number(snapshot.north_star_previous_value),
     supportingMetrics,
     funnel,
     computedAt: requireIsoString(snapshot.computed_at, "snapshot.computed_at"),

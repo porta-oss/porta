@@ -6,6 +6,9 @@ import { authenticatedRoute } from "./routes/_authenticated";
 import { dashboardIndexRoute } from "./routes/_authenticated/dashboard-index";
 import { dashboardStartupRoute } from "./routes/_authenticated/dashboard-startup";
 import { onboardingRoute } from "./routes/_authenticated/onboarding";
+import { apiKeySettingsRoute } from "./routes/_authenticated/settings/api-keys";
+import { telegramSettingsRoute } from "./routes/_authenticated/settings/telegram";
+import { webhookSettingsRoute } from "./routes/_authenticated/settings/webhooks";
 import { signInRoute } from "./routes/auth/sign-in";
 import { indexRoute } from "./routes/index";
 
@@ -16,6 +19,9 @@ const routeTree = rootRoute.addChildren([
     dashboardIndexRoute,
     dashboardStartupRoute,
     onboardingRoute,
+    webhookSettingsRoute,
+    apiKeySettingsRoute,
+    telegramSettingsRoute,
   ]),
 ]);
 

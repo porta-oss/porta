@@ -12,6 +12,7 @@ import {
   createWorkspaceSlug,
 } from "./auth";
 import { type ApiDatabase, createApiDatabase } from "./db/index";
+import { streak as streakTable } from "./db/schema/alert-rule";
 import { startup as startupTable } from "./db/schema/startup";
 import type { PostgresValidator } from "./lib/connectors/postgres";
 import { createPostgresValidator } from "./lib/connectors/postgres";
@@ -22,16 +23,41 @@ import {
 } from "./lib/connectors/posthog";
 import type { SyncQueueProducer } from "./lib/connectors/queue";
 import { createSyncQueueProducer } from "./lib/connectors/queue";
+import type { SentryValidator } from "./lib/connectors/sentry";
+import {
+  createFounderProofSentryValidator,
+  createSentryValidator,
+} from "./lib/connectors/sentry";
 import type { StripeValidator } from "./lib/connectors/stripe";
 import {
   createFounderProofStripeValidator,
   createStripeValidator,
 } from "./lib/connectors/stripe";
+import type { YooKassaValidator } from "./lib/connectors/yookassa";
+import {
+  createFounderProofYooKassaValidator,
+  createYooKassaValidator,
+} from "./lib/connectors/yookassa";
 import { type ApiEnv, readApiEnv } from "./lib/env";
+import { createRedisRateLimiter, type McpRateLimiter } from "./lib/mcp/auth";
 import { loadStartupHealth } from "./lib/startup-health";
 import { loadLatestInsight } from "./lib/startup-insight";
 import type { TaskSyncQueueProducer } from "./lib/tasks/queue";
 import { createTaskSyncQueueProducer } from "./lib/tasks/queue";
+import {
+  handleBulkTriageAlerts,
+  handleCreateAlertRule,
+  handleDeleteAlertRule,
+  handleListAlertRules,
+  handleListAlerts,
+  handleTriageAlert,
+  handleUpdateAlertRule,
+} from "./routes/alert-rule";
+import {
+  handleCreateApiKey,
+  handleListApiKeys,
+  handleRevokeApiKey,
+} from "./routes/api-key";
 import {
   type ConnectorRuntime,
   handleCreateConnector,
@@ -40,13 +66,39 @@ import {
   handleListConnectors,
   handleTriggerSync,
 } from "./routes/connector";
+import { handleListEvents } from "./routes/event-log";
 import { handleCreateTask, handleListTasks } from "./routes/internal-task";
+import { createMcpPlugin } from "./routes/mcp";
+import {
+  handleMcpCreateTask,
+  handleMcpGetActivityLog,
+  handleMcpGetAlerts,
+  handleMcpGetAtRiskCustomers,
+  handleMcpGetMetrics,
+  handleMcpGetPortfolioSummary,
+  handleMcpSnoozeAlert,
+  handleMcpTriggerSync,
+} from "./routes/mcp-rest";
 import {
   createStartupRouteContract,
   sanitizeStartupDraft,
   serializeStartupRecord,
   validateStartupDraft,
 } from "./routes/startup";
+import {
+  type fetchBotInfo,
+  handleDeleteTelegram,
+  handleGetTelegram,
+  handleSetupTelegram,
+  handleTelegramWebhook,
+  type TelegramRuntime,
+} from "./routes/telegram";
+import {
+  handleCreateWebhookConfig,
+  handleDeleteWebhookConfig,
+  handleGetWebhookConfig,
+  handleUpdateWebhookConfig,
+} from "./routes/webhook-config";
 
 interface AuthenticatedSession {
   session: {
@@ -94,11 +146,15 @@ interface ApiRuntime {
   auth: ApiAuthRuntime;
   db: ApiDatabase;
   env: ApiEnv;
+  mcpRateLimiter: McpRateLimiter;
   postgresValidator: PostgresValidator;
   posthogValidator: PostHogValidator;
   queueProducer: SyncQueueProducer;
+  sentryValidator: SentryValidator;
   stripeValidator: StripeValidator;
   taskSyncQueueProducer: TaskSyncQueueProducer;
+  webhookResolver?: (hostname: string) => Promise<string[]>;
+  yookassaValidator: YooKassaValidator;
 }
 
 interface WorkspaceAuthApi {
@@ -437,10 +493,14 @@ export async function createApiApp(
     auth?: ApiAuthRuntime;
     bootstrapDatabase?: boolean;
     posthogValidator?: PostHogValidator;
+    sentryValidator?: SentryValidator;
     stripeValidator?: StripeValidator;
     postgresValidator?: PostgresValidator;
     queueProducer?: SyncQueueProducer;
     taskSyncQueueProducer?: TaskSyncQueueProducer;
+    yookassaValidator?: YooKassaValidator;
+    webhookResolver?: (hostname: string) => Promise<string[]>;
+    telegramBotInfoFetcher?: typeof fetchBotInfo;
   }
 ): Promise<ApiApp> {
   const env = options?.env ?? readApiEnv(envSource, { strict: true });
@@ -463,10 +523,21 @@ export async function createApiApp(
       : createStripeValidator());
   const postgresValidator =
     options?.postgresValidator ?? createPostgresValidator();
+  const yookassaValidator =
+    options?.yookassaValidator ??
+    (env.founderProofMode
+      ? createFounderProofYooKassaValidator()
+      : createYooKassaValidator());
+  const sentryValidator =
+    options?.sentryValidator ??
+    (env.founderProofMode
+      ? createFounderProofSentryValidator()
+      : createSentryValidator());
   const queueProducer =
     options?.queueProducer ?? createSyncQueueProducer(env.redisUrl);
   const taskSyncQueueProducer =
     options?.taskSyncQueueProducer ?? createTaskSyncQueueProducer(env.redisUrl);
+  const mcpRateLimiter = createRedisRateLimiter(env.redisUrl);
   const startupRoutes = createStartupRouteContract();
   const runtime: ApiRuntime = {
     env,
@@ -475,8 +546,12 @@ export async function createApiApp(
     posthogValidator,
     stripeValidator,
     postgresValidator,
+    yookassaValidator,
+    sentryValidator,
     queueProducer,
     taskSyncQueueProducer,
+    mcpRateLimiter,
+    webhookResolver: options?.webhookResolver,
   };
 
   console.info("[auth] bootstrap ready", {
@@ -492,6 +567,8 @@ export async function createApiApp(
       {
         posthogValidator: "founder-proof",
         stripeValidator: "founder-proof",
+        yookassaValidator: "founder-proof",
+        sentryValidator: "founder-proof",
       }
     );
   }
@@ -502,7 +579,7 @@ export async function createApiApp(
         origin: [env.webUrl],
         credentials: true,
         methods: ["GET", "POST", "OPTIONS"],
-        allowedHeaders: ["Content-Type", "Cookie"],
+        allowedHeaders: ["Content-Type", "Cookie", "Authorization"],
       })
     )
     .derive(async ({ request }) => ({
@@ -1081,9 +1158,11 @@ export async function createApiApp(
           db: runtime.db,
           env: runtime.env,
           posthogValidator: runtime.posthogValidator,
+          sentryValidator: runtime.sentryValidator,
           stripeValidator: runtime.stripeValidator,
           postgresValidator: runtime.postgresValidator,
           queueProducer: runtime.queueProducer,
+          yookassaValidator: runtime.yookassaValidator,
         };
 
         return handleListConnectors(
@@ -1117,9 +1196,11 @@ export async function createApiApp(
           db: runtime.db,
           env: runtime.env,
           posthogValidator: runtime.posthogValidator,
+          sentryValidator: runtime.sentryValidator,
           stripeValidator: runtime.stripeValidator,
           postgresValidator: runtime.postgresValidator,
           queueProducer: runtime.queueProducer,
+          yookassaValidator: runtime.yookassaValidator,
         };
 
         return handleCreateConnector(
@@ -1155,9 +1236,11 @@ export async function createApiApp(
           db: runtime.db,
           env: runtime.env,
           posthogValidator: runtime.posthogValidator,
+          sentryValidator: runtime.sentryValidator,
           stripeValidator: runtime.stripeValidator,
           postgresValidator: runtime.postgresValidator,
           queueProducer: runtime.queueProducer,
+          yookassaValidator: runtime.yookassaValidator,
         };
 
         return handleDeleteConnector(
@@ -1186,9 +1269,11 @@ export async function createApiApp(
           db: runtime.db,
           env: runtime.env,
           posthogValidator: runtime.posthogValidator,
+          sentryValidator: runtime.sentryValidator,
           stripeValidator: runtime.stripeValidator,
           postgresValidator: runtime.postgresValidator,
           queueProducer: runtime.queueProducer,
+          yookassaValidator: runtime.yookassaValidator,
         };
 
         return handleTriggerSync(
@@ -1217,9 +1302,11 @@ export async function createApiApp(
           db: runtime.db,
           env: runtime.env,
           posthogValidator: runtime.posthogValidator,
+          sentryValidator: runtime.sentryValidator,
           stripeValidator: runtime.stripeValidator,
           postgresValidator: runtime.postgresValidator,
           queueProducer: runtime.queueProducer,
+          yookassaValidator: runtime.yookassaValidator,
         };
 
         return handleGetConnectorStatus(
@@ -1305,6 +1392,94 @@ export async function createApiApp(
             error: {
               code: "HEALTH_READ_FAILED",
               message: "Failed to load startup health data. Please retry.",
+            },
+          };
+        }
+      }
+    )
+    .get(
+      "/startups/:startupId/streak",
+      async ({ authContext, request, set, params }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/streak"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        const startupRows = await withTimeout(
+          runtime.db.db
+            .select({ id: startupTable.id })
+            .from(startupTable)
+            .where(eq(startupTable.id, params.startupId)),
+          runtime.env.authContextTimeoutMs,
+          "Startup lookup"
+        );
+
+        if (!startupRows[0]) {
+          set.status = 404;
+          return {
+            error: {
+              code: "STARTUP_NOT_FOUND",
+              message: "Startup not found.",
+            },
+          };
+        }
+
+        const ownershipRows = await withTimeout(
+          runtime.db.db
+            .select({ id: startupTable.id })
+            .from(startupTable)
+            .where(eq(startupTable.workspaceId, activeWorkspace.workspace.id)),
+          runtime.env.authContextTimeoutMs,
+          "Startup ownership check"
+        );
+        const owned = ownershipRows.some((row) => row.id === params.startupId);
+
+        if (!owned) {
+          set.status = 403;
+          return {
+            error: {
+              code: "STARTUP_SCOPE_INVALID",
+              message: "The startup does not belong to the active workspace.",
+            },
+          };
+        }
+
+        try {
+          const rows = await withTimeout(
+            runtime.db.db
+              .select({
+                currentDays: streakTable.currentDays,
+                longestDays: streakTable.longestDays,
+              })
+              .from(streakTable)
+              .where(eq(streakTable.startupId, params.startupId)),
+            runtime.env.authContextTimeoutMs,
+            "Streak read"
+          );
+
+          const row = rows[0];
+          return {
+            streak: row
+              ? { currentDays: row.currentDays, longestDays: row.longestDays }
+              : null,
+          };
+        } catch (error) {
+          console.error("[streak] read failed", {
+            startupId: params.startupId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+
+          set.status = 500;
+          return {
+            error: {
+              code: "STREAK_READ_FAILED",
+              message: "Failed to load streak data. Please retry.",
             },
           };
         }
@@ -1482,6 +1657,607 @@ export async function createApiApp(
           startupId: t.Optional(t.String()),
         }),
       }
+    )
+    .get(
+      "/events",
+      async ({ authContext, request, set, query }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/events"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleListEvents(
+          runtime,
+          { workspace: activeWorkspace.workspace },
+          query,
+          set
+        );
+      },
+      {
+        query: t.Object({
+          startupId: t.Optional(t.String()),
+          eventTypes: t.Optional(t.String()),
+          from: t.Optional(t.String()),
+          to: t.Optional(t.String()),
+          cursor: t.Optional(t.String()),
+          limit: t.Optional(t.String()),
+        }),
+      }
+    )
+    .post(
+      "/startups/:startupId/alert-rules",
+      async ({ authContext, request, set, params, body }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/alert-rules"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleCreateAlertRule(
+          { db: runtime.db },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          body,
+          set
+        );
+      },
+      {
+        body: t.Object({
+          metricKey: t.String(),
+          condition: t.String(),
+          threshold: t.Number(),
+          severity: t.Optional(t.String()),
+          enabled: t.Optional(t.Boolean()),
+          minDataPoints: t.Optional(t.Number()),
+        }),
+      }
+    )
+    .get(
+      "/startups/:startupId/alert-rules",
+      async ({ authContext, request, set, params }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/alert-rules"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleListAlertRules(
+          { db: runtime.db },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          set
+        );
+      }
+    )
+    .patch(
+      "/startups/:startupId/alert-rules/:ruleId",
+      async ({ authContext, request, set, params, body }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/alert-rules/:ruleId"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleUpdateAlertRule(
+          { db: runtime.db },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          params.ruleId,
+          body,
+          set
+        );
+      },
+      {
+        body: t.Object({
+          threshold: t.Optional(t.Number()),
+          severity: t.Optional(t.String()),
+          enabled: t.Optional(t.Boolean()),
+          minDataPoints: t.Optional(t.Number()),
+          condition: t.Optional(t.String()),
+          metricKey: t.Optional(t.String()),
+        }),
+      }
+    )
+    .delete(
+      "/startups/:startupId/alert-rules/:ruleId",
+      async ({ authContext, request, set, params }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/alert-rules/:ruleId"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleDeleteAlertRule(
+          { db: runtime.db },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          params.ruleId,
+          set
+        );
+      }
+    )
+    .get(
+      "/startups/:startupId/alerts",
+      async ({ authContext, request, set, params, query }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/alerts"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleListAlerts(
+          { db: runtime.db },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          query.status,
+          set
+        );
+      },
+      {
+        query: t.Object({
+          status: t.Optional(t.String()),
+        }),
+      }
+    )
+    .post(
+      "/alerts/:alertId/triage",
+      async ({ authContext, request, set, params, body }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/alerts/:alertId/triage"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleTriageAlert(
+          { db: runtime.db },
+          { workspace: activeWorkspace.workspace },
+          params.alertId,
+          body,
+          set
+        );
+      },
+      {
+        body: t.Object({
+          action: t.String(),
+          snoozeDurationHours: t.Optional(t.Number()),
+        }),
+      }
+    )
+    .post(
+      "/startups/:startupId/alerts/bulk-triage",
+      async ({ authContext, request, set, params, body }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/alerts/bulk-triage"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleBulkTriageAlerts(
+          { db: runtime.db },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          body,
+          set
+        );
+      },
+      {
+        body: t.Object({
+          action: t.String(),
+          alertIds: t.Optional(t.Array(t.String())),
+          snoozeDurationHours: t.Optional(t.Number()),
+        }),
+      }
+    )
+    .post(
+      "/startups/:startupId/webhook",
+      async ({ authContext, request, set, params, body }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/webhook"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleCreateWebhookConfig(
+          { db: runtime.db, resolver: runtime.webhookResolver },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          body,
+          set
+        );
+      },
+      {
+        body: t.Object({
+          url: t.String(),
+          eventTypes: t.Array(t.String()),
+          enabled: t.Optional(t.Boolean()),
+        }),
+      }
+    )
+    .get(
+      "/startups/:startupId/webhook",
+      async ({ authContext, request, set, params }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/webhook"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleGetWebhookConfig(
+          { db: runtime.db, resolver: runtime.webhookResolver },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          set
+        );
+      }
+    )
+    .patch(
+      "/startups/:startupId/webhook",
+      async ({ authContext, request, set, params, body }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/webhook"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleUpdateWebhookConfig(
+          { db: runtime.db, resolver: runtime.webhookResolver },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          body,
+          set
+        );
+      },
+      {
+        body: t.Object({
+          url: t.Optional(t.String()),
+          eventTypes: t.Optional(t.Array(t.String())),
+          enabled: t.Optional(t.Boolean()),
+        }),
+      }
+    )
+    .delete(
+      "/startups/:startupId/webhook",
+      async ({ authContext, request, set, params }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/webhook"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleDeleteWebhookConfig(
+          { db: runtime.db, resolver: runtime.webhookResolver },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          set
+        );
+      }
+    )
+    .post("/settings/api-keys", async ({ authContext, body, request, set }) => {
+      const activeWorkspace = await resolveActiveWorkspace(
+        runtime,
+        request,
+        authContext,
+        set,
+        "/api/settings/api-keys"
+      );
+      if ("error" in activeWorkspace) {
+        return activeWorkspace;
+      }
+
+      return handleCreateApiKey(
+        { db: runtime.db },
+        { workspace: activeWorkspace.workspace },
+        body as { name: string; scope: string },
+        set
+      );
+    })
+    .get("/settings/api-keys", async ({ authContext, request, set }) => {
+      const activeWorkspace = await resolveActiveWorkspace(
+        runtime,
+        request,
+        authContext,
+        set,
+        "/api/settings/api-keys"
+      );
+      if ("error" in activeWorkspace) {
+        return activeWorkspace;
+      }
+
+      return handleListApiKeys(
+        { db: runtime.db },
+        { workspace: activeWorkspace.workspace }
+      );
+    })
+    .delete(
+      "/settings/api-keys/:keyId",
+      async ({ authContext, params, request, set }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/settings/api-keys/:keyId"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleRevokeApiKey(
+          { db: runtime.db },
+          { workspace: activeWorkspace.workspace },
+          params.keyId,
+          set
+        );
+      }
+    )
+    // -----------------------------------------------------------------
+    // Telegram integration (session auth)
+    // -----------------------------------------------------------------
+    .get("/workspace/telegram", async ({ authContext, request, set }) => {
+      const activeWorkspace = await resolveActiveWorkspace(
+        runtime,
+        request,
+        authContext,
+        set,
+        "/api/workspace/telegram"
+      );
+      if ("error" in activeWorkspace) {
+        return activeWorkspace;
+      }
+
+      return handleGetTelegram(
+        { db: runtime.db } as TelegramRuntime,
+        { workspace: activeWorkspace.workspace },
+        set
+      );
+    })
+    .post(
+      "/workspace/telegram",
+      async ({ authContext, body, request, set }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/workspace/telegram"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleSetupTelegram(
+          { db: runtime.db } as TelegramRuntime,
+          { workspace: activeWorkspace.workspace },
+          body,
+          set,
+          options?.telegramBotInfoFetcher
+        );
+      }
+    )
+    .delete("/workspace/telegram", async ({ authContext, request, set }) => {
+      const activeWorkspace = await resolveActiveWorkspace(
+        runtime,
+        request,
+        authContext,
+        set,
+        "/api/workspace/telegram"
+      );
+      if ("error" in activeWorkspace) {
+        return activeWorkspace;
+      }
+
+      return handleDeleteTelegram(
+        { db: runtime.db } as TelegramRuntime,
+        { workspace: activeWorkspace.workspace },
+        set
+      );
+    })
+    // -----------------------------------------------------------------
+    // Telegram webhook (no session auth — Telegram calls this)
+    // -----------------------------------------------------------------
+    .post("/telegram/webhook/:configId", async ({ params, body, set }) =>
+      handleTelegramWebhook(
+        { db: runtime.db } as TelegramRuntime,
+        params.configId,
+        body,
+        set
+      )
+    )
+    // -----------------------------------------------------------------
+    // MCP REST endpoints (API key auth, not session auth)
+    // -----------------------------------------------------------------
+    .get("/mcp/metrics", ({ request, query, set }) =>
+      handleMcpGetMetrics(
+        {
+          db: runtime.db,
+          env: runtime.env,
+          queueProducer: runtime.queueProducer,
+          taskSyncQueueProducer: runtime.taskSyncQueueProducer,
+          rateLimiter: runtime.mcpRateLimiter,
+        },
+        request,
+        query as { startupId?: string; metricKeys?: string; category?: string },
+        set
+      )
+    )
+    .get("/mcp/alerts", ({ request, query, set }) =>
+      handleMcpGetAlerts(
+        {
+          db: runtime.db,
+          env: runtime.env,
+          queueProducer: runtime.queueProducer,
+          taskSyncQueueProducer: runtime.taskSyncQueueProducer,
+          rateLimiter: runtime.mcpRateLimiter,
+        },
+        request,
+        query as { startupId?: string; status?: string },
+        set
+      )
+    )
+    .get("/mcp/at-risk-customers", ({ request, query, set }) =>
+      handleMcpGetAtRiskCustomers(
+        {
+          db: runtime.db,
+          env: runtime.env,
+          queueProducer: runtime.queueProducer,
+          taskSyncQueueProducer: runtime.taskSyncQueueProducer,
+          rateLimiter: runtime.mcpRateLimiter,
+        },
+        request,
+        query as { startupId?: string },
+        set
+      )
+    )
+    .get("/mcp/activity-log", ({ request, query, set }) =>
+      handleMcpGetActivityLog(
+        {
+          db: runtime.db,
+          env: runtime.env,
+          queueProducer: runtime.queueProducer,
+          taskSyncQueueProducer: runtime.taskSyncQueueProducer,
+          rateLimiter: runtime.mcpRateLimiter,
+        },
+        request,
+        query as {
+          startupId?: string;
+          eventTypes?: string;
+          cursor?: string;
+          limit?: string;
+        },
+        set
+      )
+    )
+    .get("/mcp/portfolio-summary", ({ request, set }) =>
+      handleMcpGetPortfolioSummary(
+        {
+          db: runtime.db,
+          env: runtime.env,
+          queueProducer: runtime.queueProducer,
+          taskSyncQueueProducer: runtime.taskSyncQueueProducer,
+          rateLimiter: runtime.mcpRateLimiter,
+        },
+        request,
+        set
+      )
+    )
+    .post("/mcp/tasks", ({ request, body, set }) =>
+      handleMcpCreateTask(
+        {
+          db: runtime.db,
+          env: runtime.env,
+          queueProducer: runtime.queueProducer,
+          taskSyncQueueProducer: runtime.taskSyncQueueProducer,
+          rateLimiter: runtime.mcpRateLimiter,
+        },
+        request,
+        body as {
+          startupId?: string;
+          title?: string;
+          description?: string;
+          priority?: string;
+        },
+        set
+      )
+    )
+    .post("/mcp/alerts/:alertId/snooze", ({ request, params, body, set }) =>
+      handleMcpSnoozeAlert(
+        {
+          db: runtime.db,
+          env: runtime.env,
+          queueProducer: runtime.queueProducer,
+          taskSyncQueueProducer: runtime.taskSyncQueueProducer,
+          rateLimiter: runtime.mcpRateLimiter,
+        },
+        request,
+        params.alertId,
+        body as { durationHours?: number },
+        set
+      )
+    )
+    .post("/mcp/sync", ({ request, body, set }) =>
+      handleMcpTriggerSync(
+        {
+          db: runtime.db,
+          env: runtime.env,
+          queueProducer: runtime.queueProducer,
+          taskSyncQueueProducer: runtime.taskSyncQueueProducer,
+          rateLimiter: runtime.mcpRateLimiter,
+        },
+        request,
+        body as { startupId?: string; connectorId?: string },
+        set
+      )
+    )
+    .mount(
+      new Elysia().use(
+        createMcpPlugin({
+          db: runtime.db.db,
+          queueProducer: runtime.queueProducer,
+          taskSyncQueueProducer: runtime.taskSyncQueueProducer,
+          rateLimiter: runtime.mcpRateLimiter,
+        })
+      )
     )
     .all("/auth", ({ request }) => auth.auth.handler(request))
     .all("/auth/*", ({ request }) => auth.auth.handler(request));

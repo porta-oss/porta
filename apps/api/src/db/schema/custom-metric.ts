@@ -13,8 +13,8 @@ import { startup } from "./startup";
 /**
  * Startup-scoped custom metric definition and read-model row.
  *
- * One row per startup — stores setup metadata (label, unit, schema, view)
- * plus the last synced metric values (metric_value, previous_value, captured_at).
+ * One row per (startup, key) pair — stores setup metadata (label, unit, category)
+ * plus the last synced metric values (metric_value, previous_value, delta, captured_at).
  * The connection string lives in the linked connector row (encrypted).
  */
 export const customMetric = pgTable(
@@ -27,20 +27,20 @@ export const customMetric = pgTable(
     connectorId: text("connector_id")
       .notNull()
       .references(() => connector.id, { onDelete: "cascade" }),
+    /** Identifier-safe key for this metric (e.g. 'dau', 'nps_score'). */
+    key: text("key").notNull().default(""),
     /** Human-readable label displayed on the dashboard. */
     label: text("label").notNull(),
     /** Display unit, e.g. "$", "%", "users". */
     unit: text("unit").notNull(),
-    /** Identifier-safe schema name of the prepared view. */
-    schema: text("schema").notNull(),
-    /** Identifier-safe view name of the prepared view. */
-    view: text("view").notNull(),
-    /** Status of the metric: pending (pre-sync), active (synced), error (sync failed). */
-    status: text("status").notNull().default("pending"),
+    /** Metric category for grouping. */
+    category: text("category").notNull().default("custom"),
     /** Last synced metric value. */
     metricValue: numeric("metric_value"),
     /** Previous metric value from the last-but-one sync. */
     previousValue: numeric("previous_value"),
+    /** Computed delta between current and previous value. */
+    delta: numeric("delta"),
     /** Timestamp of the last successful metric capture. */
     capturedAt: timestamp("captured_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -50,9 +50,11 @@ export const customMetric = pgTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex("custom_metric_startup_uidx").on(table.startupId),
+    uniqueIndex("custom_metric_startup_key_uidx").on(
+      table.startupId,
+      table.key
+    ),
     index("custom_metric_connector_idx").on(table.connectorId),
-    index("custom_metric_status_idx").on(table.status),
   ]
 );
 

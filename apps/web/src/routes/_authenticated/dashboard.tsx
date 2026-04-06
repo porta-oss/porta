@@ -1,19 +1,21 @@
+import type { AlertSummary } from "@shared/alert-rule";
+import {
+  ALERT_SEVERITIES,
+  isAlertSeverity,
+  isAlertStatus,
+} from "@shared/alert-rule";
 import type { ConnectorProvider, ConnectorSummary } from "@shared/connectors";
 import type { CustomMetricSummary } from "@shared/custom-metric";
-import { isCustomMetricStatus } from "@shared/custom-metric";
+import { isCustomMetricCategory } from "@shared/custom-metric";
+import type { EventLogEntrySummary } from "@shared/event-log";
 import type { InternalTaskPayload } from "@shared/internal-task";
 import { isTaskSyncStatus } from "@shared/internal-task";
 import type {
   FunnelStageRow,
   HealthSnapshotSummary,
   HealthState,
-  SupportingMetricsSnapshot,
 } from "@shared/startup-health";
-import {
-  isHealthState,
-  validateFunnelStages,
-  validateSupportingMetrics,
-} from "@shared/startup-health";
+import { isHealthState } from "@shared/startup-health";
 import type { LatestInsightPayload } from "@shared/startup-insight";
 import {
   type EvidencePacket,
@@ -24,17 +26,43 @@ import {
   validateInsightExplanation,
 } from "@shared/startup-insight";
 import type { StartupRecord, WorkspaceSummary } from "@shared/types";
-import { useEffect, useEffectEvent, useMemo, useState } from "react";
+import type { UniversalMetrics } from "@shared/universal-metrics";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { AiSynthesisCard } from "../../components/ai-synthesis-card";
 import { AppShell } from "../../components/app-shell";
+import {
+  ComparisonMatrix,
+  type StartupComparison,
+} from "../../components/comparison-matrix";
 import { ConnectorSetupCard } from "../../components/connector-setup-card";
 import { ConnectorStatusPanel } from "../../components/connector-status-panel";
 import { CustomMetricPanel } from "../../components/custom-metric-panel";
+import { DataFreshnessBadge } from "../../components/data-freshness-badge";
+import { DaySeparator } from "../../components/day-separator";
+import {
+  DecisionSurface,
+  type StreakInfo,
+} from "../../components/decision-surface";
 import { DisclosureSection } from "../../components/disclosure-section";
+import {
+  EventFilter,
+  type EventFilterValues,
+} from "../../components/event-filter";
+import { EventLogEntry } from "../../components/event-log-entry";
 import { FadeIn } from "../../components/fade-in";
+import type { DashboardMode } from "../../components/mode-switcher";
+import { ModeSwitcher } from "../../components/mode-switcher";
 import { PortfolioStartupCard } from "../../components/portfolio-startup-card";
 import type { PostgresSetupFormValues } from "../../components/postgres-custom-metric-card";
 import { PostgresCustomMetricCard } from "../../components/postgres-custom-metric-card";
@@ -49,6 +77,8 @@ import { StartupInsightCard } from "../../components/startup-insight-card";
 import type { InsightDisplayStatus } from "../../components/startup-insight-card-types";
 import { StartupMetricsGrid } from "../../components/startup-metrics-grid";
 import { StartupTaskList } from "../../components/startup-task-list";
+import { SystemStatusSection } from "../../components/system-status-section";
+import { useOnlineStatus } from "../../hooks/use-online-status";
 import {
   API_BASE_URL,
   type AuthSnapshot,
@@ -95,6 +125,29 @@ export interface StartupInsightPayload {
   insight: LatestInsightPayload | null;
 }
 
+/** Startup summary from the portfolio batch endpoint. */
+export interface PortfolioStartupSummary {
+  activeAlerts: number;
+  currency: string;
+  healthState: HealthState;
+  id: string;
+  lastSyncAt: string | null;
+  name: string;
+  northStarDelta: number | null;
+  northStarKey: string;
+  northStarValue: number | null;
+  type: string;
+  universalMetrics: Record<string, number | null>;
+}
+
+/** Payload returned by the portfolio summary batch endpoint. */
+export interface PortfolioSummaryPayload {
+  aiSynthesis?: string;
+  stale?: boolean;
+  startups: PortfolioStartupSummary[];
+  synthesizedAt?: string;
+}
+
 export interface DashboardApi {
   createConnector: (
     startupId: string,
@@ -115,9 +168,28 @@ export interface DashboardApi {
   deleteConnector: (connectorId: string) => Promise<void>;
   fetchHealth: (startupId: string) => Promise<StartupHealthPayload>;
   fetchInsight: (startupId: string) => Promise<StartupInsightPayload>;
+  fetchPortfolioSummary: () => Promise<PortfolioSummaryPayload>;
+  fetchStreak: (
+    startupId: string
+  ) => Promise<{ streak: { currentDays: number; longestDays: number } | null }>;
+  listAlerts: (
+    startupId: string,
+    status?: string
+  ) => Promise<{ alerts: AlertSummary[] }>;
   listConnectors: (
     startupId: string
   ) => Promise<{ connectors: ConnectorSummary[] }>;
+  listEvents: (params: {
+    cursor?: string;
+    eventTypes?: string;
+    from?: string;
+    limit?: number;
+    startupId?: string;
+    to?: string;
+  }) => Promise<{
+    events: EventLogEntrySummary[];
+    pagination: { cursor: string | null; hasMore: boolean; limit: number };
+  }>;
   listStartups: () => Promise<{
     workspace: WorkspaceSummary;
     startups: StartupRecord[];
@@ -134,16 +206,29 @@ export interface DashboardApi {
   setActiveWorkspace: (input: {
     workspaceId: string;
   }) => Promise<{ activeWorkspaceId: string; workspace: WorkspaceSummary }>;
+  triageAlert: (
+    alertId: string,
+    action: "ack" | "snooze" | "dismiss",
+    snoozeDurationHours?: number
+  ) => Promise<{ alert: AlertSummary }>;
   triggerSync: (connectorId: string) => Promise<void>;
+}
+
+export interface DashboardSearch {
+  event?: string;
+  mode?: DashboardMode;
 }
 
 export interface DashboardPageProps {
   api?: DashboardApi;
   authState: AuthSnapshot;
+  eventId?: string | null;
+  mode?: DashboardMode;
   navigateToStartup?: (
     startupId: string,
     replace?: boolean
   ) => void | Promise<void>;
+  onModeChange?: (mode: DashboardMode) => void;
   routeStartupId?: string | null;
 }
 
@@ -176,6 +261,21 @@ const INSIGHT_DISPLAY_STATUSES = [
   "blocked",
   "error",
 ] as const satisfies InsightDisplayStatus[];
+
+const SEVERITY_ORDER: Record<string, number> = Object.fromEntries(
+  ALERT_SEVERITIES.map((s, i) => [s, i])
+);
+
+function sortAlertsByPriority(alerts: AlertSummary[]): AlertSummary[] {
+  return [...alerts].sort((a, b) => {
+    const sevDiff =
+      (SEVERITY_ORDER[a.severity] ?? 99) - (SEVERITY_ORDER[b.severity] ?? 99);
+    if (sevDiff !== 0) {
+      return sevDiff;
+    }
+    return new Date(b.firedAt).getTime() - new Date(a.firedAt).getTime();
+  });
+}
 
 // ------------------------------------------------------------------
 // Helpers
@@ -237,18 +337,36 @@ function isInternalTaskPayload(value: unknown): value is InternalTaskPayload {
   );
 }
 
+function isAlertSummary(value: unknown): value is AlertSummary {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.startupId === "string" &&
+    typeof value.ruleId === "string" &&
+    typeof value.metricKey === "string" &&
+    typeof value.severity === "string" &&
+    isAlertSeverity(value.severity) &&
+    typeof value.status === "string" &&
+    isAlertStatus(value.status) &&
+    typeof value.firedAt === "string" &&
+    typeof value.lastFiredAt === "string" &&
+    typeof value.threshold === "number" &&
+    typeof value.value === "number" &&
+    typeof value.occurrenceCount === "number"
+  );
+}
+
 function isCustomMetricSummary(value: unknown): value is CustomMetricSummary {
   return (
     isRecord(value) &&
     typeof value.id === "string" &&
     typeof value.startupId === "string" &&
     typeof value.connectorId === "string" &&
+    typeof value.key === "string" &&
+    typeof value.category === "string" &&
+    isCustomMetricCategory(value.category) &&
     typeof value.label === "string" &&
     typeof value.unit === "string" &&
-    typeof value.schema === "string" &&
-    typeof value.view === "string" &&
-    typeof value.status === "string" &&
-    isCustomMetricStatus(value.status) &&
     typeof value.createdAt === "string" &&
     typeof value.updatedAt === "string"
   );
@@ -328,6 +446,46 @@ async function requestJson(path: string, init?: RequestInit) {
   return payload;
 }
 
+function parseStartupSummary(
+  s: Record<string, unknown>
+): PortfolioStartupSummary | null {
+  if (typeof s.id !== "string" || typeof s.name !== "string") {
+    return null;
+  }
+  return {
+    id: s.id,
+    name: s.name,
+    type: typeof s.type === "string" ? s.type : "",
+    currency: typeof s.currency === "string" ? s.currency : "USD",
+    healthState:
+      typeof s.healthState === "string" && isHealthState(s.healthState)
+        ? s.healthState
+        : "syncing",
+    northStarKey: typeof s.northStarKey === "string" ? s.northStarKey : "mrr",
+    northStarValue:
+      typeof s.northStarValue === "number" ? s.northStarValue : null,
+    northStarDelta:
+      typeof s.northStarDelta === "number" ? s.northStarDelta : null,
+    universalMetrics: isRecord(s.universalMetrics)
+      ? (s.universalMetrics as Record<string, number | null>)
+      : {},
+    activeAlerts: typeof s.activeAlerts === "number" ? s.activeAlerts : 0,
+    lastSyncAt: typeof s.lastSyncAt === "string" ? s.lastSyncAt : null,
+  };
+}
+
+function buildQueryString(
+  params: Record<string, string | number | undefined | null>
+): string {
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value != null && value !== "") {
+      qs.set(key, String(value));
+    }
+  }
+  return qs.toString();
+}
+
 function parseBlockedReasons(payload: unknown): BlockedReason[] {
   const blockedReasons: BlockedReason[] = [];
   if (!Array.isArray(payload)) {
@@ -356,16 +514,6 @@ function parseHealthSnapshot(
     return null;
   }
 
-  const metricsError = validateSupportingMetrics(payload.supportingMetrics);
-  const funnelError = validateFunnelStages(payload.funnel);
-
-  if (metricsError || funnelError) {
-    throw new DashboardApiError(
-      "MALFORMED_HEALTH_SNAPSHOT",
-      "Health data is incomplete. Please try again."
-    );
-  }
-
   return {
     startupId:
       typeof payload.startupId === "string" ? payload.startupId : startupId,
@@ -376,15 +524,24 @@ function parseHealthSnapshot(
         : status,
     blockedReason:
       typeof payload.blockedReason === "string" ? payload.blockedReason : null,
-    northStarKey: "mrr",
+    northStarKey:
+      typeof payload.northStarKey === "string" ? payload.northStarKey : "mrr",
     northStarValue:
-      typeof payload.northStarValue === "number" ? payload.northStarValue : 0,
+      typeof payload.northStarValue === "number"
+        ? payload.northStarValue
+        : null,
     northStarPreviousValue:
       typeof payload.northStarPreviousValue === "number"
         ? payload.northStarPreviousValue
         : null,
-    supportingMetrics: payload.supportingMetrics as SupportingMetricsSnapshot,
-    funnel: payload.funnel as FunnelStageRow[],
+    supportingMetrics:
+      typeof payload.supportingMetrics === "object" &&
+      payload.supportingMetrics !== null
+        ? (payload.supportingMetrics as UniversalMetrics)
+        : null,
+    funnel: Array.isArray(payload.funnel)
+      ? (payload.funnel as FunnelStageRow[])
+      : [],
     computedAt:
       typeof payload.computedAt === "string"
         ? payload.computedAt
@@ -711,6 +868,156 @@ function createDefaultDashboardApi(): DashboardApi {
       );
       return parseInsightPayload(payload, startupId);
     },
+    async fetchStreak(startupId) {
+      const payload = await requestJson(
+        `/startups/${encodeURIComponent(startupId)}/streak`
+      );
+
+      if (
+        isRecord(payload) &&
+        (payload.streak === null ||
+          (isRecord(payload.streak) &&
+            typeof payload.streak.currentDays === "number" &&
+            typeof payload.streak.longestDays === "number"))
+      ) {
+        return {
+          streak: payload.streak
+            ? {
+                currentDays: payload.streak.currentDays as number,
+                longestDays: payload.streak.longestDays as number,
+              }
+            : null,
+        };
+      }
+
+      return { streak: null };
+    },
+    async fetchPortfolioSummary() {
+      const payload = await requestJson("/mcp/portfolio-summary");
+
+      if (!(isRecord(payload) && isRecord(payload.data))) {
+        throw new DashboardApiError(
+          "MALFORMED_PORTFOLIO_SUMMARY",
+          "Could not load portfolio summary. Please try again."
+        );
+      }
+
+      const data = payload.data;
+      const rawStartups = Array.isArray(data.startups) ? data.startups : [];
+      const startups = rawStartups
+        .filter(isRecord)
+        .map(parseStartupSummary)
+        .filter((s): s is PortfolioStartupSummary => s !== null);
+
+      return {
+        startups,
+        aiSynthesis:
+          typeof data.aiSynthesis === "string" ? data.aiSynthesis : undefined,
+        stale: typeof data.stale === "boolean" ? data.stale : undefined,
+        synthesizedAt:
+          typeof data.synthesizedAt === "string"
+            ? data.synthesizedAt
+            : undefined,
+      };
+    },
+    async listAlerts(startupId, status) {
+      const params = new URLSearchParams();
+      if (status) {
+        params.set("status", status);
+      }
+      const qs = params.toString();
+      const payload = await requestJson(
+        `/startups/${encodeURIComponent(startupId)}/alerts${qs ? `?${qs}` : ""}`
+      );
+
+      if (
+        !(
+          isRecord(payload) &&
+          Array.isArray(payload.alerts) &&
+          payload.alerts.every(isAlertSummary)
+        )
+      ) {
+        throw new DashboardApiError(
+          "MALFORMED_ALERT_LIST",
+          "Could not load alerts. Please try again."
+        );
+      }
+
+      return { alerts: payload.alerts };
+    },
+    async listEvents(params) {
+      const query = buildQueryString({
+        startupId: params.startupId,
+        eventTypes: params.eventTypes,
+        from: params.from,
+        to: params.to,
+        cursor: params.cursor,
+        limit: params.limit,
+      });
+      const payload = await requestJson(`/events${query ? `?${query}` : ""}`);
+
+      if (
+        !(
+          isRecord(payload) &&
+          Array.isArray(payload.events) &&
+          isRecord(payload.pagination)
+        )
+      ) {
+        throw new DashboardApiError(
+          "MALFORMED_EVENT_LIST",
+          "Could not load events. Please try again."
+        );
+      }
+
+      return {
+        events: payload.events.filter(isRecord).map((e) => ({
+          id: String(e.id),
+          workspaceId: String(e.workspaceId),
+          startupId: typeof e.startupId === "string" ? e.startupId : null,
+          eventType: String(e.eventType) as EventLogEntrySummary["eventType"],
+          actorType: String(e.actorType) as EventLogEntrySummary["actorType"],
+          actorId: typeof e.actorId === "string" ? e.actorId : null,
+          payload: isRecord(e.payload)
+            ? (e.payload as Record<string, unknown>)
+            : {},
+          createdAt: String(e.createdAt),
+        })),
+        pagination: {
+          cursor:
+            typeof payload.pagination.cursor === "string"
+              ? payload.pagination.cursor
+              : null,
+          hasMore: payload.pagination.hasMore === true,
+          limit:
+            typeof payload.pagination.limit === "number"
+              ? payload.pagination.limit
+              : 50,
+        },
+      };
+    },
+    async triageAlert(alertId, action, snoozeDurationHours) {
+      const body: Record<string, unknown> = { action };
+      if (snoozeDurationHours !== undefined) {
+        body.snoozeDurationHours = snoozeDurationHours;
+      }
+
+      const payload = await requestJson(
+        `/alerts/${encodeURIComponent(alertId)}/triage`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+        }
+      );
+
+      if (!(isRecord(payload) && isAlertSummary(payload.alert))) {
+        throw new DashboardApiError(
+          "MALFORMED_TRIAGE_RESPONSE",
+          "Alert triage returned an unexpected response."
+        );
+      }
+
+      return { alert: payload.alert };
+    },
     async listTasks(startupId) {
       const payload = await requestJson(
         `/tasks?startupId=${encodeURIComponent(startupId)}`
@@ -743,8 +1050,6 @@ function createDefaultDashboardApi(): DashboardApi {
           provider: "postgres",
           config: {
             connectionUri: setup.connectionUri,
-            schema: setup.schema,
-            view: setup.view,
             label: setup.label,
             unit: setup.unit,
           },
@@ -908,6 +1213,7 @@ interface DashboardOverviewPanelProps {
   onRetryInsight: () => void;
   onRetryTasks: () => void;
   primaryStartup: StartupRecord | null;
+  streakDays?: number | null;
   taskCreateError: string | null;
   taskListError: string | null;
   taskListStatus: "idle" | "loading" | "ready" | "error";
@@ -926,6 +1232,7 @@ function DashboardOverviewPanel({
   onRetryInsight,
   onRetryTasks,
   primaryStartup,
+  streakDays,
   taskCreateError,
   taskListError,
   taskListStatus,
@@ -957,6 +1264,7 @@ function DashboardOverviewPanel({
         {healthStatus === "ready" && healthPayload && primaryStartup ? (
           <FadeIn>
             <PortfolioStartupCard
+              streakDays={streakDays}
               viewModel={buildPortfolioCardViewModel(
                 primaryStartup,
                 healthPayload
@@ -1049,6 +1357,7 @@ interface DashboardHealthConnectorsPanelProps {
   posthogConnector: ConnectorSummary | null;
   resolvedCustomMetric: CustomMetricSummary | null;
   showConnectorStatusPanel: boolean;
+  streakDays?: number | null;
   stripeConnector: ConnectorSummary | null;
 }
 
@@ -1058,6 +1367,7 @@ interface DashboardHealthSectionProps {
   healthStatus: "idle" | "loading" | "ready" | "error";
   onRetryHealth: () => void;
   resolvedCustomMetric: CustomMetricSummary | null;
+  streakDays?: number | null;
 }
 
 function DashboardHealthSection({
@@ -1066,6 +1376,7 @@ function DashboardHealthSection({
   healthStatus,
   onRetryHealth,
   resolvedCustomMetric,
+  streakDays,
 }: DashboardHealthSectionProps) {
   const isHealthMuted =
     healthPayload?.status === "stale" || healthPayload?.status === "blocked";
@@ -1100,13 +1411,14 @@ function DashboardHealthSection({
               healthPayload.health?.northStarPreviousValue ?? null
             }
             northStarValue={healthPayload.health?.northStarValue ?? 0}
+            streakDays={streakDays}
           />
 
           {healthPayload.health ? (
             <>
               <DisclosureSection title="Supporting metrics">
                 <StartupMetricsGrid
-                  metrics={healthPayload.health.supportingMetrics}
+                  metrics={healthPayload.health.supportingMetrics ?? {}}
                   muted={isHealthMuted}
                 />
               </DisclosureSection>
@@ -1301,6 +1613,7 @@ function DashboardHealthConnectorsPanel({
   posthogConnector,
   resolvedCustomMetric,
   showConnectorStatusPanel,
+  streakDays,
   stripeConnector,
 }: DashboardHealthConnectorsPanelProps) {
   return (
@@ -1316,6 +1629,7 @@ function DashboardHealthConnectorsPanel({
         healthStatus={healthStatus}
         onRetryHealth={onRetryHealth}
         resolvedCustomMetric={resolvedCustomMetric}
+        streakDays={streakDays}
       />
       <DashboardConnectorsSection
         activeConnectors={activeConnectors}
@@ -1337,10 +1651,14 @@ function DashboardHealthConnectorsPanel({
   );
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: main dashboard orchestrator — state, effects, and three mode views are inherently coupled
 export function DashboardPage({
   authState,
   api = createDefaultDashboardApi(),
+  eventId = null,
+  mode = "decide",
   navigateToStartup,
+  onModeChange,
   routeStartupId = null,
 }: DashboardPageProps) {
   const [shellStatus, setShellStatus] = useState<"loading" | "ready" | "error">(
@@ -1391,6 +1709,20 @@ export function DashboardPage({
     null
   );
 
+  // Alert state — Decide mode
+  const [alerts, setAlerts] = useState<AlertSummary[]>([]);
+  const [alertStatus, setAlertStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [alertError, setAlertError] = useState<string | null>(null);
+  const [triaging, setTriaging] = useState(false);
+
+  // Streak state
+  const [streakDays, setStreakDays] = useState<number | null>(null);
+  const [streakStatus, setStreakStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+
   // Custom metric state
   const [customMetric, setCustomMetric] = useState<CustomMetricSummary | null>(
     null
@@ -1400,6 +1732,46 @@ export function DashboardPage({
   const [contentView, setContentView] = useState<DashboardContentView | null>(
     null
   );
+
+  // Journal mode state
+  const [journalEvents, setJournalEvents] = useState<EventLogEntrySummary[]>(
+    []
+  );
+  const [journalStatus, setJournalStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [journalError, setJournalError] = useState<string | null>(null);
+  const [journalCursor, setJournalCursor] = useState<string | null>(null);
+  const [journalHasMore, setJournalHasMore] = useState(false);
+  const [journalLoadingMore, setJournalLoadingMore] = useState(false);
+  const [journalFilters, setJournalFilters] =
+    useState<EventFilterValues | null>(null);
+  const [scrollToEventMessage, setScrollToEventMessage] = useState<
+    string | null
+  >(null);
+  const scrollToEventRef = useRef<string | null>(eventId ?? null);
+  const scrollToEventRetries = useRef(0);
+
+  // Compare mode state
+  const [comparePayload, setComparePayload] =
+    useState<PortfolioSummaryPayload | null>(null);
+  const [compareStatus, setCompareStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [compareError, setCompareError] = useState<string | null>(null);
+  const compareFetchedAtRef = useRef<number>(0);
+
+  // Data freshness tracking (epoch ms when each dataset was last fetched)
+  const [healthFetchedAt, setHealthFetchedAt] = useState<number | null>(null);
+  const [alertsFetchedAt, setAlertsFetchedAt] = useState<number | null>(null);
+  const [journalFetchedAt, setJournalFetchedAt] = useState<number | null>(null);
+  const [compareFetchedAtState, setCompareFetchedAtState] = useState<
+    number | null
+  >(null);
+
+  // Online status for offline banner + auto-refetch
+  const isOnline = useOnlineStatus();
+  const wasOfflineRef = useRef(false);
 
   const activeWorkspace = useMemo(
     () =>
@@ -1576,6 +1948,7 @@ export function DashboardPage({
       const payload = await api.fetchHealth(startupId);
       setHealthPayload(payload);
       setCustomMetric(payload.customMetric);
+      setHealthFetchedAt(Date.now());
       setHealthStatus("ready");
     } catch (error) {
       // Preserve the previous payload so stale data stays visible
@@ -1628,6 +2001,165 @@ export function DashboardPage({
         getDashboardErrorMessage(error, "Failed to load tasks.")
       );
       setTaskListStatus("error");
+    }
+  }
+
+  async function refreshAlerts(startupId: string | null) {
+    if (!startupId) {
+      setAlerts([]);
+      setAlertStatus("idle");
+      return;
+    }
+
+    setAlertStatus("loading");
+    setAlertError(null);
+
+    try {
+      const payload = await api.listAlerts(startupId, "active");
+      setAlerts(sortAlertsByPriority(payload.alerts));
+      setAlertsFetchedAt(Date.now());
+      setAlertStatus("ready");
+    } catch (error) {
+      setAlertError(getDashboardErrorMessage(error, "Failed to load alerts."));
+      setAlertStatus("error");
+    }
+  }
+
+  async function refreshStreak(startupId: string | null) {
+    if (!startupId) {
+      setStreakDays(null);
+      setStreakStatus("idle");
+      return;
+    }
+
+    setStreakStatus("loading");
+
+    try {
+      const payload = await api.fetchStreak(startupId);
+      setStreakDays(payload.streak?.currentDays ?? null);
+      setStreakStatus("ready");
+    } catch {
+      setStreakDays(null);
+      setStreakStatus("error");
+    }
+  }
+
+  async function refreshJournalEvents(
+    filters: EventFilterValues | null,
+    startupId: string | null,
+    append = false,
+    cursor?: string
+  ) {
+    if (append) {
+      setJournalLoadingMore(true);
+    } else {
+      setJournalStatus("loading");
+      setJournalError(null);
+    }
+
+    try {
+      const eventTypes = filters
+        ? [...filters.eventTypes].join(",")
+        : undefined;
+      const result = await api.listEvents({
+        startupId: startupId ?? undefined,
+        eventTypes,
+        from: filters?.dateFrom ?? undefined,
+        to: filters?.dateTo ?? undefined,
+        cursor,
+        limit: 50,
+      });
+
+      if (append) {
+        setJournalEvents((prev) => [...prev, ...result.events]);
+      } else {
+        setJournalEvents(result.events);
+      }
+      setJournalCursor(result.pagination.cursor);
+      setJournalHasMore(result.pagination.hasMore);
+      setJournalFetchedAt(Date.now());
+      setJournalStatus("ready");
+    } catch (error) {
+      setJournalError(
+        getDashboardErrorMessage(error, "Failed to load events.")
+      );
+      setJournalStatus("error");
+    } finally {
+      setJournalLoadingMore(false);
+    }
+  }
+
+  function handleJournalFilterApply(filters: EventFilterValues) {
+    setJournalFilters(filters);
+    setJournalCursor(null);
+    void refreshJournalEvents(filters, selectedStartupId);
+  }
+
+  function handleJournalLoadMore() {
+    if (!journalCursor || journalLoadingMore) {
+      return;
+    }
+    void refreshJournalEvents(
+      journalFilters,
+      selectedStartupId,
+      true,
+      journalCursor
+    );
+  }
+
+  // Compare mode: fetch portfolio summary with 60s staleTime
+  const COMPARE_STALE_TIME_MS = 60_000;
+
+  async function refreshCompareSummary(force = false) {
+    const now = Date.now();
+    if (
+      !force &&
+      comparePayload &&
+      now - compareFetchedAtRef.current < COMPARE_STALE_TIME_MS
+    ) {
+      return;
+    }
+
+    setCompareStatus("loading");
+    setCompareError(null);
+
+    try {
+      const payload = await api.fetchPortfolioSummary();
+      setComparePayload(payload);
+      compareFetchedAtRef.current = Date.now();
+      setCompareFetchedAtState(Date.now());
+      setCompareStatus("ready");
+    } catch (error) {
+      setCompareError(
+        getDashboardErrorMessage(error, "Failed to load portfolio summary.")
+      );
+      setCompareStatus("error");
+    }
+  }
+
+  async function handleTriageAck(alertId: string) {
+    setTriaging(true);
+    try {
+      await api.triageAlert(alertId, "ack");
+      await refreshAlerts(selectedStartupId);
+    } catch (error) {
+      setAlertError(
+        getDashboardErrorMessage(error, "Failed to acknowledge alert.")
+      );
+    } finally {
+      setTriaging(false);
+    }
+  }
+
+  async function handleTriageSnooze(alertId: string, durationHours: number) {
+    setTriaging(true);
+    try {
+      await api.triageAlert(alertId, "snooze", durationHours);
+      await refreshAlerts(selectedStartupId);
+    } catch (error) {
+      setAlertError(getDashboardErrorMessage(error, "Failed to snooze alert."));
+    } finally {
+      setTriaging(false);
     }
   }
 
@@ -1801,12 +2333,121 @@ export function DashboardPage({
       void refreshHealth(startupId);
       void refreshInsight(startupId);
       void refreshTasks(startupId);
+      void refreshAlerts(startupId);
+      void refreshStreak(startupId);
     }
   );
 
   useEffect(() => {
     refreshSelectedStartupData(selectedStartupId);
   }, [selectedStartupId]);
+
+  // Load journal events when mode switches to journal
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only trigger on mode/startup change
+  useEffect(() => {
+    if (mode === "journal") {
+      void refreshJournalEvents(journalFilters, selectedStartupId);
+    }
+  }, [mode, selectedStartupId]);
+
+  // Load portfolio summary when mode switches to compare
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only trigger on mode change
+  useEffect(() => {
+    if (mode === "compare") {
+      void refreshCompareSummary();
+    }
+  }, [mode]);
+
+  // Offline → online: auto-refetch all queries
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally refetch on reconnect only
+  useEffect(() => {
+    if (!isOnline) {
+      wasOfflineRef.current = true;
+      return;
+    }
+
+    if (wasOfflineRef.current) {
+      wasOfflineRef.current = false;
+      refreshSelectedStartupData(selectedStartupId);
+      if (mode === "journal") {
+        void refreshJournalEvents(journalFilters, selectedStartupId);
+      }
+      if (mode === "compare") {
+        void refreshCompareSummary(true);
+      }
+    }
+  }, [isOnline]);
+
+  // Scroll-to-event: when events load, try to find the target event
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshJournalEvents is stable per render
+  const handleScrollToEvent = useCallback(
+    (events: EventLogEntrySummary[], targetId: string | null) => {
+      if (!targetId) {
+        return;
+      }
+
+      const found = events.find((e) => e.id === targetId);
+      if (found) {
+        scrollToEventRef.current = null;
+        scrollToEventRetries.current = 0;
+        setScrollToEventMessage(null);
+        // Scroll the element into view after render
+        requestAnimationFrame(() => {
+          const el = document.querySelector(`[data-event-id="${targetId}"]`);
+          el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+        return;
+      }
+
+      // Check if event is >90 days old based on targetId (we don't know timestamp yet)
+      // We'll check after retries exhaust
+
+      if (scrollToEventRetries.current < 2) {
+        scrollToEventRetries.current += 1;
+        // Retry after 2s
+        setTimeout(() => {
+          void refreshJournalEvents(journalFilters, selectedStartupId);
+        }, 2000);
+        return;
+      }
+
+      // Retries exhausted
+      scrollToEventRef.current = null;
+      scrollToEventRetries.current = 0;
+      setScrollToEventMessage(
+        "Event not found or expired. It may have been archived."
+      );
+    },
+    [journalFilters, selectedStartupId]
+  );
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only run when journal events change
+  useEffect(() => {
+    if (
+      mode === "journal" &&
+      journalStatus === "ready" &&
+      scrollToEventRef.current
+    ) {
+      handleScrollToEvent(journalEvents, scrollToEventRef.current);
+    }
+  }, [journalEvents, journalStatus, mode]);
+
+  // Group journal events by day for rendering
+  const journalEventsByDay = useMemo(() => {
+    const groups: { date: string; events: EventLogEntrySummary[] }[] = [];
+    let currentDate = "";
+
+    for (const event of journalEvents) {
+      const eventDate = event.createdAt.slice(0, 10); // YYYY-MM-DD
+      if (eventDate !== currentDate) {
+        currentDate = eventDate;
+        groups.push({ date: eventDate, events: [] });
+      }
+      groups.at(-1)?.events.push(event);
+    }
+
+    return groups;
+  }, [journalEvents]);
 
   // Filter active connectors for the status panel
   const activeConnectors = connectors.filter(
@@ -1823,6 +2464,55 @@ export function DashboardPage({
   const showEmptyWorkspaceState =
     activeWorkspace && startups.length === 0 && startupStatus === "ready";
   const showNoWorkspaceState = !activeWorkspace && shellStatus === "ready";
+
+  const topAlert = alerts.length > 0 ? (alerts[0] ?? null) : null;
+
+  let streakInfo: StreakInfo | null = null;
+  if (streakStatus === "ready" && streakDays != null) {
+    streakInfo = { currentDays: streakDays, longestDays: streakDays };
+  } else if (alertStatus === "ready" && alerts.length === 0) {
+    streakInfo = { currentDays: 0, longestDays: 0 };
+  }
+  const supportingMetrics = healthPayload?.health?.supportingMetrics ?? null;
+
+  // Compare mode: transform portfolio payload into StartupComparison[]
+  const compareStartups: StartupComparison[] = useMemo(() => {
+    if (!comparePayload) {
+      return [];
+    }
+    return comparePayload.startups.map((s) => ({
+      id: s.id,
+      name: s.name,
+      healthState: s.healthState,
+      metrics: s.universalMetrics as UniversalMetrics,
+      previousMetrics: null,
+      sourceMetrics: null,
+    }));
+  }, [comparePayload]);
+
+  // Compare mode: derive system status from current alerts + connectors
+  const compareAlertsBySeverity = useMemo(() => {
+    const bySev: Partial<
+      Record<"critical" | "high" | "medium" | "low", number>
+    > = {};
+    for (const alert of alerts) {
+      bySev[alert.severity] = (bySev[alert.severity] ?? 0) + 1;
+    }
+    return bySev;
+  }, [alerts]);
+
+  const compareConnectorSyncInfo = useMemo(
+    () =>
+      connectors
+        .filter((c) => c.status !== "disconnected")
+        .map((c) => ({
+          provider: c.provider,
+          status: c.status,
+          lastSyncAt: typeof c.lastSyncAt === "string" ? c.lastSyncAt : null,
+          hasError: c.status === "error",
+        })),
+    [connectors]
+  );
 
   return (
     <AppShell
@@ -1845,66 +2535,279 @@ export function DashboardPage({
       workspaces={workspaces}
     >
       <div className="grid gap-6">
+        {isOnline ? null : (
+          <Alert data-testid="offline-banner">
+            <AlertDescription>
+              You are offline. Data may not be current.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {showPrimaryDashboard ? (
-          <section
-            aria-labelledby="dashboard-content-heading"
-            className="grid gap-4"
-          >
-            <DashboardContentHeader
-              contentView={resolvedContentView}
-              missingCoreConnectorCount={missingCoreConnectorCount}
-              onChangeView={setContentView}
+          <>
+            <ModeSwitcher
+              onChange={onModeChange ?? ((_m: DashboardMode) => undefined)}
+              value={mode}
             />
 
-            {resolvedContentView === "overview" ? (
-              <DashboardOverviewPanel
-                creatingActionIndex={creatingActionIndex}
-                healthError={healthError}
-                healthPayload={healthPayload}
-                healthStatus={healthStatus}
-                insightError={insightError}
-                insightPayload={insightPayload}
-                insightStatus={insightStatus}
-                onCreateTask={handleCreateTaskFromAction}
-                onRetryInsight={() => {
-                  void refreshInsight(selectedStartupId);
-                }}
-                onRetryTasks={() => {
-                  void refreshTasks(selectedStartupId);
-                }}
-                primaryStartup={selectedStartup}
-                taskCreateError={taskCreateError}
-                taskListError={taskListError}
-                taskListStatus={taskListStatus}
-                tasks={tasks}
-              />
-            ) : (
-              <DashboardHealthConnectorsPanel
-                activeConnectors={activeConnectors}
-                connectorError={connectorError}
-                connectorLoading={connectorLoading}
-                healthError={healthError}
-                healthPayload={healthPayload}
-                healthStatus={healthStatus}
-                onConnectProvider={handleConnectProvider}
-                onDisconnect={handleDisconnect}
-                onPostgresSetup={handlePostgresSetup}
-                onRefreshConnectors={() => {
-                  void refreshConnectors(selectedStartupId);
-                }}
-                onResync={handleResync}
-                onRetryHealth={() => {
-                  void refreshHealth(selectedStartupId);
-                }}
-                pgSetupSubmitting={pgSetupSubmitting}
-                postgresConnector={postgresConnector}
-                posthogConnector={posthogConnector}
-                resolvedCustomMetric={resolvedCustomMetric}
-                showConnectorStatusPanel={showConnectorStatusPanel}
-                stripeConnector={stripeConnector}
-              />
-            )}
-          </section>
+            {mode === "decide" ? (
+              <section
+                aria-labelledby="dashboard-content-heading"
+                className="grid gap-4"
+              >
+                <DashboardContentHeader
+                  contentView={resolvedContentView}
+                  missingCoreConnectorCount={missingCoreConnectorCount}
+                  onChangeView={setContentView}
+                />
+
+                <div className="flex flex-wrap gap-3">
+                  <DataFreshnessBadge
+                    fetchedAt={alertsFetchedAt}
+                    label="Alerts updated"
+                  />
+                  <DataFreshnessBadge
+                    fetchedAt={healthFetchedAt}
+                    label="Metrics updated"
+                  />
+                </div>
+
+                <DecisionSurface
+                  alert={topAlert}
+                  error={alertError}
+                  loading={alertStatus === "loading"}
+                  onAck={handleTriageAck}
+                  onInvestigate={(_alertId) => {
+                    onModeChange?.("journal");
+                  }}
+                  onRetry={() => {
+                    void refreshAlerts(selectedStartupId);
+                  }}
+                  onSnooze={handleTriageSnooze}
+                  streak={streakInfo}
+                  triaging={triaging}
+                />
+
+                {supportingMetrics && resolvedContentView === "overview" ? (
+                  <StartupMetricsGrid metrics={supportingMetrics} />
+                ) : null}
+
+                {resolvedContentView === "overview" ? (
+                  <DashboardOverviewPanel
+                    creatingActionIndex={creatingActionIndex}
+                    healthError={healthError}
+                    healthPayload={healthPayload}
+                    healthStatus={healthStatus}
+                    insightError={insightError}
+                    insightPayload={insightPayload}
+                    insightStatus={insightStatus}
+                    onCreateTask={handleCreateTaskFromAction}
+                    onRetryInsight={() => {
+                      void refreshInsight(selectedStartupId);
+                    }}
+                    onRetryTasks={() => {
+                      void refreshTasks(selectedStartupId);
+                    }}
+                    primaryStartup={selectedStartup}
+                    streakDays={streakDays}
+                    taskCreateError={taskCreateError}
+                    taskListError={taskListError}
+                    taskListStatus={taskListStatus}
+                    tasks={tasks}
+                  />
+                ) : (
+                  <DashboardHealthConnectorsPanel
+                    activeConnectors={activeConnectors}
+                    connectorError={connectorError}
+                    connectorLoading={connectorLoading}
+                    healthError={healthError}
+                    healthPayload={healthPayload}
+                    healthStatus={healthStatus}
+                    onConnectProvider={handleConnectProvider}
+                    onDisconnect={handleDisconnect}
+                    onPostgresSetup={handlePostgresSetup}
+                    onRefreshConnectors={() => {
+                      void refreshConnectors(selectedStartupId);
+                    }}
+                    onResync={handleResync}
+                    onRetryHealth={() => {
+                      void refreshHealth(selectedStartupId);
+                    }}
+                    pgSetupSubmitting={pgSetupSubmitting}
+                    postgresConnector={postgresConnector}
+                    posthogConnector={posthogConnector}
+                    resolvedCustomMetric={resolvedCustomMetric}
+                    showConnectorStatusPanel={showConnectorStatusPanel}
+                    streakDays={streakDays}
+                    stripeConnector={stripeConnector}
+                  />
+                )}
+              </section>
+            ) : null}
+
+            {mode === "journal" ? (
+              <section aria-label="Journal mode" className="grid gap-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <EventFilter onApply={handleJournalFilterApply} />
+                  <DataFreshnessBadge
+                    fetchedAt={journalFetchedAt}
+                    label="Events updated"
+                  />
+                </div>
+
+                {scrollToEventMessage ? (
+                  <Alert>
+                    <AlertDescription>{scrollToEventMessage}</AlertDescription>
+                  </Alert>
+                ) : null}
+
+                {journalStatus === "loading" ? (
+                  <div className="grid gap-2">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <div
+                        className="h-14 animate-pulse rounded bg-muted"
+                        key={`journal-skeleton-${String(i)}`}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+
+                {journalStatus === "error" ? (
+                  <Alert variant="destructive">
+                    <AlertDescription>
+                      {journalError ?? "Failed to load events."}
+                      <Button
+                        className="ml-2"
+                        onClick={() => {
+                          void refreshJournalEvents(
+                            journalFilters,
+                            selectedStartupId
+                          );
+                        }}
+                        size="xs"
+                        variant="outline"
+                      >
+                        Retry
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+
+                {journalStatus === "ready" && journalEvents.length === 0 ? (
+                  <p className="py-8 text-center text-muted-foreground text-sm">
+                    No events match your filters.
+                  </p>
+                ) : null}
+
+                {journalStatus === "ready" && journalEvents.length > 0 ? (
+                  <div className="grid gap-0">
+                    {journalEventsByDay.map((group) => (
+                      <div key={group.date}>
+                        <DaySeparator date={group.date} />
+                        {group.events.map((event) => (
+                          <div data-event-id={event.id} key={event.id}>
+                            <EventLogEntry event={event} />
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+
+                    {journalHasMore ? (
+                      <div className="flex justify-center pt-4">
+                        <Button
+                          disabled={journalLoadingMore}
+                          onClick={handleJournalLoadMore}
+                          size="sm"
+                          variant="outline"
+                        >
+                          {journalLoadingMore ? "Loading…" : "Load more"}
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
+            {mode === "compare" ? (
+              <section aria-label="Compare mode" className="grid gap-4">
+                <DataFreshnessBadge
+                  fetchedAt={compareFetchedAtState}
+                  label="Comparison updated"
+                />
+
+                {compareStatus === "loading" ? (
+                  <div className="grid gap-4">
+                    <div className="h-10 animate-pulse rounded bg-muted" />
+                    <div className="h-48 animate-pulse rounded bg-muted" />
+                    <div className="h-32 animate-pulse rounded bg-muted" />
+                  </div>
+                ) : null}
+
+                {compareStatus === "error" ? (
+                  <Alert variant="destructive">
+                    <AlertDescription>
+                      {compareError ?? "Failed to load portfolio summary."}
+                      <Button
+                        className="ml-2"
+                        onClick={() => {
+                          void refreshCompareSummary(true);
+                        }}
+                        size="xs"
+                        variant="outline"
+                      >
+                        Retry
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+
+                {compareStatus === "ready" && comparePayload ? (
+                  <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
+                    <div className="grid gap-4">
+                      {compareStartups.length >= 2 ? (
+                        <ComparisonMatrix startups={compareStartups} />
+                      ) : (
+                        <Card>
+                          <CardContent className="py-8">
+                            {compareStartups.length === 1 ? (
+                              <div className="grid gap-2">
+                                <p className="font-medium">
+                                  {compareStartups[0].name}
+                                </p>
+                                <StartupMetricsGrid
+                                  metrics={compareStartups[0].metrics}
+                                />
+                              </div>
+                            ) : (
+                              <p className="text-center text-muted-foreground text-sm">
+                                Add startups to see the comparison matrix.
+                              </p>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      <AiSynthesisCard
+                        loading={false}
+                        synthesizedAt={comparePayload.synthesizedAt ?? null}
+                        text={comparePayload.aiSynthesis ?? null}
+                      />
+                    </div>
+
+                    <aside className="grid content-start gap-4">
+                      <SystemStatusSection
+                        alertsBySeverity={compareAlertsBySeverity}
+                        connectors={compareConnectorSyncInfo}
+                        lastDigestAt={null}
+                        mcpQueryCount={0}
+                      />
+                    </aside>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+          </>
         ) : null}
 
         {showEmptyWorkspaceState ? (

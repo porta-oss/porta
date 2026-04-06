@@ -3,7 +3,7 @@
 // from the existing startup record + health payload. Pure functions — no
 // side effects, no secrets, no raw provider payloads.
 
-import type { HealthState, NorthStarMetric } from "@shared/startup-health";
+import type { HealthState } from "@shared/startup-health";
 import type { StartupRecord } from "@shared/types";
 import type {
   BlockedReason,
@@ -37,7 +37,7 @@ export interface PortfolioCardViewModel {
   /** North-star formatted value. */
   northStarDisplay: string;
   /** North-star key for labeling. */
-  northStarKey: NorthStarMetric;
+  northStarKey: string;
   /** Top issue — the single most important thing the founder needs to know. */
   topIssue: string;
   /** One-line trend summary, e.g. "MRR +13.6%". Null when no trend is available. */
@@ -72,16 +72,16 @@ function deriveBadge(state: HealthState): {
 // Trend derivation
 // ---------------------------------------------------------------------------
 
-const NORTH_STAR_LABELS: Record<NorthStarMetric, string> = {
+const NORTH_STAR_LABELS: Record<string, string> = {
   mrr: "MRR",
 };
 
 function deriveTrend(
-  northStarKey: NorthStarMetric,
-  current: number,
+  northStarKey: string,
+  current: number | null,
   previous: number | null
 ): string | null {
-  if (previous === null || previous === 0) {
+  if (current === null || previous === null || previous === 0) {
     return null;
   }
   const pct = ((current - previous) / previous) * 100;
@@ -89,7 +89,7 @@ function deriveTrend(
     return null;
   }
   const sign = pct > 0 ? "+" : "";
-  return `${NORTH_STAR_LABELS[northStarKey]} ${sign}${pct.toFixed(1)}%`;
+  return `${NORTH_STAR_LABELS[northStarKey] ?? northStarKey} ${sign}${pct.toFixed(1)}%`;
 }
 
 // ---------------------------------------------------------------------------
@@ -184,9 +184,8 @@ export function buildPortfolioCardViewModel(
 ): PortfolioCardViewModel {
   const { badge, label: badgeLabel } = deriveBadge(healthPayload.status);
 
-  const northStarKey: NorthStarMetric =
-    healthPayload.health?.northStarKey ?? "mrr";
-  const northStarValue = healthPayload.health?.northStarValue ?? 0;
+  const northStarKey: string = healthPayload.health?.northStarKey ?? "mrr";
+  const northStarValue = healthPayload.health?.northStarValue ?? null;
   const northStarPrevious =
     healthPayload.health?.northStarPreviousValue ?? null;
 
@@ -203,7 +202,7 @@ export function buildPortfolioCardViewModel(
     ),
     healthState: healthPayload.status,
     northStarKey,
-    northStarDisplay: formatCurrency(northStarValue),
+    northStarDisplay: formatCurrency(northStarValue ?? 0),
   };
 }
 

@@ -1,92 +1,12 @@
 // B2B SaaS health snapshot contract shared across API, worker, and UI.
-// Defines the fixed KPI template: one north-star metric, supporting metrics,
-// funnel stages, and health-state enum for the startup health page.
+// Defines the health-state enum, snapshot summary, and funnel stage shapes.
 //
-// This is the single source of truth for metric keys, health states,
-// and payload shapes. Worker writes, API reads, UI renders — all from
-// these types. Never store raw provider payloads or connector credentials
-// in health snapshot data.
+// This is the single source of truth for health states and payload shapes.
+// Worker writes, API reads, UI renders — all from these types.
+// Never store raw provider payloads or connector credentials in health
+// snapshot data.
 
-// ---------------------------------------------------------------------------
-// North-star metric
-// ---------------------------------------------------------------------------
-
-export const NORTH_STAR_METRICS = ["mrr"] as const;
-export type NorthStarMetric = (typeof NORTH_STAR_METRICS)[number];
-
-export function isNorthStarMetric(value: string): value is NorthStarMetric {
-  return NORTH_STAR_METRICS.includes(value as NorthStarMetric);
-}
-
-// ---------------------------------------------------------------------------
-// Supporting metrics
-// ---------------------------------------------------------------------------
-
-export const SUPPORTING_METRICS = [
-  "active_users",
-  "customer_count",
-  "churn_rate",
-  "arpu",
-  "trial_conversion_rate",
-] as const;
-export type SupportingMetric = (typeof SUPPORTING_METRICS)[number];
-
-export function isSupportingMetric(value: string): value is SupportingMetric {
-  return SUPPORTING_METRICS.includes(value as SupportingMetric);
-}
-
-/** Labels for display in the UI — maps each key to a human-readable name. */
-export const SUPPORTING_METRIC_LABELS: Record<SupportingMetric, string> = {
-  active_users: "Active Users",
-  customer_count: "Customers",
-  churn_rate: "Churn Rate",
-  arpu: "ARPU",
-  trial_conversion_rate: "Trial Conversion",
-} as const;
-
-/** Unit type for each supporting metric. */
-export const SUPPORTING_METRIC_UNITS: Record<
-  SupportingMetric,
-  "count" | "currency" | "percent"
-> = {
-  active_users: "count",
-  customer_count: "count",
-  churn_rate: "percent",
-  arpu: "currency",
-  trial_conversion_rate: "percent",
-} as const;
-
-// ---------------------------------------------------------------------------
-// Funnel stages
-// ---------------------------------------------------------------------------
-
-export const FUNNEL_STAGES = [
-  "visitor",
-  "signup",
-  "activation",
-  "paying_customer",
-] as const;
-export type FunnelStage = (typeof FUNNEL_STAGES)[number];
-
-export function isFunnelStage(value: string): value is FunnelStage {
-  return FUNNEL_STAGES.includes(value as FunnelStage);
-}
-
-/** Default labels for each funnel stage. */
-export const FUNNEL_STAGE_LABELS: Record<FunnelStage, string> = {
-  visitor: "Visitors",
-  signup: "Sign-ups",
-  activation: "Activated",
-  paying_customer: "Paying Customers",
-} as const;
-
-/** Expected position (0-indexed) for each funnel stage. */
-export const FUNNEL_STAGE_POSITIONS: Record<FunnelStage, number> = {
-  visitor: 0,
-  signup: 1,
-  activation: 2,
-  paying_customer: 3,
-} as const;
+import type { UniversalMetrics } from "./universal-metrics";
 
 // ---------------------------------------------------------------------------
 // Health state
@@ -106,31 +26,20 @@ export function isHealthState(value: string): value is HealthState {
 }
 
 // ---------------------------------------------------------------------------
-// Snapshot payload shapes
+// Funnel stage row
 // ---------------------------------------------------------------------------
-
-/** One metric value with optional delta from previous snapshot. */
-export interface MetricValue {
-  previous: number | null;
-  value: number;
-}
-
-/**
- * Typed map of supporting metric values.
- * Stored as JSONB in the snapshot table.
- * Every key in SUPPORTING_METRICS must be present.
- */
-export type SupportingMetricsSnapshot = {
-  [K in SupportingMetric]: MetricValue;
-};
 
 /** A single funnel stage row for the startup health page. */
 export interface FunnelStageRow {
+  key: string;
   label: string;
   position: number;
-  stage: FunnelStage;
   value: number;
 }
+
+// ---------------------------------------------------------------------------
+// Health snapshot summary
+// ---------------------------------------------------------------------------
 
 /**
  * The complete health snapshot payload — returned by the API and consumed by the UI.
@@ -141,162 +50,10 @@ export interface HealthSnapshotSummary {
   computedAt: string;
   funnel: FunnelStageRow[];
   healthState: HealthState;
-  northStarKey: NorthStarMetric;
+  northStarKey: string;
   northStarPreviousValue: number | null;
-  northStarValue: number;
+  northStarValue: number | null;
   startupId: string;
-  supportingMetrics: SupportingMetricsSnapshot;
+  supportingMetrics: UniversalMetrics | null;
   syncJobId: string | null;
-}
-
-// ---------------------------------------------------------------------------
-// Factory helpers
-// ---------------------------------------------------------------------------
-
-/** Create a zero-valued supporting metrics snapshot (for first-time or reset). */
-export function emptySupportingMetrics(): SupportingMetricsSnapshot {
-  return {
-    active_users: { value: 0, previous: null },
-    customer_count: { value: 0, previous: null },
-    churn_rate: { value: 0, previous: null },
-    arpu: { value: 0, previous: null },
-    trial_conversion_rate: { value: 0, previous: null },
-  };
-}
-
-/** Create the default funnel stage rows with zero values. */
-export function emptyFunnelStages(): FunnelStageRow[] {
-  return FUNNEL_STAGES.map((stage) => ({
-    stage,
-    label: FUNNEL_STAGE_LABELS[stage],
-    value: 0,
-    position: FUNNEL_STAGE_POSITIONS[stage],
-  }));
-}
-
-// ---------------------------------------------------------------------------
-// Validation helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Validate that a supporting metrics object has exactly the expected keys
- * and each value conforms to the MetricValue shape.
- * Returns an error string or null if valid.
- */
-export function validateSupportingMetrics(metrics: unknown): string | null {
-  if (typeof metrics !== "object" || metrics === null) {
-    return "Supporting metrics must be a non-null object.";
-  }
-
-  const obj = metrics as Record<string, unknown>;
-  const expectedKeys = new Set<string>(SUPPORTING_METRICS);
-  const actualKeys = new Set(Object.keys(obj));
-
-  for (const key of expectedKeys) {
-    if (!actualKeys.has(key)) {
-      return `Missing supporting metric key: ${key}`;
-    }
-  }
-
-  for (const key of actualKeys) {
-    if (!expectedKeys.has(key)) {
-      return `Unknown supporting metric key: ${key}`;
-    }
-  }
-
-  for (const key of expectedKeys) {
-    const entry = obj[key];
-    if (typeof entry !== "object" || entry === null) {
-      return `Supporting metric "${key}" must be a non-null object with { value, previous }.`;
-    }
-
-    const mv = entry as Record<string, unknown>;
-    if (typeof mv.value !== "number" || !Number.isFinite(mv.value)) {
-      return `Supporting metric "${key}.value" must be a finite number.`;
-    }
-
-    if (
-      mv.previous !== null &&
-      (typeof mv.previous !== "number" || !Number.isFinite(mv.previous))
-    ) {
-      return `Supporting metric "${key}.previous" must be a finite number or null.`;
-    }
-  }
-
-  return null;
-}
-
-function validateFunnelStageRowShape(
-  row: unknown
-): { stage: FunnelStage } | { error: string } {
-  if (typeof row !== "object" || row === null) {
-    return { error: "Each funnel stage must be a non-null object." };
-  }
-
-  const parsedRow = row as Record<string, unknown>;
-
-  if (typeof parsedRow.stage !== "string" || !isFunnelStage(parsedRow.stage)) {
-    return {
-      error: `Invalid funnel stage: ${String(parsedRow.stage)}. Expected one of: ${FUNNEL_STAGES.join(", ")}`,
-    };
-  }
-
-  if (typeof parsedRow.label !== "string" || parsedRow.label.length === 0) {
-    return {
-      error: `Funnel stage "${parsedRow.stage}" must have a non-empty label.`,
-    };
-  }
-
-  if (
-    typeof parsedRow.value !== "number" ||
-    !Number.isFinite(parsedRow.value)
-  ) {
-    return {
-      error: `Funnel stage "${parsedRow.stage}.value" must be a finite number.`,
-    };
-  }
-
-  if (
-    typeof parsedRow.position !== "number" ||
-    !Number.isInteger(parsedRow.position)
-  ) {
-    return {
-      error: `Funnel stage "${parsedRow.stage}.position" must be an integer.`,
-    };
-  }
-
-  return { stage: parsedRow.stage };
-}
-
-/**
- * Validate a funnel stage row array.
- * Returns an error string or null if valid.
- */
-export function validateFunnelStages(stages: unknown): string | null {
-  if (!Array.isArray(stages)) {
-    return "Funnel stages must be an array.";
-  }
-
-  const expectedStages = new Set<string>(FUNNEL_STAGES);
-  const seenStages = new Set<string>();
-
-  for (const row of stages) {
-    const parsedRow = validateFunnelStageRowShape(row);
-    if ("error" in parsedRow) {
-      return parsedRow.error;
-    }
-
-    if (seenStages.has(parsedRow.stage)) {
-      return `Duplicate funnel stage: ${parsedRow.stage}`;
-    }
-    seenStages.add(parsedRow.stage);
-  }
-
-  for (const expected of expectedStages) {
-    if (!seenStages.has(expected)) {
-      return `Missing funnel stage: ${expected}`;
-    }
-  }
-
-  return null;
 }

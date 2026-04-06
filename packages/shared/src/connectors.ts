@@ -1,6 +1,12 @@
 // Connector provider and status contracts shared across API, worker, and UI.
 
-export const CONNECTOR_PROVIDERS = ["posthog", "stripe", "postgres"] as const;
+export const CONNECTOR_PROVIDERS = [
+  "posthog",
+  "stripe",
+  "postgres",
+  "yookassa",
+  "sentry",
+] as const;
 export type ConnectorProvider = (typeof CONNECTOR_PROVIDERS)[number];
 
 export const CONNECTOR_STATUSES = [

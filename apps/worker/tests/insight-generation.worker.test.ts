@@ -6,11 +6,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type {
-  FunnelStageRow,
-  SupportingMetricsSnapshot,
-} from "@shared/startup-health";
-import { emptySupportingMetrics } from "@shared/startup-health";
+import type { FunnelStageRow } from "@shared/startup-health";
 import type {
   EvidencePacket,
   InsightExplanation,
@@ -19,6 +15,7 @@ import {
   validateEvidencePacket,
   validateInsightExplanation,
 } from "@shared/startup-insight";
+import type { UniversalMetrics } from "@shared/universal-metrics";
 import type { InsightGenerationDeps } from "../src/insights";
 import {
   createFailingExplainer,
@@ -49,7 +46,7 @@ function makeSnapshot(
     northStarKey: "mrr",
     northStarValue: 5000,
     northStarPreviousValue: 6000,
-    supportingMetrics: emptySupportingMetrics(),
+    supportingMetrics: {},
     syncJobId: "sync-1",
     computedAt: new Date(),
     ...overrides,
@@ -57,10 +54,9 @@ function makeSnapshot(
 }
 
 function makeMetrics(
-  overrides: Partial<SupportingMetricsSnapshot> = {}
-): SupportingMetricsSnapshot {
+  overrides: Partial<UniversalMetrics> = {}
+): UniversalMetrics {
   return {
-    ...emptySupportingMetrics(),
     ...overrides,
   };
 }
@@ -72,6 +68,9 @@ function createInMemoryHealthRepo(
     snapshot: HealthSnapshotRow | undefined;
   } = {
     snapshot,
+    async recordHistory(): Promise<void> {
+      // no-op for tests
+    },
     async replaceSnapshot(input: ReplaceSnapshotInput): Promise<void> {
       repo.snapshot = {
         id: input.snapshotId,
@@ -221,7 +220,7 @@ describe("detectCondition", () => {
       northStarValue: 4500,
       northStarPreviousValue: 5000,
     });
-    const metrics = makeMetrics({ churn_rate: { value: 8, previous: 3 } });
+    const metrics = makeMetrics({ churn_rate: 8 });
     const result = detectCondition({
       snapshot,
       supportingMetrics: metrics,
@@ -238,7 +237,7 @@ describe("detectCondition", () => {
       northStarValue: 5000,
       northStarPreviousValue: 5000,
     });
-    const metrics = makeMetrics({ churn_rate: { value: 12, previous: 3 } });
+    const metrics = makeMetrics({ churn_rate: 12 });
     const result = detectCondition({
       snapshot,
       supportingMetrics: metrics,
@@ -249,18 +248,15 @@ describe("detectCondition", () => {
     expect(
       result.evidence.items.some((i) => i.metricKey === "churn_rate")
     ).toBe(true);
-    expect(
-      result.evidence.items.some((i) => i.metricKey === "customer_count")
-    ).toBe(true);
   });
 
-  test("detects trial_conversion_drop when conversion drops >= 10%", () => {
+  test("returns no_condition_detected when metrics are healthy and no MRR decline", () => {
     const snapshot = makeSnapshot({
       northStarValue: 5000,
       northStarPreviousValue: 5000,
     });
     const metrics = makeMetrics({
-      trial_conversion_rate: { value: 18, previous: 25 },
+      growth_rate: 18,
     });
     const result = detectCondition({
       snapshot,
@@ -268,10 +264,8 @@ describe("detectCondition", () => {
       healthState: "ready",
     });
 
-    expect(result.conditionCode).toBe("trial_conversion_drop");
-    expect(
-      result.evidence.items.some((i) => i.metricKey === "trial_conversion_rate")
-    ).toBe(true);
+    expect(result.conditionCode).toBe("no_condition_detected");
+    expect(result.evidence.items.length).toBeGreaterThanOrEqual(1);
   });
 
   test("returns no_condition_detected when all metrics are healthy", () => {
@@ -280,8 +274,8 @@ describe("detectCondition", () => {
       northStarPreviousValue: 5000,
     });
     const metrics = makeMetrics({
-      churn_rate: { value: 3, previous: 3 },
-      trial_conversion_rate: { value: 25, previous: 24 },
+      churn_rate: 3,
+      growth_rate: 25,
     });
     const result = detectCondition({
       snapshot,
@@ -298,7 +292,7 @@ describe("detectCondition", () => {
       northStarValue: 4000,
       northStarPreviousValue: 5000,
     });
-    const metrics = makeMetrics({ churn_rate: { value: 15, previous: 5 } });
+    const metrics = makeMetrics({ churn_rate: 15 });
     const result = detectCondition({
       snapshot,
       supportingMetrics: metrics,
@@ -312,19 +306,19 @@ describe("detectCondition", () => {
     const cases: Array<{
       mrr: number;
       prevMrr: number | null;
-      metrics: Partial<SupportingMetricsSnapshot>;
+      metrics: Partial<UniversalMetrics>;
     }> = [
       { mrr: 4000, prevMrr: 5000, metrics: {} }, // mrr_declining
       {
         mrr: 5000,
         prevMrr: 5000,
-        metrics: { churn_rate: { value: 15, previous: 3 } },
+        metrics: { churn_rate: 15 },
       }, // churn_spike
       {
         mrr: 5000,
         prevMrr: 5000,
-        metrics: { trial_conversion_rate: { value: 18, previous: 25 } },
-      }, // trial_conversion_drop
+        metrics: { growth_rate: 18 },
+      }, // no_condition (healthy growth)
       { mrr: 5000, prevMrr: 5000, metrics: {} }, // no_condition
     ];
 
@@ -679,8 +673,8 @@ describe("generateInsight — skipped generation", () => {
       northStarValue: 5100,
       northStarPreviousValue: 5000,
       supportingMetrics: makeMetrics({
-        churn_rate: { value: 2, previous: 2 },
-        trial_conversion_rate: { value: 30, previous: 28 },
+        churn_rate: 2,
+        growth_rate: 30,
       }),
     });
     const healthRepo = createInMemoryHealthRepo(snapshot);

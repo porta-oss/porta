@@ -10,8 +10,10 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "bullmq": "^5.34.8",
     "drizzle-orm": "^0.44.7",
+    "grammy": "^1.42.0",
     "ioredis": "^5.6.1",
     "pg": "^8.16.3"
   }

@@ -1,6 +1,6 @@
 // Postgres custom metric worker tests.
-// Tests the sync processor's Postgres-specific custom metric flow
-// with in-memory stubs. Verifies: successful sync writes custom metric data,
+// Tests the sync processor's Postgres-specific multi-metric flow
+// with in-memory stubs. Verifies: successful sync upserts custom metrics,
 // failed sync preserves last-good data, malformed responses rejected,
 // and boundary conditions handled.
 // No Redis or external Postgres required.
@@ -20,7 +20,7 @@ import type {
   CustomMetricRepository,
   CustomMetricRow,
   UpdateCustomMetricFailureInput,
-  UpdateCustomMetricSuccessInput,
+  UpsertCustomMetricsInput,
 } from "../src/repository";
 
 // ---------- helpers ----------
@@ -33,10 +33,6 @@ function makePostgresConnectorRow(
 ): ConnectorRow {
   const config = JSON.stringify({
     connectionUri: "postgresql://user:pass@host:5432/db",
-    schema: "public",
-    view: "daily_revenue",
-    label: "Daily Revenue",
-    unit: "$",
   });
   const blob = encryptConnectorConfig(config, keyBuffer);
   return {
@@ -97,42 +93,25 @@ function createStubSyncRepo(connector?: ConnectorRow): SyncRepository & {
 }
 
 function createStubCustomMetricRepo(): CustomMetricRepository & {
-  successCalls: UpdateCustomMetricSuccessInput[];
+  upsertCalls: UpsertCustomMetricsInput[];
   failureCalls: UpdateCustomMetricFailureInput[];
-  row: CustomMetricRow | undefined;
+  rows: CustomMetricRow[];
 } {
-  const successCalls: UpdateCustomMetricSuccessInput[] = [];
+  const upsertCalls: UpsertCustomMetricsInput[] = [];
   const failureCalls: UpdateCustomMetricFailureInput[] = [];
-  let row: CustomMetricRow | undefined;
+  const rows: CustomMetricRow[] = [];
 
   return {
-    successCalls,
+    upsertCalls,
     failureCalls,
-    get row() {
-      return row;
-    },
-    set row(r: CustomMetricRow | undefined) {
-      row = r;
-    },
-    findByStartupId: async () => row,
-    findByConnectorId: async () => row,
-    updateOnSyncSuccess: async (input: UpdateCustomMetricSuccessInput) => {
-      successCalls.push(input);
-      if (row) {
-        row = {
-          ...row,
-          status: "active",
-          metricValue: input.metricValue,
-          previousValue: input.previousValue,
-          capturedAt: input.capturedAt,
-        };
-      }
+    rows,
+    findAllByStartupId: async () => rows,
+    findByConnectorId: async () => rows[0],
+    upsertMetrics: async (input: UpsertCustomMetricsInput) => {
+      upsertCalls.push(input);
     },
     updateOnSyncFailure: async (input: UpdateCustomMetricFailureInput) => {
       failureCalls.push(input);
-      if (row) {
-        row = { ...row, status: "error" };
-      }
     },
   };
 }
@@ -180,11 +159,11 @@ function makeLog() {
 }
 
 // ============================================================================
-// 1. Successful Postgres sync
+// 1. Successful Postgres sync — multi-metric
 // ============================================================================
 
 describe("postgres custom metric sync — success", () => {
-  test("successful sync writes custom metric value", async () => {
+  test("successful sync upserts multiple custom metrics", async () => {
     const connector = makePostgresConnectorRow();
     const repo = createStubSyncRepo(connector);
     const customMetricRepo = createStubCustomMetricRepo();
@@ -192,14 +171,32 @@ describe("postgres custom metric sync — success", () => {
 
     const pgResult: PostgresSyncResult = {
       valid: true,
-      mrr: null,
-      supportingMetrics: null,
+      mrr: 9500,
+      supportingMetrics: { mrr: 9500, active_users: 320 },
       funnelStages: null,
-      customMetric: {
-        metricValue: 42_500.5,
-        previousValue: 41_200.0,
-        capturedAt: "2026-04-01T12:00:00.000Z",
-      },
+      customMetrics: [
+        {
+          key: "mrr",
+          label: "MRR",
+          value: 9500,
+          unit: "$",
+          category: "revenue",
+        },
+        {
+          key: "active_users",
+          label: "Active Users",
+          value: 320,
+          unit: "count",
+          category: "engagement",
+        },
+        {
+          key: "nps_score",
+          label: "NPS Score",
+          value: 72,
+          unit: "score",
+          category: "health",
+        },
+      ],
     };
 
     const processor = createSyncProcessor({
@@ -217,22 +214,24 @@ describe("postgres custom metric sync — success", () => {
     expect(repo.completedCalls).toHaveLength(1);
     expect(repo.completedCalls[0]?.connectorId).toBe("conn-pg-1");
 
-    // Custom metric updated
-    expect(customMetricRepo.successCalls).toHaveLength(1);
-    expect(customMetricRepo.successCalls[0]?.startupId).toBe("startup-1");
-    expect(customMetricRepo.successCalls[0]?.metricValue).toBe(42_500.5);
-    expect(customMetricRepo.successCalls[0]?.previousValue).toBe(41_200.0);
-    expect(customMetricRepo.successCalls[0]?.capturedAt).toEqual(
-      new Date("2026-04-01T12:00:00.000Z")
-    );
+    // Custom metrics upserted
+    expect(customMetricRepo.upsertCalls).toHaveLength(1);
+    const upsert = customMetricRepo.upsertCalls[0];
+    expect(upsert?.startupId).toBe("startup-1");
+    expect(upsert?.connectorId).toBe("conn-pg-1");
+    expect(upsert?.metrics).toHaveLength(3);
+    expect(upsert?.metrics[0]?.key).toBe("mrr");
+    expect(upsert?.metrics[0]?.value).toBe(9500);
+    expect(upsert?.metrics[1]?.key).toBe("active_users");
+    expect(upsert?.metrics[2]?.key).toBe("nps_score");
 
     // Log includes custom metric sync info
-    const syncLog = log.entries.find((e) => e.msg === "custom metric synced");
+    const syncLog = log.entries.find((e) => e.msg === "custom metrics synced");
     expect(syncLog).toBeDefined();
-    expect(syncLog?.meta?.metricValue).toBe(42_500.5);
+    expect(syncLog?.meta?.metricCount).toBe(3);
   });
 
-  test("first sync with null previous value", async () => {
+  test("single metric sync works", async () => {
     const connector = makePostgresConnectorRow();
     const repo = createStubSyncRepo(connector);
     const customMetricRepo = createStubCustomMetricRepo();
@@ -243,11 +242,15 @@ describe("postgres custom metric sync — success", () => {
       mrr: null,
       supportingMetrics: null,
       funnelStages: null,
-      customMetric: {
-        metricValue: 1000,
-        previousValue: null,
-        capturedAt: "2026-04-01T08:00:00.000Z",
-      },
+      customMetrics: [
+        {
+          key: "nps_score",
+          label: "NPS",
+          value: 85,
+          unit: "score",
+          category: "custom",
+        },
+      ],
     };
 
     const processor = createSyncProcessor({
@@ -260,9 +263,9 @@ describe("postgres custom metric sync — success", () => {
 
     await processor(makeFakeJob(makePayload()));
 
-    expect(customMetricRepo.successCalls).toHaveLength(1);
-    expect(customMetricRepo.successCalls[0]?.metricValue).toBe(1000);
-    expect(customMetricRepo.successCalls[0]?.previousValue).toBeNull();
+    expect(customMetricRepo.upsertCalls).toHaveLength(1);
+    expect(customMetricRepo.upsertCalls[0]?.metrics).toHaveLength(1);
+    expect(customMetricRepo.upsertCalls[0]?.metrics[0]?.value).toBe(85);
   });
 });
 
@@ -271,7 +274,7 @@ describe("postgres custom metric sync — success", () => {
 // ============================================================================
 
 describe("postgres custom metric sync — failure preserves last-good", () => {
-  test("connection failure marks custom metric as error without wiping data", async () => {
+  test("connection failure marks custom metrics as error without wiping data", async () => {
     const connector = makePostgresConnectorRow();
     const repo = createStubSyncRepo(connector);
     const customMetricRepo = createStubCustomMetricRepo();
@@ -283,7 +286,7 @@ describe("postgres custom metric sync — failure preserves last-good", () => {
       mrr: null,
       supportingMetrics: null,
       funnelStages: null,
-      customMetric: null,
+      customMetrics: [],
     };
 
     const processor = createSyncProcessor({
@@ -300,10 +303,10 @@ describe("postgres custom metric sync — failure preserves last-good", () => {
     expect(repo.failedCalls).toHaveLength(1);
     expect(repo.failedCalls[0]?.error).toContain("connection refused");
 
-    // Custom metric marked error, but no success update (last-good preserved)
+    // Custom metric marked error, but no upsert (last-good preserved)
     expect(customMetricRepo.failureCalls).toHaveLength(1);
     expect(customMetricRepo.failureCalls[0]?.status).toBe("error");
-    expect(customMetricRepo.successCalls).toHaveLength(0);
+    expect(customMetricRepo.upsertCalls).toHaveLength(0);
   });
 
   test("retryable timeout throws for BullMQ retry while preserving data", async () => {
@@ -319,7 +322,7 @@ describe("postgres custom metric sync — failure preserves last-good", () => {
       mrr: null,
       supportingMetrics: null,
       funnelStages: null,
-      customMetric: null,
+      customMetrics: [],
     };
 
     const processor = createSyncProcessor({
@@ -359,7 +362,7 @@ describe("postgres custom metric sync — failure preserves last-good", () => {
 
     // Sync job failed, but custom metric was never touched (no update calls)
     expect(repo.failedCalls).toHaveLength(1);
-    expect(customMetricRepo.successCalls).toHaveLength(0);
+    expect(customMetricRepo.upsertCalls).toHaveLength(0);
     expect(customMetricRepo.failureCalls).toHaveLength(0);
   });
 });
@@ -377,12 +380,11 @@ describe("postgres custom metric sync — malformed response handling", () => {
 
     const pgResult: PostgresSyncResult = {
       valid: false,
-      error:
-        "metric_value from public.daily_revenue is not a finite number: abc",
+      error: 'value for key "daily_revenue" is not a finite number: abc',
       mrr: null,
       supportingMetrics: null,
       funnelStages: null,
-      customMetric: null,
+      customMetrics: [],
     };
 
     const processor = createSyncProcessor({
@@ -397,7 +399,7 @@ describe("postgres custom metric sync — malformed response handling", () => {
 
     // Failed, not zeroed
     expect(repo.failedCalls).toHaveLength(1);
-    expect(customMetricRepo.successCalls).toHaveLength(0);
+    expect(customMetricRepo.upsertCalls).toHaveLength(0);
   });
 
   test("empty result set is rejected", async () => {
@@ -408,12 +410,12 @@ describe("postgres custom metric sync — malformed response handling", () => {
 
     const pgResult: PostgresSyncResult = {
       valid: false,
-      error: "Prepared view public.daily_revenue returned no rows.",
+      error: "porta_metrics view returned no rows.",
       retryable: true,
       mrr: null,
       supportingMetrics: null,
       funnelStages: null,
-      customMetric: null,
+      customMetrics: [],
     };
 
     const processor = createSyncProcessor({
@@ -435,16 +437,16 @@ describe("postgres custom metric sync — malformed response handling", () => {
 // ============================================================================
 
 describe("postgres custom metric sync — boundary conditions", () => {
-  test("custom metric update failure does not fail the sync job", async () => {
+  test("custom metric upsert failure does not fail the sync job", async () => {
     const connector = makePostgresConnectorRow();
     const repo = createStubSyncRepo(connector);
     const log = makeLog();
 
-    // Create a broken custom metric repo that throws on success update
+    // Create a broken custom metric repo that throws on upsert
     const brokenCustomMetricRepo: CustomMetricRepository = {
-      findByStartupId: async () => undefined,
+      findAllByStartupId: async () => [],
       findByConnectorId: async () => undefined,
-      updateOnSyncSuccess: async () => {
+      upsertMetrics: async () => {
         throw new Error("DB write failed");
       },
       updateOnSyncFailure: async () => {
@@ -457,11 +459,15 @@ describe("postgres custom metric sync — boundary conditions", () => {
       mrr: null,
       supportingMetrics: null,
       funnelStages: null,
-      customMetric: {
-        metricValue: 5000,
-        previousValue: null,
-        capturedAt: "2026-04-01T12:00:00.000Z",
-      },
+      customMetrics: [
+        {
+          key: "nps_score",
+          label: "NPS",
+          value: 85,
+          unit: "score",
+          category: "custom",
+        },
+      ],
     };
 
     const processor = createSyncProcessor({
@@ -492,11 +498,15 @@ describe("postgres custom metric sync — boundary conditions", () => {
       mrr: null,
       supportingMetrics: null,
       funnelStages: null,
-      customMetric: {
-        metricValue: 5000,
-        previousValue: null,
-        capturedAt: "2026-04-01T12:00:00.000Z",
-      },
+      customMetrics: [
+        {
+          key: "nps_score",
+          label: "NPS",
+          value: 85,
+          unit: "score",
+          category: "custom",
+        },
+      ],
     };
 
     const processor = createSyncProcessor({
@@ -524,7 +534,7 @@ describe("postgres custom metric sync — boundary conditions", () => {
         mrr: null,
         supportingMetrics: null,
         funnelStages: null,
-        customMetric: null,
+        customMetrics: [],
       }),
       log,
       customMetricRepo,
@@ -534,5 +544,34 @@ describe("postgres custom metric sync — boundary conditions", () => {
       "not found"
     );
     expect(repo.failedCalls).toHaveLength(1);
+  });
+
+  test("empty customMetrics array skips upsert", async () => {
+    const connector = makePostgresConnectorRow();
+    const repo = createStubSyncRepo(connector);
+    const customMetricRepo = createStubCustomMetricRepo();
+    const log = makeLog();
+
+    const pgResult: PostgresSyncResult = {
+      valid: true,
+      mrr: null,
+      supportingMetrics: null,
+      funnelStages: null,
+      customMetrics: [],
+    };
+
+    const processor = createSyncProcessor({
+      repo,
+      encryptionKey: TEST_ENCRYPTION_KEY,
+      validateProvider: createStubPostgresProvider(pgResult),
+      log,
+      customMetricRepo,
+    });
+
+    await processor(makeFakeJob(makePayload()));
+
+    expect(repo.completedCalls).toHaveLength(1);
+    // No upsert call since customMetrics is empty
+    expect(customMetricRepo.upsertCalls).toHaveLength(0);
   });
 });

@@ -12,21 +12,26 @@ import type {
 } from "@shared/connectors";
 import { isConnectorProvider } from "@shared/connectors";
 import { encryptConnectorConfig, parseEncryptionKey } from "@shared/crypto";
-import type {
-  CustomMetricSummary,
-  PostgresSetupInput,
-} from "@shared/custom-metric";
+import type { CustomMetricSummary } from "@shared/custom-metric";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { connector, syncJob } from "../db/schema/connector";
 import { customMetric } from "../db/schema/custom-metric";
-import type { PostgresValidator } from "../lib/connectors/postgres";
+import type {
+  PostgresSetupInput,
+  PostgresValidator,
+} from "../lib/connectors/postgres";
 import type {
   PostHogConfig,
   PostHogValidator,
   ProviderValidationResult,
 } from "../lib/connectors/posthog";
 import type { SyncQueueProducer } from "../lib/connectors/queue";
+import type { SentryConfig, SentryValidator } from "../lib/connectors/sentry";
 import type { StripeConfig, StripeValidator } from "../lib/connectors/stripe";
+import type {
+  YooKassaConfig,
+  YooKassaValidator,
+} from "../lib/connectors/yookassa";
 
 // ------------------------------------------------------------------
 // Types
@@ -43,7 +48,9 @@ interface ConnectorRuntime {
   postgresValidator: PostgresValidator;
   posthogValidator: PostHogValidator;
   queueProducer: SyncQueueProducer;
+  sentryValidator: SentryValidator;
   stripeValidator: StripeValidator;
+  yookassaValidator: YooKassaValidator;
 }
 
 interface WorkspaceContext {
@@ -179,29 +186,38 @@ function serializeCustomMetric(row: {
   id: string;
   startupId: string;
   connectorId: string;
+  key?: string;
+  category?: string;
   label: string;
   unit: string;
-  schema: string;
-  view: string;
-  status: string;
   metricValue: string | null;
   previousValue: string | null;
+  delta?: string | null;
   capturedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }): CustomMetricSummary {
+  const metricValue = row.metricValue === null ? null : Number(row.metricValue);
+  const previousValue =
+    row.previousValue === null ? null : Number(row.previousValue);
+  let delta: number | null = null;
+  if (row.delta != null) {
+    delta = Number(row.delta);
+  } else if (metricValue != null && previousValue != null) {
+    delta = metricValue - previousValue;
+  }
+
   return {
     id: row.id,
     startupId: row.startupId,
     connectorId: row.connectorId,
+    key: row.key ?? "",
+    category: (row.category ?? "custom") as CustomMetricSummary["category"],
     label: row.label,
     unit: row.unit,
-    schema: row.schema,
-    view: row.view,
-    status: row.status as CustomMetricSummary["status"],
-    metricValue: row.metricValue === null ? null : Number(row.metricValue),
-    previousValue:
-      row.previousValue === null ? null : Number(row.previousValue),
+    metricValue,
+    previousValue,
+    delta,
     capturedAt: toIso(row.capturedAt),
     createdAt: requireIsoTimestamp(row.createdAt, "customMetric.createdAt"),
     updatedAt: requireIsoTimestamp(row.updatedAt, "customMetric.updatedAt"),
@@ -222,7 +238,7 @@ function parseCreateConnectorRequest(
   if (!isConnectorProvider(body.provider)) {
     return createErrorResponse(set, 400, {
       code: "UNSUPPORTED_PROVIDER",
-      message: `Provider must be one of: posthog, stripe, postgres. Received: ${body.provider}`,
+      message: `Provider must be one of: posthog, stripe, postgres, yookassa, sentry. Received: ${body.provider}`,
     });
   }
 
@@ -342,11 +358,10 @@ async function maybeCreateCustomMetricSummary(
       id: customMetricId,
       startupId,
       connectorId,
+      key: config?.key ?? "",
       label: config?.label ?? "",
       unit: config?.unit ?? "",
-      schema: config?.schema ?? "",
-      view: config?.view ?? "",
-      status: "pending",
+      category: config?.category ?? "custom",
     })
     .returning();
 
@@ -360,8 +375,6 @@ async function maybeCreateCustomMetricSummary(
     customMetricId,
     startupId,
     label: config?.label,
-    schema: config?.schema,
-    view: config?.view,
   });
 
   return customMetricSummary;
@@ -438,12 +451,25 @@ async function validateProviderConfig(
   if (provider === "postgres") {
     const pgInput: PostgresSetupInput = {
       connectionUri: config.connectionUri ?? "",
-      schema: config.schema ?? "",
-      view: config.view ?? "",
-      label: config.label ?? "",
-      unit: config.unit ?? "",
     };
     return runtime.postgresValidator.validate(pgInput);
+  }
+
+  if (provider === "yookassa") {
+    const yookassaConfig: YooKassaConfig = {
+      shopId: config.shopId ?? "",
+      secretKey: config.secretKey ?? "",
+    };
+    return runtime.yookassaValidator.validate(yookassaConfig);
+  }
+
+  if (provider === "sentry") {
+    const sentryConfig: SentryConfig = {
+      authToken: config.authToken ?? "",
+      organization: config.organization ?? "",
+      project: config.project ?? "",
+    };
+    return runtime.sentryValidator.validate(sentryConfig);
   }
 
   return { valid: false, error: `Unsupported provider: ${provider}` };

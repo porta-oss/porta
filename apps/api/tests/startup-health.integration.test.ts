@@ -8,10 +8,6 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { HealthSnapshotSummary } from "@shared/startup-health";
-import {
-  emptyFunnelStages,
-  emptySupportingMetrics,
-} from "@shared/startup-health";
 import type { StartupDraft } from "@shared/types";
 import { convertSetCookieToCookie } from "better-auth/test";
 
@@ -177,7 +173,7 @@ describe("startup health integration", () => {
     const db = getApp().runtime.db.db;
     const { sql } = await import("drizzle-orm");
     const snapshotId = `snap-${Date.now()}`;
-    const metrics = JSON.stringify(emptySupportingMetrics());
+    const metrics = JSON.stringify({});
 
     await db.execute(
       sql`INSERT INTO health_snapshot (id, startup_id, health_state, blocked_reason, north_star_key, north_star_value, north_star_previous_value, supporting_metrics, sync_job_id, computed_at)
@@ -185,11 +181,21 @@ describe("startup health integration", () => {
     );
 
     // Insert funnel stages
-    const stages = emptyFunnelStages();
+    const stages = [
+      { key: "visitor", label: "Visitors", value: 0, position: 0 },
+      { key: "signup", label: "Sign-ups", value: 0, position: 1 },
+      { key: "activation", label: "Activated", value: 0, position: 2 },
+      {
+        key: "paying_customer",
+        label: "Paying Customers",
+        value: 0,
+        position: 3,
+      },
+    ];
     for (const stage of stages) {
       await db.execute(
-        sql`INSERT INTO health_funnel_stage (id, startup_id, stage, label, value, position, snapshot_id)
-            VALUES (${`fs-${stage.stage}-${Date.now()}`}, ${startupId}, ${stage.stage}, ${stage.label}, ${stage.value}, ${stage.position}, ${snapshotId})`
+        sql`INSERT INTO health_funnel_stage (id, startup_id, key, label, value, position, snapshot_id)
+            VALUES (${`fs-${stage.key}-${Date.now()}`}, ${startupId}, ${stage.key}, ${stage.label}, ${stage.value}, ${stage.position}, ${snapshotId})`
       );
     }
 
@@ -233,7 +239,7 @@ describe("startup health integration", () => {
 
     // First snapshot
     const snap1Id = `snap1-${Date.now()}`;
-    const metrics1 = JSON.stringify(emptySupportingMetrics());
+    const metrics1 = JSON.stringify({});
 
     await db.execute(
       sql`DELETE FROM health_funnel_stage WHERE startup_id = ${startupId}`
@@ -247,16 +253,26 @@ describe("startup health integration", () => {
           VALUES (${snap1Id}, ${startupId}, 'ready', ${null}, 'mrr', ${1000}, ${null}, ${metrics1}::jsonb, ${"job-1"}, ${new Date()})`
     );
 
-    for (const stage of emptyFunnelStages()) {
+    for (const stage of [
+      { key: "visitor", label: "Visitors", value: 0, position: 0 },
+      { key: "signup", label: "Sign-ups", value: 0, position: 1 },
+      { key: "activation", label: "Activated", value: 0, position: 2 },
+      {
+        key: "paying_customer",
+        label: "Paying Customers",
+        value: 0,
+        position: 3,
+      },
+    ]) {
       await db.execute(
-        sql`INSERT INTO health_funnel_stage (id, startup_id, stage, label, value, position, snapshot_id)
-            VALUES (${`fs1-${stage.stage}-${Date.now()}`}, ${startupId}, ${stage.stage}, ${stage.label}, ${10}, ${stage.position}, ${snap1Id})`
+        sql`INSERT INTO health_funnel_stage (id, startup_id, key, label, value, position, snapshot_id)
+            VALUES (${`fs1-${stage.key}-${Date.now()}`}, ${startupId}, ${stage.key}, ${stage.label}, ${10}, ${stage.position}, ${snap1Id})`
       );
     }
 
     // Replace with second snapshot
     const snap2Id = `snap2-${Date.now()}`;
-    const metrics2 = JSON.stringify(emptySupportingMetrics());
+    const metrics2 = JSON.stringify({});
 
     await db.execute(
       sql`DELETE FROM health_funnel_stage WHERE startup_id = ${startupId}`
@@ -270,10 +286,20 @@ describe("startup health integration", () => {
           VALUES (${snap2Id}, ${startupId}, 'ready', ${null}, 'mrr', ${2000}, ${1000}, ${metrics2}::jsonb, ${"job-2"}, ${new Date()})`
     );
 
-    for (const stage of emptyFunnelStages()) {
+    for (const stage of [
+      { key: "visitor", label: "Visitors", value: 0, position: 0 },
+      { key: "signup", label: "Sign-ups", value: 0, position: 1 },
+      { key: "activation", label: "Activated", value: 0, position: 2 },
+      {
+        key: "paying_customer",
+        label: "Paying Customers",
+        value: 0,
+        position: 3,
+      },
+    ]) {
       await db.execute(
-        sql`INSERT INTO health_funnel_stage (id, startup_id, stage, label, value, position, snapshot_id)
-            VALUES (${`fs2-${stage.stage}-${Date.now()}`}, ${startupId}, ${stage.stage}, ${stage.label}, ${20}, ${stage.position}, ${snap2Id})`
+        sql`INSERT INTO health_funnel_stage (id, startup_id, key, label, value, position, snapshot_id)
+            VALUES (${`fs2-${stage.key}-${Date.now()}`}, ${startupId}, ${stage.key}, ${stage.label}, ${20}, ${stage.position}, ${snap2Id})`
       );
     }
 
@@ -284,8 +310,8 @@ describe("startup health integration", () => {
     expect(snapResult.rows.length).toBe(1);
     const snap = snapResult.rows[0] as any;
     expect(snap.id).toBe(snap2Id);
-    expect(snap.north_star_value).toBe(2000);
-    expect(snap.north_star_previous_value).toBe(1000);
+    expect(Number(snap.north_star_value)).toBe(2000);
+    expect(Number(snap.north_star_previous_value)).toBe(1000);
 
     const funnelResult = await db.execute(
       sql`SELECT * FROM health_funnel_stage WHERE startup_id = ${startupId} ORDER BY position`

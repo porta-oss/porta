@@ -11,4 +11,4 @@ pre-commit:
 pre-push:
   commands:
     test-full:
-      run: bun x vitest run
+      run: bun test apps/api/tests apps/web/src

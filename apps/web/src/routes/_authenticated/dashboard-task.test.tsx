@@ -92,18 +92,19 @@ function createHealthyPayload(): StartupHealthPayload {
       northStarValue: 12_500,
       northStarPreviousValue: 11_000,
       supportingMetrics: {
-        active_users: { value: 340, previous: 300 },
-        customer_count: { value: 42, previous: 38 },
-        churn_rate: { value: 2.1, previous: 2.5 },
-        arpu: { value: 297, previous: 289 },
-        trial_conversion_rate: { value: 18.5, previous: 16.2 },
+        active_users: 340,
+        churn_rate: 2.1,
+        arpu: 297,
+        mrr: 12_500,
+        error_rate: 0.5,
+        growth_rate: 13.6,
       },
       funnel: [
-        { stage: "visitor", label: "Visitors", value: 8200, position: 0 },
-        { stage: "signup", label: "Sign-ups", value: 620, position: 1 },
-        { stage: "activation", label: "Activated", value: 210, position: 2 },
+        { key: "visitor", label: "Visitors", value: 8200, position: 0 },
+        { key: "signup", label: "Sign-ups", value: 620, position: 1 },
+        { key: "activation", label: "Activated", value: 210, position: 2 },
         {
-          stage: "paying_customer",
+          key: "paying_customer",
           label: "Paying Customers",
           value: 42,
           position: 3,
@@ -267,6 +268,21 @@ function createApi(overrides: Partial<DashboardApi> = {}): DashboardApi {
       mock(async () => {
         throw new Error("not implemented");
       }),
+    listAlerts: overrides.listAlerts ?? mock(async () => ({ alerts: [] })),
+    listEvents:
+      overrides.listEvents ??
+      mock(async () => ({
+        events: [],
+        pagination: { cursor: null, hasMore: false, limit: 50 },
+      })),
+    triageAlert:
+      overrides.triageAlert ??
+      mock(async () => {
+        throw new Error("not implemented");
+      }),
+    fetchPortfolioSummary:
+      overrides.fetchPortfolioSummary ?? mock(async () => ({ startups: [] })),
+    fetchStreak: overrides.fetchStreak ?? mock(async () => ({ streak: null })),
   };
 }
 

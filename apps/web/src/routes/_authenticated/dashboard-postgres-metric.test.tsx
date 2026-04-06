@@ -64,13 +64,13 @@ function createCustomMetric(
     id: "cm_1",
     startupId: `${WORKSPACE_A.id}_Acme Analytics`,
     connectorId: "connector_postgres",
+    key: "daily_revenue",
+    category: "revenue",
     label: "Daily Revenue",
     unit: "$",
-    schema: "public",
-    view: "daily_revenue",
-    status: "active",
     metricValue: 4250,
     previousValue: 3900,
+    delta: 350,
     capturedAt: "2026-01-02T12:00:00.000Z",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-02T12:00:00.000Z",
@@ -122,18 +122,19 @@ function createHealthyPayload(
       northStarValue: 12_500,
       northStarPreviousValue: 11_000,
       supportingMetrics: {
-        active_users: { value: 340, previous: 300 },
-        customer_count: { value: 42, previous: 38 },
-        churn_rate: { value: 2.1, previous: 2.5 },
-        arpu: { value: 297, previous: 289 },
-        trial_conversion_rate: { value: 18.5, previous: 16.2 },
+        active_users: 340,
+        churn_rate: 2.1,
+        arpu: 297,
+        mrr: 12_500,
+        error_rate: 0.5,
+        growth_rate: 13.6,
       },
       funnel: [
-        { stage: "visitor", label: "Visitors", value: 8200, position: 0 },
-        { stage: "signup", label: "Sign-ups", value: 620, position: 1 },
-        { stage: "activation", label: "Activated", value: 210, position: 2 },
+        { key: "visitor", label: "Visitors", value: 8200, position: 0 },
+        { key: "signup", label: "Sign-ups", value: 620, position: 1 },
+        { key: "activation", label: "Activated", value: 210, position: 2 },
         {
-          stage: "paying_customer",
+          key: "paying_customer",
           label: "Paying Customers",
           value: 42,
           position: 3,
@@ -237,6 +238,21 @@ function createApi(overrides: Partial<DashboardApi> = {}): DashboardApi {
       mock(async () => {
         throw new Error("not implemented");
       }),
+    listAlerts: overrides.listAlerts ?? mock(async () => ({ alerts: [] })),
+    listEvents:
+      overrides.listEvents ??
+      mock(async () => ({
+        events: [],
+        pagination: { cursor: null, hasMore: false, limit: 50 },
+      })),
+    triageAlert:
+      overrides.triageAlert ??
+      mock(async () => {
+        throw new Error("not implemented");
+      }),
+    fetchPortfolioSummary:
+      overrides.fetchPortfolioSummary ?? mock(async () => ({ startups: [] })),
+    fetchStreak: overrides.fetchStreak ?? mock(async () => ({ streak: null })),
   };
 }
 
@@ -346,9 +362,8 @@ describe("postgres custom metric on dashboard", () => {
     expect(configuredCard.textContent).toContain("Daily Revenue");
   });
 
-  test("shows error state in custom metric panel when metric has error status", async () => {
+  test("shows custom metric panel with synced value", async () => {
     const cm = createCustomMetric({
-      status: "error",
       metricValue: 4250,
       previousValue: 3900,
     });
@@ -370,14 +385,12 @@ describe("postgres custom metric on dashboard", () => {
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
 
     const panel = view.getByTestId("custom-metric-panel");
-    expect(panel.textContent).toContain("Sync failed");
-    // Last-good value should still be visible
-    expect(panel.textContent).toContain("Last known");
+    // Metric value should be visible
+    expect(panel.textContent).toContain("4,250");
   });
 
   test("shows pending state when custom metric is waiting for first sync", async () => {
     const cm = createCustomMetric({
-      status: "pending",
       metricValue: null,
       previousValue: null,
       capturedAt: null,
@@ -406,7 +419,11 @@ describe("postgres custom metric on dashboard", () => {
   test("validates blank fields before submitting postgres setup", async () => {
     const createPostgresMetric = mock(async () => ({
       connector: createConnector("postgres", "pending"),
-      customMetric: createCustomMetric({ status: "pending" }),
+      customMetric: createCustomMetric({
+        metricValue: null,
+        previousValue: null,
+        capturedAt: null,
+      }),
     }));
     const api = createApi({ createPostgresMetric });
     const view = render(
@@ -431,7 +448,11 @@ describe("postgres custom metric on dashboard", () => {
   test("validates connection URI scheme before submitting", async () => {
     const createPostgresMetric = mock(async () => ({
       connector: createConnector("postgres", "pending"),
-      customMetric: createCustomMetric({ status: "pending" }),
+      customMetric: createCustomMetric({
+        metricValue: null,
+        previousValue: null,
+        capturedAt: null,
+      }),
     }));
     const api = createApi({ createPostgresMetric });
     const view = render(
@@ -446,10 +467,6 @@ describe("postgres custom metric on dashboard", () => {
     setNativeInputValue(
       view.getByLabelText("Connection URI") as HTMLInputElement,
       "mysql://bad:uri@host/db"
-    );
-    setNativeInputValue(
-      view.getByLabelText("View") as HTMLInputElement,
-      "daily_revenue"
     );
     setNativeInputValue(
       view.getByLabelText("Label") as HTMLInputElement,
@@ -469,7 +486,11 @@ describe("postgres custom metric on dashboard", () => {
   test("validates blank label and unit before submitting", async () => {
     const createPostgresMetric = mock(async () => ({
       connector: createConnector("postgres", "pending"),
-      customMetric: createCustomMetric({ status: "pending" }),
+      customMetric: createCustomMetric({
+        metricValue: null,
+        previousValue: null,
+        capturedAt: null,
+      }),
     }));
     const api = createApi({ createPostgresMetric });
     const view = render(
@@ -485,10 +506,6 @@ describe("postgres custom metric on dashboard", () => {
       view.getByLabelText("Connection URI") as HTMLInputElement,
       "postgresql://user:pass@host:5432/db"
     );
-    setNativeInputValue(
-      view.getByLabelText("View") as HTMLInputElement,
-      "daily_revenue"
-    );
     // label and unit left blank
 
     fireEvent.click(view.getByRole("button", { name: "Add Postgres metric" }));
@@ -502,7 +519,6 @@ describe("postgres custom metric on dashboard", () => {
 
   test("submits valid postgres setup and shows configured state", async () => {
     const newMetric = createCustomMetric({
-      status: "pending",
       metricValue: null,
       previousValue: null,
       capturedAt: null,
@@ -524,10 +540,6 @@ describe("postgres custom metric on dashboard", () => {
     setNativeInputValue(
       view.getByLabelText("Connection URI") as HTMLInputElement,
       "postgresql://user:pass@host:5432/db"
-    );
-    setNativeInputValue(
-      view.getByLabelText("View") as HTMLInputElement,
-      "daily_revenue"
     );
     setNativeInputValue(
       view.getByLabelText("Label") as HTMLInputElement,
@@ -565,10 +577,6 @@ describe("postgres custom metric on dashboard", () => {
     setNativeInputValue(
       view.getByLabelText("Connection URI") as HTMLInputElement,
       "postgresql://user:pass@host:5432/db"
-    );
-    setNativeInputValue(
-      view.getByLabelText("View") as HTMLInputElement,
-      "daily_revenue"
     );
     setNativeInputValue(
       view.getByLabelText("Label") as HTMLInputElement,
@@ -646,7 +654,6 @@ describe("postgres custom metric on dashboard", () => {
 
   test("error-state custom metric shows no-data guidance when metric has never synced", async () => {
     const cm = createCustomMetric({
-      status: "error",
       metricValue: null,
       previousValue: null,
       capturedAt: null,
@@ -669,10 +676,7 @@ describe("postgres custom metric on dashboard", () => {
     expect(await view.findByLabelText("startup health hero")).toBeTruthy();
 
     const panel = view.getByTestId("custom-metric-panel");
-    expect(panel.textContent).toContain("No data has been synced yet");
-    expect(panel.textContent).toContain(
-      "Check the Postgres connector configuration"
-    );
+    expect(panel.textContent).toContain("Waiting for the first sync");
   });
 });
 

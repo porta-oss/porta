@@ -14,13 +14,15 @@ import type {
   SyncJobPayload,
 } from "@shared/connectors";
 import { decryptConnectorConfig, parseEncryptionKey } from "@shared/crypto";
-import type { SupportingMetricsSnapshot } from "@shared/startup-health";
+import type { UniversalMetrics } from "@shared/universal-metrics";
 import type { Job } from "bullmq";
 import type { ExplainerFn } from "../insights";
 import { generateInsight } from "../insights";
 import type { PostgresSyncResult, ProviderSyncResult } from "../providers";
 import { mergeFunnel, mergeMetrics } from "../providers";
 import type {
+  AlertEvaluationResult,
+  AlertRepository,
   CustomMetricRepository,
   HealthSnapshotRepository,
   InsightRepository,
@@ -68,7 +70,26 @@ export type ProviderValidateFn = (
   configJson: string
 ) => Promise<ProviderValidationResult>;
 
+/** Webhook dispatch interface — abstracts config lookup and job enqueuing. */
+export interface WebhookDispatcher {
+  /** Enqueue a webhook delivery job. */
+  enqueue(job: {
+    deliveryId: string;
+    eventType: string;
+    payload: Record<string, unknown>;
+    startupId: string;
+    webhookConfigId: string;
+  }): Promise<void>;
+  /** Find enabled webhook config for a startup. Returns null if none. */
+  findEnabledConfig(
+    startupId: string
+  ): Promise<{ id: string; eventTypes: string[] } | null>;
+}
+
 export interface SyncProcessorDeps {
+  /** Optional alert repository — when provided, the processor evaluates
+   *  alert rules, seeds defaults, and updates streaks after snapshot recompute. */
+  alertRepo?: AlertRepository;
   /** Optional custom metric repository — when provided, the processor
    *  updates custom metric data after successful Postgres syncs. */
   customMetricRepo?: CustomMetricRepository;
@@ -88,6 +109,9 @@ export interface SyncProcessorDeps {
   };
   repo: SyncRepository;
   validateProvider: ProviderValidateFn;
+  /** Optional webhook dispatcher — when provided, the processor enqueues
+   *  webhook delivery jobs after alerts fire. */
+  webhookDispatcher?: WebhookDispatcher;
 }
 
 /**
@@ -114,18 +138,17 @@ async function recomputeSnapshot(
   syncJobId: string,
   syncResult: ProviderSyncResult,
   logCtx: Record<string, unknown>
-): Promise<void> {
+): Promise<UniversalMetrics | null> {
   if (!deps.healthRepo) {
-    return;
+    return null;
   }
 
   try {
     // Read the previous snapshot for delta computation
     const previous = await deps.healthRepo.findSnapshot(startupId);
-    const previousMetrics: SupportingMetricsSnapshot | null =
-      previous?.supportingMetrics
-        ? (previous.supportingMetrics as SupportingMetricsSnapshot)
-        : null;
+    const previousMetrics: UniversalMetrics | null = previous?.supportingMetrics
+      ? (previous.supportingMetrics as UniversalMetrics)
+      : null;
 
     const previousMrr = previous?.northStarValue ?? null;
 
@@ -134,13 +157,12 @@ async function recomputeSnapshot(
     const stripeMetrics = isStripeResult ? syncResult.supportingMetrics : null;
     const posthogMetrics = isStripeResult ? null : syncResult.supportingMetrics;
 
-    // If we have a previous snapshot and this sync only covers one provider,
-    // carry forward the other provider's metrics from the previous snapshot
-    const mergedMetrics = mergeMetrics(
-      stripeMetrics,
-      posthogMetrics,
-      previousMetrics
-    );
+    // Merge metrics from both providers, carrying forward previous values
+    const freshMetrics = mergeMetrics(stripeMetrics, posthogMetrics);
+    const mergedMetrics: UniversalMetrics = {
+      ...previousMetrics,
+      ...freshMetrics,
+    };
     const mergedFunnel = mergeFunnel(syncResult.funnelStages);
 
     // MRR: use this sync's value if from Stripe, else carry forward
@@ -161,16 +183,26 @@ async function recomputeSnapshot(
       supportingMetrics: mergedMetrics,
       syncJobId,
       computedAt,
-      funnel: mergedFunnel.map((stage) => ({
+      funnel: mergedFunnel.map((row) => ({
         id: randomUUID(),
-        stage: stage.stage,
-        label: stage.label,
-        value: stage.value,
-        position: stage.position,
+        key: row.key,
+        label: row.label,
+        value: row.value,
+        position: row.position,
       })),
     };
 
     await deps.healthRepo.replaceSnapshot(input);
+
+    // Record metric values into health_snapshot_history for trend tracking.
+    await deps.healthRepo.recordHistory({
+      startupId,
+      snapshotId,
+      northStarKey: "mrr",
+      northStarValue: mrr,
+      supportingMetrics: mergedMetrics as Record<string, number>,
+      capturedAt: computedAt,
+    });
 
     deps.log.info("health snapshot recomputed", {
       ...logCtx,
@@ -179,6 +211,8 @@ async function recomputeSnapshot(
       mrr,
       computedAt: computedAt.toISOString(),
     });
+
+    return mergedMetrics;
   } catch (err) {
     // Snapshot recompute failure must not fail the sync job.
     // The previous snapshot (if any) stays intact.
@@ -189,6 +223,7 @@ async function recomputeSnapshot(
         error: err instanceof Error ? err.message : String(err),
       }
     );
+    return null;
   }
 }
 
@@ -336,11 +371,140 @@ async function maybeGenerateInsight(
   }
 }
 
+const ALERT_EVALUATION_TIMEOUT_MS = 30_000;
+
+/**
+ * Process alerts after a successful sync: seed defaults on first sync,
+ * evaluate rules with z-score anomaly detection, and update the health streak.
+ * Returns fired alert results for downstream webhook dispatch.
+ * Failures are logged but never cause the sync job to fail.
+ */
+async function maybeProcessAlerts(
+  deps: SyncProcessorDeps,
+  startupId: string,
+  mergedMetrics: UniversalMetrics,
+  logCtx: Record<string, unknown>
+): Promise<AlertEvaluationResult[]> {
+  if (!deps.alertRepo) {
+    return [];
+  }
+
+  try {
+    // Seed default alert rules on first sync (if startup has none)
+    const metricKeys = Object.keys(mergedMetrics).filter(
+      (k) => mergedMetrics[k as keyof UniversalMetrics] != null
+    );
+    // Always include "mrr" as a known metric key
+    if (!metricKeys.includes("mrr")) {
+      metricKeys.push("mrr");
+    }
+    const seeded = await deps.alertRepo.seedDefaultAlerts(
+      startupId,
+      metricKeys
+    );
+    if (seeded > 0) {
+      deps.log.info("default alert rules seeded", {
+        ...logCtx,
+        rulesSeeded: seeded,
+      });
+    }
+
+    // Evaluate alert rules with 30s timeout
+    const evaluationPromise = deps.alertRepo.evaluateAlerts(startupId);
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(
+        () => reject(new Error("alert evaluation timed out (30s)")),
+        ALERT_EVALUATION_TIMEOUT_MS
+      );
+    });
+    const results = await Promise.race([evaluationPromise, timeoutPromise]);
+
+    deps.log.info("alert evaluation complete", {
+      ...logCtx,
+      alertsFired: results.length,
+      newAlerts: results.filter((r) => r.isNew).length,
+    });
+
+    // Update streak: count active alerts to decide increment vs reset
+    const activeCount = await deps.alertRepo.countActiveAlerts(startupId);
+    await deps.alertRepo.updateStreak(startupId, activeCount > 0);
+
+    return results;
+  } catch (err) {
+    // Alert processing failure must not fail the sync job.
+    deps.log.error("alert processing failed — sync job unaffected", {
+      ...logCtx,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  }
+}
+
+/**
+ * Dispatch webhook delivery jobs for fired alerts.
+ * Checks if the startup has an enabled webhook config subscribed to "alert.fired",
+ * then enqueues a delivery job per fired alert.
+ * Failures are logged but never cause the sync job to fail.
+ */
+async function maybeDispatchWebhooks(
+  deps: SyncProcessorDeps,
+  startupId: string,
+  alertResults: AlertEvaluationResult[],
+  logCtx: Record<string, unknown>
+) {
+  if (!deps.webhookDispatcher || alertResults.length === 0) {
+    return;
+  }
+
+  try {
+    const config = await deps.webhookDispatcher.findEnabledConfig(startupId);
+    if (!config) {
+      return;
+    }
+
+    // Only dispatch if the webhook is subscribed to "alert.fired"
+    if (!config.eventTypes.includes("alert.fired")) {
+      return;
+    }
+
+    for (const alert of alertResults) {
+      const deliveryId = randomUUID();
+      await deps.webhookDispatcher.enqueue({
+        deliveryId,
+        eventType: "alert.fired",
+        payload: {
+          alertId: alert.alertId,
+          isNew: alert.isNew,
+          metricKey: alert.metricKey,
+          ruleId: alert.ruleId,
+          severity: alert.severity,
+          value: alert.value,
+        },
+        startupId,
+        webhookConfigId: config.id,
+      });
+    }
+
+    deps.log.info("webhook delivery jobs enqueued for fired alerts", {
+      ...logCtx,
+      webhookConfigId: config.id,
+      jobsEnqueued: alertResults.length,
+    });
+  } catch (err) {
+    // Webhook dispatch failure must not fail the sync job.
+    deps.log.error("webhook dispatch failed — sync job unaffected", {
+      ...logCtx,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 async function maybeUpdatePostgresMetricOnSuccess(
   deps: SyncProcessorDeps,
   provider: ConnectorProvider,
   result: ProviderValidationResult,
   startupId: string,
+  connectorId: string,
   logCtx: Record<string, unknown>
 ) {
   if (!(provider === "postgres" && deps.customMetricRepo)) {
@@ -348,21 +512,19 @@ async function maybeUpdatePostgresMetricOnSuccess(
   }
 
   const pgResult = result as PostgresSyncResult;
-  if (!pgResult.customMetric) {
+  if (!pgResult.customMetrics || pgResult.customMetrics.length === 0) {
     return;
   }
 
   try {
-    await deps.customMetricRepo.updateOnSyncSuccess({
+    await deps.customMetricRepo.upsertMetrics({
       startupId,
-      metricValue: pgResult.customMetric.metricValue,
-      previousValue: pgResult.customMetric.previousValue,
-      capturedAt: new Date(pgResult.customMetric.capturedAt),
+      connectorId,
+      metrics: pgResult.customMetrics,
     });
-    deps.log.info("custom metric synced", {
+    deps.log.info("custom metrics synced", {
       ...logCtx,
-      metricValue: pgResult.customMetric.metricValue,
-      capturedAt: pgResult.customMetric.capturedAt,
+      metricCount: pgResult.customMetrics.length,
     });
   } catch (err) {
     deps.log.error("custom metric update failed — previous data preserved", {
@@ -485,7 +647,7 @@ export function createSyncProcessor(deps: SyncProcessorDeps) {
       // Recompute health snapshot if the result includes sync data
       const syncResult = result as ProviderSyncResult;
       if ("mrr" in syncResult || "supportingMetrics" in syncResult) {
-        await recomputeSnapshot(
+        const mergedMetrics = await recomputeSnapshot(
           deps,
           job.data.startupId,
           syncJobId,
@@ -493,6 +655,24 @@ export function createSyncProcessor(deps: SyncProcessorDeps) {
           logCtx
         );
         await maybeGenerateInsight(deps, job.data.startupId, syncJobId, logCtx);
+
+        // Evaluate alerts after snapshot recompute + history recording
+        if (mergedMetrics) {
+          const alertResults = await maybeProcessAlerts(
+            deps,
+            job.data.startupId,
+            mergedMetrics,
+            logCtx
+          );
+
+          // Dispatch webhooks for fired alerts
+          await maybeDispatchWebhooks(
+            deps,
+            job.data.startupId,
+            alertResults,
+            logCtx
+          );
+        }
       }
 
       await maybeUpdatePostgresMetricOnSuccess(
@@ -500,6 +680,7 @@ export function createSyncProcessor(deps: SyncProcessorDeps) {
         provider,
         result,
         job.data.startupId,
+        connectorId,
         logCtx
       );
     } else {

@@ -47,14 +47,14 @@ export function StartupFunnelPanel({
             <section
               aria-label={stage.label}
               className="grid gap-0.5"
-              key={stage.stage}
+              key={stage.key}
             >
               <div className="flex items-baseline justify-between">
                 <span className="font-medium text-sm">{stage.label}</span>
                 <div className="flex items-baseline gap-2">
                   <span
                     className={`font-semibold text-sm tabular-nums ${muted ? "text-muted-foreground" : "text-foreground"}`}
-                    data-testid={`funnel-${stage.stage}`}
+                    data-testid={`funnel-${stage.key}`}
                   >
                     {formatFunnelValue(stage.value)}
                   </span>

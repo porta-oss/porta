@@ -2,7 +2,6 @@ import type { CustomMetricSummary } from "@shared/custom-metric";
 import { useState } from "react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -17,9 +16,7 @@ import { Label } from "@/components/ui/label";
 export interface PostgresSetupFormValues {
   connectionUri: string;
   label: string;
-  schema: string;
   unit: string;
-  view: string;
 }
 
 export interface PostgresCustomMetricCardProps {
@@ -27,8 +24,6 @@ export interface PostgresCustomMetricCardProps {
   existing: CustomMetricSummary | null;
   onSetup: (values: PostgresSetupFormValues) => Promise<void>;
 }
-
-const SQL_IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/;
 
 function validateSetupFields(values: PostgresSetupFormValues): string | null {
   if (!values.connectionUri.trim()) {
@@ -41,20 +36,6 @@ function validateSetupFields(values: PostgresSetupFormValues): string | null {
     }
   } catch {
     return "Connection URI must be a valid URL with the postgres:// or postgresql:// scheme.";
-  }
-
-  if (!values.schema.trim()) {
-    return "Schema name is required.";
-  }
-  if (!SQL_IDENTIFIER_RE.test(values.schema.trim())) {
-    return "Schema must be SQL-safe: start with a letter or underscore, only letters/digits/underscores, max 63 characters.";
-  }
-
-  if (!values.view.trim()) {
-    return "View name is required.";
-  }
-  if (!SQL_IDENTIFIER_RE.test(values.view.trim())) {
-    return "View must be SQL-safe: start with a letter or underscore, only letters/digits/underscores, max 63 characters.";
   }
 
   if (!values.label.trim()) {
@@ -83,38 +64,18 @@ export function PostgresCustomMetricCard({
   const [submitting, setSubmitting] = useState(false);
 
   if (existing) {
-    let statusLabel: string;
-    if (existing.status === "active") {
-      statusLabel = "Syncing";
-    } else if (existing.status === "error") {
-      statusLabel = "Sync failed";
-    } else {
-      statusLabel = "Pending sync";
-    }
-
     return (
       <Card
         aria-label="postgres custom metric"
-        className={
-          existing.status === "error"
-            ? "border-danger-border bg-danger-bg"
-            : "border-success-border bg-success-bg"
-        }
+        className="border-success-border bg-success-bg"
         data-testid="postgres-custom-metric-configured"
       >
         <CardContent className="pt-5">
           <div className="flex items-center justify-between">
             <p className="font-semibold">Postgres Custom Metric</p>
-            <Badge
-              variant={
-                existing.status === "error" ? "destructive" : "secondary"
-              }
-            >
-              {statusLabel}
-            </Badge>
           </div>
           <p className="mt-1 text-sm">
-            {existing.label} ({existing.schema}.{existing.view})
+            {existing.label} ({existing.key})
           </p>
         </CardContent>
       </Card>
@@ -137,8 +98,6 @@ export function PostgresCustomMetricCard({
     try {
       await onSetup({
         connectionUri: values.connectionUri.trim(),
-        schema: values.schema.trim(),
-        view: values.view.trim(),
         label: values.label.trim(),
         unit: values.unit.trim(),
       });
@@ -173,8 +132,6 @@ export function PostgresCustomMetricCard({
             const formData = new FormData(event.currentTarget);
             void handleSubmit({
               connectionUri: String(formData.get("connectionUri") ?? ""),
-              schema: String(formData.get("schema") ?? ""),
-              view: String(formData.get("view") ?? ""),
               label: String(formData.get("label") ?? ""),
               unit: String(formData.get("unit") ?? ""),
             });
@@ -189,30 +146,6 @@ export function PostgresCustomMetricCard({
               name="connectionUri"
               placeholder="postgresql://user:pass@host:5432/db"
               type="password"
-            />
-          </div>
-
-          <div className="grid gap-1.5">
-            <Label htmlFor="pg-schema">Schema</Label>
-            <Input
-              defaultValue="public"
-              disabled={isDisabled}
-              id="pg-schema"
-              name="schema"
-              placeholder="public"
-              type="text"
-            />
-          </div>
-
-          <div className="grid gap-1.5">
-            <Label htmlFor="pg-view">View</Label>
-            <Input
-              defaultValue=""
-              disabled={isDisabled}
-              id="pg-view"
-              name="view"
-              placeholder="daily_revenue"
-              type="text"
             />
           </div>
 

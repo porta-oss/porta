@@ -1,24 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { FunnelStageRow } from "@shared/startup-health";
+import { HEALTH_STATES, isHealthState } from "@shared/startup-health";
 import {
-  emptyFunnelStages,
-  emptySupportingMetrics,
-  FUNNEL_STAGE_LABELS,
-  FUNNEL_STAGE_POSITIONS,
-  FUNNEL_STAGES,
-  HEALTH_STATES,
-  isFunnelStage,
-  isHealthState,
-  isNorthStarMetric,
-  isSupportingMetric,
-  NORTH_STAR_METRICS,
-  SUPPORTING_METRIC_LABELS,
-  SUPPORTING_METRIC_UNITS,
-  SUPPORTING_METRICS,
-  validateFunnelStages,
-  validateSupportingMetrics,
-} from "@shared/startup-health";
+  isUniversalMetricKey,
+  METRIC_LABELS,
+  METRIC_UNITS,
+  UNIVERSAL_METRIC_KEYS,
+} from "@shared/universal-metrics";
 import {
   createHealthSnapshotRepository,
   type HealthSnapshotRepository,
@@ -79,6 +67,14 @@ async function send(path: string) {
   return getApp().handle(new Request(`http://localhost${path}`));
 }
 
+/** Default funnel stage definitions for testing. */
+const DEFAULT_FUNNEL_STAGES = [
+  { key: "visitor", label: "Visitors", position: 0 },
+  { key: "signup", label: "Sign-ups", position: 1 },
+  { key: "activation", label: "Activated", position: 2 },
+  { key: "paying_customer", label: "Paying Customers", position: 3 },
+] as const;
+
 /** Insert a workspace + startup directly for testing. */
 async function seedStartup(): Promise<{
   workspaceId: string;
@@ -127,20 +123,19 @@ function makeSnapshotInput(
     northStarValue: 12_500,
     northStarPreviousValue: 10_000,
     supportingMetrics: {
-      active_users: { value: 150, previous: 120 },
-      customer_count: { value: 45, previous: 40 },
-      churn_rate: { value: 3, previous: 4 },
-      arpu: { value: 278, previous: 250 },
-      trial_conversion_rate: { value: 22, previous: 18 },
+      active_users: 150,
+      churn_rate: 3,
+      arpu: 278,
+      mrr: 12_500,
     },
     syncJobId: randomUUID(),
     computedAt: new Date(),
-    funnel: FUNNEL_STAGES.map((stage) => ({
+    funnel: DEFAULT_FUNNEL_STAGES.map((stage) => ({
       id: randomUUID(),
-      stage,
-      label: FUNNEL_STAGE_LABELS[stage],
+      key: stage.key,
+      label: stage.label,
       value: Math.floor(Math.random() * 1000),
-      position: FUNNEL_STAGE_POSITIONS[stage],
+      position: stage.position,
     })),
     ...overrides,
   };
@@ -151,31 +146,6 @@ function makeSnapshotInput(
 // ============================================================================
 
 describe("shared contract — enum guards", () => {
-  test("isNorthStarMetric accepts known values and rejects unknown", () => {
-    for (const key of NORTH_STAR_METRICS) {
-      expect(isNorthStarMetric(key)).toBe(true);
-    }
-    expect(isNorthStarMetric("unknown_metric")).toBe(false);
-    expect(isNorthStarMetric("")).toBe(false);
-    expect(isNorthStarMetric("MRR")).toBe(false); // case-sensitive
-  });
-
-  test("isSupportingMetric accepts known values and rejects unknown", () => {
-    for (const key of SUPPORTING_METRICS) {
-      expect(isSupportingMetric(key)).toBe(true);
-    }
-    expect(isSupportingMetric("revenue")).toBe(false);
-    expect(isSupportingMetric("")).toBe(false);
-  });
-
-  test("isFunnelStage accepts known values and rejects unknown", () => {
-    for (const key of FUNNEL_STAGES) {
-      expect(isFunnelStage(key)).toBe(true);
-    }
-    expect(isFunnelStage("install")).toBe(false);
-    expect(isFunnelStage("")).toBe(false);
-  });
-
   test("isHealthState accepts known values and rejects unknown", () => {
     for (const key of HEALTH_STATES) {
       expect(isHealthState(key)).toBe(true);
@@ -184,106 +154,25 @@ describe("shared contract — enum guards", () => {
     expect(isHealthState("READY")).toBe(false);
   });
 
-  test("supporting metric labels and units cover all keys", () => {
-    for (const key of SUPPORTING_METRICS) {
-      expect(typeof SUPPORTING_METRIC_LABELS[key]).toBe("string");
-      expect(SUPPORTING_METRIC_LABELS[key].length).toBeGreaterThan(0);
-      expect(["count", "currency", "percent"]).toContain(
-        SUPPORTING_METRIC_UNITS[key]
-      );
+  test("isUniversalMetricKey accepts known values and rejects unknown", () => {
+    for (const key of UNIVERSAL_METRIC_KEYS) {
+      expect(isUniversalMetricKey(key)).toBe(true);
     }
+    expect(isUniversalMetricKey("revenue")).toBe(false);
+    expect(isUniversalMetricKey("")).toBe(false);
   });
 
-  test("funnel stage labels and positions cover all stages", () => {
-    for (const stage of FUNNEL_STAGES) {
-      expect(typeof FUNNEL_STAGE_LABELS[stage]).toBe("string");
-      expect(typeof FUNNEL_STAGE_POSITIONS[stage]).toBe("number");
+  test("metric labels and units cover all keys", () => {
+    for (const key of UNIVERSAL_METRIC_KEYS) {
+      expect(typeof METRIC_LABELS[key]).toBe("string");
+      expect(METRIC_LABELS[key].length).toBeGreaterThan(0);
+      expect(["count", "currency", "percent"]).toContain(METRIC_UNITS[key]);
     }
   });
 });
 
 // ============================================================================
-// 2. Shared Contract — Validation
-// ============================================================================
-
-describe("shared contract — validation helpers", () => {
-  test("emptySupportingMetrics produces valid snapshot", () => {
-    const metrics = emptySupportingMetrics();
-    expect(validateSupportingMetrics(metrics)).toBeNull();
-  });
-
-  test("emptyFunnelStages produces valid funnel", () => {
-    const stages = emptyFunnelStages();
-    expect(validateFunnelStages(stages)).toBeNull();
-    expect(stages).toHaveLength(FUNNEL_STAGES.length);
-  });
-
-  test("validateSupportingMetrics rejects missing key", () => {
-    const metrics = emptySupportingMetrics();
-    const { active_users, ...rest } = metrics;
-    expect(validateSupportingMetrics(rest)).toContain(
-      "Missing supporting metric key: active_users"
-    );
-  });
-
-  test("validateSupportingMetrics rejects unknown key", () => {
-    const metrics = {
-      ...emptySupportingMetrics(),
-      bogus_key: { value: 0, previous: null },
-    };
-    expect(validateSupportingMetrics(metrics)).toContain(
-      "Unknown supporting metric key: bogus_key"
-    );
-  });
-
-  test("validateSupportingMetrics rejects non-finite value", () => {
-    const metrics = emptySupportingMetrics();
-    metrics.churn_rate = { value: Number.NaN, previous: null };
-    expect(validateSupportingMetrics(metrics)).toContain("churn_rate");
-  });
-
-  test("validateSupportingMetrics rejects non-object", () => {
-    expect(validateSupportingMetrics(null)).toContain("non-null object");
-    expect(validateSupportingMetrics("string")).toContain("non-null object");
-  });
-
-  test("validateFunnelStages rejects missing stage", () => {
-    const stages = emptyFunnelStages().filter((s) => s.stage !== "visitor");
-    expect(validateFunnelStages(stages)).toContain(
-      "Missing funnel stage: visitor"
-    );
-  });
-
-  test("validateFunnelStages rejects duplicate stage", () => {
-    const stages = emptyFunnelStages();
-    const firstStage = requireValue(stages[0], "Expected funnel stage.");
-    stages.push({ ...firstStage });
-    expect(validateFunnelStages(stages)).toContain("Duplicate funnel stage");
-  });
-
-  test("validateFunnelStages rejects invalid stage name", () => {
-    const stages = emptyFunnelStages().map((s) =>
-      s.stage === "visitor"
-        ? { ...s, stage: "bogus" as FunnelStageRow["stage"] }
-        : s
-    );
-    expect(validateFunnelStages(stages)).toContain("Invalid funnel stage");
-  });
-
-  test("validateFunnelStages rejects non-finite value", () => {
-    const stages = emptyFunnelStages().map((s) =>
-      s.stage === "visitor" ? { ...s, value: Number.POSITIVE_INFINITY } : s
-    );
-    expect(validateFunnelStages(stages)).toContain("finite number");
-  });
-
-  test("validateFunnelStages rejects non-array", () => {
-    expect(validateFunnelStages("not-an-array")).toContain("must be an array");
-  });
-});
-
-// ============================================================================
-// 3. Migration & Bootstrap — Health Tables
+// 2. Migration & Bootstrap — Health Tables
 // ============================================================================
 
 describe("migration and bootstrap — health tables", () => {
@@ -318,7 +207,7 @@ describe("migration and bootstrap — health tables", () => {
 });
 
 // ============================================================================
-// 4. Snapshot Persistence — Write / Read / Replace
+// 3. Snapshot Persistence — Write / Read / Replace
 // ============================================================================
 
 describe("snapshot persistence", () => {
@@ -339,9 +228,9 @@ describe("snapshot persistence", () => {
     expect(snapshot?.supportingMetrics).toBeTruthy();
 
     const funnel = await healthRepo.findFunnelStages(startupId);
-    expect(funnel).toHaveLength(FUNNEL_STAGES.length);
-    expect(funnel[0]?.stage).toBe("visitor");
-    expect(funnel.at(-1)?.stage).toBe("paying_customer");
+    expect(funnel).toHaveLength(DEFAULT_FUNNEL_STAGES.length);
+    expect(funnel[0]?.key).toBe("visitor");
+    expect(funnel.at(-1)?.key).toBe("paying_customer");
   });
 
   test("replacing an existing snapshot atomically swaps all data", async () => {
@@ -372,7 +261,7 @@ describe("snapshot persistence", () => {
 
     // Funnel rows should belong to the new snapshot
     const funnel = await healthRepo.findFunnelStages(startupId);
-    expect(funnel).toHaveLength(FUNNEL_STAGES.length);
+    expect(funnel).toHaveLength(DEFAULT_FUNNEL_STAGES.length);
   });
 
   test("reading a startup with no snapshot returns undefined", async () => {
@@ -436,54 +325,19 @@ describe("snapshot persistence", () => {
 });
 
 // ============================================================================
-// 5. Negative Tests — Malformed Inputs
+// 4. Negative Tests — Malformed Inputs
 // ============================================================================
 
 describe("negative tests — malformed inputs", () => {
-  test("isNorthStarMetric rejects numeric, empty, and uppercase variants", () => {
-    expect(isNorthStarMetric("0")).toBe(false);
-    expect(isNorthStarMetric(" mrr ")).toBe(false);
-    expect(isNorthStarMetric("MRR")).toBe(false);
-  });
-
-  test("isSupportingMetric rejects similar-but-wrong keys", () => {
-    expect(isSupportingMetric("activeUsers")).toBe(false);
-    expect(isSupportingMetric("active-users")).toBe(false);
-    expect(isSupportingMetric("CHURN_RATE")).toBe(false);
-  });
-
-  test("isFunnelStage rejects camelCase and typos", () => {
-    expect(isFunnelStage("payingCustomer")).toBe(false);
-    expect(isFunnelStage("signUp")).toBe(false);
-    expect(isFunnelStage("vistor")).toBe(false);
-  });
-
   test("isHealthState rejects unknown states", () => {
     expect(isHealthState("pending")).toBe(false);
     expect(isHealthState("active")).toBe(false);
     expect(isHealthState("BLOCKED")).toBe(false);
   });
 
-  test("validateSupportingMetrics rejects entry with non-number previous", () => {
-    const metrics = emptySupportingMetrics();
-    (metrics.arpu as unknown as Record<string, unknown>).previous =
-      "not-a-number";
-    const err = validateSupportingMetrics(metrics);
-    expect(err).toContain("arpu");
-    expect(err).toContain("finite number or null");
-  });
-
-  test("validateFunnelStages rejects non-integer position", () => {
-    const stages = emptyFunnelStages().map((s) =>
-      s.stage === "signup" ? { ...s, position: 1.5 } : s
-    );
-    expect(validateFunnelStages(stages)).toContain("integer");
-  });
-
-  test("validateFunnelStages rejects empty label", () => {
-    const stages = emptyFunnelStages().map((s) =>
-      s.stage === "activation" ? { ...s, label: "" } : s
-    );
-    expect(validateFunnelStages(stages)).toContain("non-empty label");
+  test("isUniversalMetricKey rejects similar-but-wrong keys", () => {
+    expect(isUniversalMetricKey("activeUsers")).toBe(false);
+    expect(isUniversalMetricKey("active-users")).toBe(false);
+    expect(isUniversalMetricKey("CHURN_RATE")).toBe(false);
   });
 });
