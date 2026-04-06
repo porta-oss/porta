@@ -121,13 +121,13 @@ File: `apps/web/src/routes/_authenticated/dashboard.tsx`
 
 ### Task 10: Implement Decide mode
 File: `apps/web/src/routes/_authenticated/dashboard.tsx`
-- [ ] Fetch active alerts for current startup via `GET /api/startups/:startupId/alerts?status=active` (TanStack Query)
-- [ ] Sort by severity (critical > high > medium > low), then `firedAt` descending
-- [ ] Render `DecisionSurface` with top alert
-- [ ] Metrics grid below with universal metrics from health snapshot
-- [ ] Zero-alert state with streak badge (fetch from streak endpoint)
-- [ ] Triage actions call `POST /api/alerts/:id/triage`
-- [ ] Invalidate alerts query on successful triage
+- [x] Fetch active alerts for current startup via `GET /api/startups/:startupId/alerts?status=active` (TanStack Query)
+- [x] Sort by severity (critical > high > medium > low), then `firedAt` descending
+- [x] Render `DecisionSurface` with top alert
+- [x] Metrics grid below with universal metrics from health snapshot
+- [x] Zero-alert state with streak badge (fetch from streak endpoint)
+- [x] Triage actions call `POST /api/alerts/:id/triage`
+- [x] Invalidate alerts query on successful triage
 
 ### Task 11: Implement Journal mode
 File: `apps/web/src/routes/_authenticated/dashboard.tsx`

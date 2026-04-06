@@ -1,3 +1,9 @@
+import type { AlertSummary } from "@shared/alert-rule";
+import {
+  ALERT_SEVERITIES,
+  isAlertSeverity,
+  isAlertStatus,
+} from "@shared/alert-rule";
 import type { ConnectorProvider, ConnectorSummary } from "@shared/connectors";
 import type { CustomMetricSummary } from "@shared/custom-metric";
 import { isCustomMetricCategory } from "@shared/custom-metric";
@@ -29,6 +35,10 @@ import { AppShell } from "../../components/app-shell";
 import { ConnectorSetupCard } from "../../components/connector-setup-card";
 import { ConnectorStatusPanel } from "../../components/connector-status-panel";
 import { CustomMetricPanel } from "../../components/custom-metric-panel";
+import {
+  DecisionSurface,
+  type StreakInfo,
+} from "../../components/decision-surface";
 import { DisclosureSection } from "../../components/disclosure-section";
 import { FadeIn } from "../../components/fade-in";
 import type { DashboardMode } from "../../components/mode-switcher";
@@ -113,6 +123,10 @@ export interface DashboardApi {
   deleteConnector: (connectorId: string) => Promise<void>;
   fetchHealth: (startupId: string) => Promise<StartupHealthPayload>;
   fetchInsight: (startupId: string) => Promise<StartupInsightPayload>;
+  listAlerts: (
+    startupId: string,
+    status?: string
+  ) => Promise<{ alerts: AlertSummary[] }>;
   listConnectors: (
     startupId: string
   ) => Promise<{ connectors: ConnectorSummary[] }>;
@@ -132,6 +146,11 @@ export interface DashboardApi {
   setActiveWorkspace: (input: {
     workspaceId: string;
   }) => Promise<{ activeWorkspaceId: string; workspace: WorkspaceSummary }>;
+  triageAlert: (
+    alertId: string,
+    action: "ack" | "snooze" | "dismiss",
+    snoozeDurationHours?: number
+  ) => Promise<{ alert: AlertSummary }>;
   triggerSync: (connectorId: string) => Promise<void>;
 }
 
@@ -180,6 +199,21 @@ const INSIGHT_DISPLAY_STATUSES = [
   "blocked",
   "error",
 ] as const satisfies InsightDisplayStatus[];
+
+const SEVERITY_ORDER: Record<string, number> = Object.fromEntries(
+  ALERT_SEVERITIES.map((s, i) => [s, i])
+);
+
+function sortAlertsByPriority(alerts: AlertSummary[]): AlertSummary[] {
+  return [...alerts].sort((a, b) => {
+    const sevDiff =
+      (SEVERITY_ORDER[a.severity] ?? 99) - (SEVERITY_ORDER[b.severity] ?? 99);
+    if (sevDiff !== 0) {
+      return sevDiff;
+    }
+    return new Date(b.firedAt).getTime() - new Date(a.firedAt).getTime();
+  });
+}
 
 // ------------------------------------------------------------------
 // Helpers
@@ -238,6 +272,25 @@ function isInternalTaskPayload(value: unknown): value is InternalTaskPayload {
     typeof value.syncStatus === "string" &&
     isTaskSyncStatus(value.syncStatus) &&
     typeof value.createdAt === "string"
+  );
+}
+
+function isAlertSummary(value: unknown): value is AlertSummary {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.startupId === "string" &&
+    typeof value.ruleId === "string" &&
+    typeof value.metricKey === "string" &&
+    typeof value.severity === "string" &&
+    isAlertSeverity(value.severity) &&
+    typeof value.status === "string" &&
+    isAlertStatus(value.status) &&
+    typeof value.firedAt === "string" &&
+    typeof value.lastFiredAt === "string" &&
+    typeof value.threshold === "number" &&
+    typeof value.value === "number" &&
+    typeof value.occurrenceCount === "number"
   );
 }
 
@@ -712,6 +765,54 @@ function createDefaultDashboardApi(): DashboardApi {
         `/startups/${encodeURIComponent(startupId)}/insight`
       );
       return parseInsightPayload(payload, startupId);
+    },
+    async listAlerts(startupId, status) {
+      const params = new URLSearchParams();
+      if (status) {
+        params.set("status", status);
+      }
+      const qs = params.toString();
+      const payload = await requestJson(
+        `/startups/${encodeURIComponent(startupId)}/alerts${qs ? `?${qs}` : ""}`
+      );
+
+      if (
+        !(
+          isRecord(payload) &&
+          Array.isArray(payload.alerts) &&
+          payload.alerts.every(isAlertSummary)
+        )
+      ) {
+        throw new DashboardApiError(
+          "MALFORMED_ALERT_LIST",
+          "Could not load alerts. Please try again."
+        );
+      }
+
+      return { alerts: payload.alerts };
+    },
+    async triageAlert(alertId, action, snoozeDurationHours) {
+      const body: Record<string, unknown> = { action };
+      if (snoozeDurationHours !== undefined) {
+        body.snoozeDurationHours = snoozeDurationHours;
+      }
+
+      const payload = await requestJson(
+        `/alerts/${encodeURIComponent(alertId)}/triage`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+        }
+      );
+
+      if (!(isRecord(payload) && isAlertSummary(payload.alert))) {
+        throw new DashboardApiError(
+          "MALFORMED_TRIAGE_RESPONSE",
+          "Alert triage returned an unexpected response."
+        );
+      }
+
+      return { alert: payload.alert };
     },
     async listTasks(startupId) {
       const payload = await requestJson(
@@ -1393,6 +1494,14 @@ export function DashboardPage({
     null
   );
 
+  // Alert state — Decide mode
+  const [alerts, setAlerts] = useState<AlertSummary[]>([]);
+  const [alertStatus, setAlertStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [alertError, setAlertError] = useState<string | null>(null);
+  const [triaging, setTriaging] = useState(false);
+
   // Custom metric state
   const [customMetric, setCustomMetric] = useState<CustomMetricSummary | null>(
     null
@@ -1633,6 +1742,52 @@ export function DashboardPage({
     }
   }
 
+  async function refreshAlerts(startupId: string | null) {
+    if (!startupId) {
+      setAlerts([]);
+      setAlertStatus("idle");
+      return;
+    }
+
+    setAlertStatus("loading");
+    setAlertError(null);
+
+    try {
+      const payload = await api.listAlerts(startupId, "active");
+      setAlerts(sortAlertsByPriority(payload.alerts));
+      setAlertStatus("ready");
+    } catch (error) {
+      setAlertError(getDashboardErrorMessage(error, "Failed to load alerts."));
+      setAlertStatus("error");
+    }
+  }
+
+  async function handleTriageAck(alertId: string) {
+    setTriaging(true);
+    try {
+      await api.triageAlert(alertId, "ack");
+      await refreshAlerts(selectedStartupId);
+    } catch (error) {
+      setAlertError(
+        getDashboardErrorMessage(error, "Failed to acknowledge alert.")
+      );
+    } finally {
+      setTriaging(false);
+    }
+  }
+
+  async function handleTriageSnooze(alertId: string, durationHours: number) {
+    setTriaging(true);
+    try {
+      await api.triageAlert(alertId, "snooze", durationHours);
+      await refreshAlerts(selectedStartupId);
+    } catch (error) {
+      setAlertError(getDashboardErrorMessage(error, "Failed to snooze alert."));
+    } finally {
+      setTriaging(false);
+    }
+  }
+
   async function handleCreateTaskFromAction(actionIndex: number) {
     if (!selectedStartup || creatingActionIndex !== null) {
       return;
@@ -1803,6 +1958,7 @@ export function DashboardPage({
       void refreshHealth(startupId);
       void refreshInsight(startupId);
       void refreshTasks(startupId);
+      void refreshAlerts(startupId);
     }
   );
 
@@ -1825,6 +1981,13 @@ export function DashboardPage({
   const showEmptyWorkspaceState =
     activeWorkspace && startups.length === 0 && startupStatus === "ready";
   const showNoWorkspaceState = !activeWorkspace && shellStatus === "ready";
+
+  const topAlert = alerts.length > 0 ? (alerts[0] ?? null) : null;
+  const streakInfo: StreakInfo | null =
+    alertStatus === "ready" && alerts.length === 0
+      ? { currentDays: 0, longestDays: 0 }
+      : null;
+  const supportingMetrics = healthPayload?.health?.supportingMetrics ?? null;
 
   return (
     <AppShell
@@ -1864,6 +2027,26 @@ export function DashboardPage({
                   missingCoreConnectorCount={missingCoreConnectorCount}
                   onChangeView={setContentView}
                 />
+
+                <DecisionSurface
+                  alert={topAlert}
+                  error={alertError}
+                  loading={alertStatus === "loading"}
+                  onAck={handleTriageAck}
+                  onInvestigate={(_alertId) => {
+                    onModeChange?.("journal");
+                  }}
+                  onRetry={() => {
+                    void refreshAlerts(selectedStartupId);
+                  }}
+                  onSnooze={handleTriageSnooze}
+                  streak={streakInfo}
+                  triaging={triaging}
+                />
+
+                {supportingMetrics && resolvedContentView === "overview" ? (
+                  <StartupMetricsGrid metrics={supportingMetrics} />
+                ) : null}
 
                 {resolvedContentView === "overview" ? (
                   <DashboardOverviewPanel
