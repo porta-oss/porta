@@ -56,9 +56,9 @@ File: `apps/api/src/routes/event-log.ts`
 
 ### Task 3: Register event log routes in app
 File: `apps/api/src/app.ts`
-- [ ] Import event log route handler
-- [ ] Add GET /api/events route with auth middleware and workspace context
-- [ ] Wire `EventLogRuntime` with db instance
+- [x] Import event log route handler
+- [x] Add GET /api/events route with auth middleware and workspace context
+- [x] Wire `EventLogRuntime` with db instance
 
 ### Task 4: Implement event purge processor
 File: `apps/worker/src/processors/event-purge.ts`
