@@ -61,7 +61,7 @@ File: `apps/worker/src/processors/portfolio-digest.ts` (same file)
 
 ### Task 3: Wire AI synthesis into MCP + Compare mode
 File: `apps/api/src/services/mcp-tools.ts`
-- [ ] Update `getPortfolioSummary` MCP tool handler to include `aiSynthesis` and `synthesizedAt` from stored result
-- [ ] If no stored result or stale (>7 days since `synthesized_at`): return response without `aiSynthesis` field
-- [ ] Include `stale: true` flag in response when synthesis exists but is >7 days old
-- [ ] Compare mode's `AiSynthesisCard` component (from US-6) reads from this same data source
+- [x] Update `getPortfolioSummary` MCP tool handler to include `aiSynthesis` and `synthesizedAt` from stored result
+- [x] If no stored result or stale (>7 days since `synthesized_at`): return response without `aiSynthesis` field
+- [x] Include `stale: true` flag in response when synthesis exists but is >7 days old
+- [x] Compare mode's `AiSynthesisCard` component (from US-6) reads from this same data source

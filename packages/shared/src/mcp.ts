@@ -229,6 +229,7 @@ export type McpStartupSummary = z.infer<typeof mcpStartupSummarySchema>;
 
 export const mcpPortfolioSummarySchema = zod.object({
   aiSynthesis: zod.string().optional(),
+  stale: zod.boolean().optional(),
   startups: zod.array(mcpStartupSummarySchema),
   synthesizedAt: zod.string().optional(),
 });

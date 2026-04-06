@@ -585,36 +585,49 @@ export async function getPortfolioSummary(
     };
   });
 
-  // Load latest AI synthesis if available
-  // We look for the most recent insight with a successful explanation
-  const synthesisResult = await db.execute(
-    sql`SELECT explanation, generated_at
-        FROM startup_insight
-        WHERE startup_id IN (${sql.join(
-          startupIds.map((id) => sql`${id}`),
-          sql`, `
-        )})
-          AND generation_status = 'completed'
-        ORDER BY generated_at DESC
+  // Load latest portfolio digest from the portfolio_digest table
+  const digestResult = await db.execute(
+    sql`SELECT ai_synthesis, synthesized_at
+        FROM portfolio_digest
+        WHERE workspace_id = ${workspaceId}
         LIMIT 1`
   );
 
-  const synthesisRow = synthesisResult.rows[0] as
+  const digestRow = digestResult.rows[0] as
     | {
-        explanation: { observation?: string } | null;
-        generated_at: string | Date;
+        ai_synthesis: string | null;
+        synthesized_at: string | Date | null;
       }
     | undefined;
 
-  const aiSynthesis = synthesisRow?.explanation?.observation;
-  const synthesizedAt = synthesisRow
-    ? toIso(synthesisRow.generated_at)
-    : undefined;
+  // Determine staleness: >7 days since synthesized_at
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+  const synthesizedAtIso = digestRow?.synthesized_at
+    ? toIso(digestRow.synthesized_at)
+    : null;
+  const isStale =
+    synthesizedAtIso != null &&
+    Date.now() - new Date(synthesizedAtIso).getTime() > SEVEN_DAYS_MS;
+
+  // If no stored result: omit aiSynthesis and synthesizedAt entirely
+  // If stale: include stale flag and synthesizedAt but omit aiSynthesis text
+  // If fresh: include aiSynthesis and synthesizedAt
+  if (!digestRow?.ai_synthesis) {
+    return { startups: summaries };
+  }
+
+  if (isStale) {
+    return {
+      startups: summaries,
+      stale: true,
+      synthesizedAt: synthesizedAtIso ?? undefined,
+    };
+  }
 
   return {
     startups: summaries,
-    aiSynthesis: aiSynthesis ?? undefined,
-    synthesizedAt: synthesizedAt ?? undefined,
+    aiSynthesis: digestRow.ai_synthesis,
+    synthesizedAt: synthesizedAtIso ?? undefined,
   };
 }
 

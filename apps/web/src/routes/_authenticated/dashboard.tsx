@@ -141,6 +141,7 @@ export interface PortfolioStartupSummary {
 /** Payload returned by the portfolio summary batch endpoint. */
 export interface PortfolioSummaryPayload {
   aiSynthesis?: string;
+  stale?: boolean;
   startups: PortfolioStartupSummary[];
   synthesizedAt?: string;
 }
@@ -874,6 +875,7 @@ function createDefaultDashboardApi(): DashboardApi {
         startups,
         aiSynthesis:
           typeof data.aiSynthesis === "string" ? data.aiSynthesis : undefined,
+        stale: typeof data.stale === "boolean" ? data.stale : undefined,
         synthesizedAt:
           typeof data.synthesizedAt === "string"
             ? data.synthesizedAt
