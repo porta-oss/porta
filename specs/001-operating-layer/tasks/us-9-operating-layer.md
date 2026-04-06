@@ -64,15 +64,15 @@ File: `apps/api/tests/webhook.delivery.test.ts`
 
 ### Task 2: Implement HMAC signing and SSRF validation
 File: `apps/api/src/lib/webhooks/delivery.ts`
-- [ ] Create `signPayload(body: string, secret: string): string` -- HMAC-SHA256 hex
-- [ ] Create `validateUrl(url: string): Promise<{valid: boolean, error?: string}>`
-- [ ] Check HTTPS scheme
-- [ ] DNS resolve URL hostname
-- [ ] Check resolved IP against blocklist (RFC 1918, link-local, loopback, cloud metadata)
-- [ ] Create `deliverWebhook(config, payload): Promise<{success, httpStatus?, error?}>`
-- [ ] Re-resolve DNS at delivery time (fresh lookup, not cached)
-- [ ] POST with 10s timeout via AbortController
-- [ ] Set headers: Content-Type, X-Porta-Signature, X-Porta-Delivery
+- [x] Create `signPayload(body: string, secret: string): string` -- HMAC-SHA256 hex
+- [x] Create `validateUrl(url: string): Promise<{valid: boolean, error?: string}>`
+- [x] Check HTTPS scheme
+- [x] DNS resolve URL hostname
+- [x] Check resolved IP against blocklist (RFC 1918, link-local, loopback, cloud metadata)
+- [x] Create `deliverWebhook(config, payload): Promise<{success, httpStatus?, error?}>`
+- [x] Re-resolve DNS at delivery time (fresh lookup, not cached)
+- [x] POST with 10s timeout via AbortController
+- [x] Set headers: Content-Type, X-Porta-Signature, X-Porta-Delivery
 
 ### Task 3: Implement webhook config CRUD routes
 File: `apps/api/src/routes/webhook-config.ts`

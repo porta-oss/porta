@@ -1,5 +1,7 @@
 // Webhook delivery: HMAC signing, SSRF validation, HTTP delivery, circuit breaker.
-// Stub — implementation in Task 2.
+
+import { createHmac } from "node:crypto";
+import { promises as dns } from "node:dns";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,74 +51,178 @@ export interface DbPool {
   query: (sql: string) => Promise<unknown>;
 }
 
+const CIRCUIT_BREAKER_THRESHOLD = 10;
+const DELIVERY_TIMEOUT_MS = 10_000;
+
+// ---------------------------------------------------------------------------
+// Default DNS resolver
+// ---------------------------------------------------------------------------
+
+async function defaultResolver(hostname: string): Promise<string[]> {
+  const result = await dns.resolve4(hostname);
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // IP blocklist check
 // ---------------------------------------------------------------------------
 
-/**
- * Check if an IP address is in the SSRF blocklist:
- * RFC 1918 (10.x, 172.16-31.x, 192.168.x), loopback (127.x),
- * link-local (169.254.x), cloud metadata (169.254.169.254).
- */
-export function isBlockedIp(_ip: string): boolean {
-  throw new Error("Not implemented");
+export function isBlockedIp(ip: string): boolean {
+  const parts = ip.split(".").map(Number);
+  if (parts.length !== 4 || parts.some((p) => Number.isNaN(p))) {
+    return true;
+  }
+
+  const [a, b] = parts;
+
+  // Loopback: 127.0.0.0/8
+  if (a === 127) {
+    return true;
+  }
+  // RFC 1918: 10.0.0.0/8
+  if (a === 10) {
+    return true;
+  }
+  // RFC 1918: 172.16.0.0/12
+  if (a === 172 && b >= 16 && b <= 31) {
+    return true;
+  }
+  // RFC 1918: 192.168.0.0/16
+  if (a === 192 && b === 168) {
+    return true;
+  }
+  // Link-local: 169.254.0.0/16 (includes cloud metadata 169.254.169.254)
+  if (a === 169 && b === 254) {
+    return true;
+  }
+
+  return false;
 }
 
 // ---------------------------------------------------------------------------
 // HMAC signing
 // ---------------------------------------------------------------------------
 
-/**
- * Compute HMAC-SHA256 hex digest of the body using the given secret.
- */
-export function signPayload(_body: string, _secret: string): string {
-  throw new Error("Not implemented");
+export function signPayload(body: string, secret: string): string {
+  return createHmac("sha256", secret).update(body).digest("hex");
 }
 
 // ---------------------------------------------------------------------------
 // URL validation
 // ---------------------------------------------------------------------------
 
-/**
- * Validate a webhook URL: must be HTTPS, resolved IP must not be blocked.
- * Accepts optional resolver for testing (defaults to real DNS).
- */
 export async function validateUrl(
-  _url: string,
-  _resolver?: (hostname: string) => Promise<string[]>
+  url: string,
+  resolver?: (hostname: string) => Promise<string[]>
 ): Promise<UrlValidationResult> {
-  throw new Error("Not implemented");
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { valid: false, error: "Invalid URL" };
+  }
+
+  if (parsed.protocol !== "https:") {
+    return { valid: false, error: "URL must use HTTPS" };
+  }
+
+  const resolve = resolver ?? defaultResolver;
+  let ips: string[];
+  try {
+    ips = await resolve(parsed.hostname);
+  } catch {
+    return { valid: false, error: "DNS resolution failed" };
+  }
+
+  for (const ip of ips) {
+    if (isBlockedIp(ip)) {
+      return { valid: false, error: `Blocked IP address: ${ip}` };
+    }
+  }
+
+  return { valid: true };
 }
 
 // ---------------------------------------------------------------------------
 // Webhook delivery
 // ---------------------------------------------------------------------------
 
-/**
- * Deliver a webhook payload to the configured URL with HMAC signing.
- * Re-resolves DNS at delivery time (DNS rebinding guard).
- */
 export async function deliverWebhook(
-  _config: WebhookConfig,
-  _payload: WebhookDeliveryPayload,
-  _options?: DeliveryOptions
+  config: WebhookConfig,
+  payload: WebhookDeliveryPayload,
+  options?: DeliveryOptions
 ): Promise<DeliveryResult> {
-  throw new Error("Not implemented");
+  // Re-resolve DNS at delivery time (DNS rebinding guard)
+  const urlValidation = await validateUrl(config.url, options?.resolver);
+  if (!urlValidation.valid) {
+    return { success: false, error: urlValidation.error };
+  }
+
+  const body = JSON.stringify(payload);
+  const signature = signPayload(body, config.secret);
+  const fetcher = options?.fetcher ?? fetch;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DELIVERY_TIMEOUT_MS);
+
+  try {
+    const response = await fetcher(config.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Porta-Signature": `sha256=${signature}`,
+        "X-Porta-Delivery": payload.deliveryId,
+      },
+      body,
+      signal: controller.signal,
+    });
+
+    return { success: response.ok, httpStatus: response.status };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Delivery failed";
+    return { success: false, error: message };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Circuit breaker
 // ---------------------------------------------------------------------------
 
-/**
- * Record a delivery result. On failure, increments consecutive_failures.
- * If failures reach 10, disables the webhook (circuit breaker).
- * On success, resets consecutive_failures to 0.
- */
 export async function recordDeliveryResult(
-  _pool: DbPool,
-  _webhookConfigId: string,
-  _success: boolean
+  pool: DbPool,
+  webhookConfigId: string,
+  success: boolean
 ): Promise<CircuitBreakerResult> {
-  throw new Error("Not implemented");
+  if (success) {
+    await pool.query(
+      `UPDATE "webhook_config"
+       SET consecutive_failures = 0, updated_at = NOW()
+       WHERE id = '${webhookConfigId}'`
+    );
+    return { circuitBroken: false, consecutiveFailures: 0 };
+  }
+
+  // Increment failures atomically and check threshold
+  const result = (await pool.query(
+    `UPDATE "webhook_config"
+     SET consecutive_failures = consecutive_failures + 1,
+         updated_at = NOW()
+     WHERE id = '${webhookConfigId}'
+     RETURNING consecutive_failures`
+  )) as { rows: Array<{ consecutive_failures: number }> };
+
+  const failures = result.rows[0].consecutive_failures;
+
+  if (failures >= CIRCUIT_BREAKER_THRESHOLD) {
+    await pool.query(
+      `UPDATE "webhook_config"
+       SET enabled = false, circuit_broken_at = NOW(), updated_at = NOW()
+       WHERE id = '${webhookConfigId}'`
+    );
+    return { circuitBroken: true, consecutiveFailures: failures };
+  }
+
+  return { circuitBroken: false, consecutiveFailures: failures };
 }
