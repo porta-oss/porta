@@ -124,11 +124,11 @@ File: `apps/api/src/routes/mcp.ts`
 
 ### Task 9: Create API key settings page
 File: `apps/web/src/routes/_authenticated/settings/api-keys.tsx`
-- [ ] Create key button with name input and scope selector (read/write)
-- [ ] Display full key once on creation (copy button, "won't be shown again" warning)
-- [ ] List existing keys: name, prefix (`porta_read_a1b2...`), scope, last used, created
-- [ ] Revoke button with confirmation dialog
-- [ ] Show revoked keys grayed out (or filter them out)
+- [x] Create key button with name input and scope selector (read/write)
+- [x] Display full key once on creation (copy button, "won't be shown again" warning)
+- [x] List existing keys: name, prefix (`porta_read_a1b2...`), scope, last used, created
+- [x] Revoke button with confirmation dialog
+- [x] Show revoked keys grayed out (or filter them out)
 
 ### Task 10: Register API key and MCP routes in app
 File: `apps/api/src/app.ts`
