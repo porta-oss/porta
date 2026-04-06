@@ -178,13 +178,11 @@ export async function handleListEvents(
 
   const events = pageRows.map(serializeRow);
 
-  const nextCursor =
-    hasMore && pageRows.length > 0
-      ? encodeCursor(
-          toIsoString(pageRows.at(-1)!.created_at),
-          pageRows.at(-1)!.id
-        )
-      : null;
+  const lastRow =
+    hasMore && pageRows.length > 0 ? (pageRows.at(-1) ?? null) : null;
+  const nextCursor = lastRow
+    ? encodeCursor(toIsoString(lastRow.created_at), lastRow.id)
+    : null;
 
   return {
     events,

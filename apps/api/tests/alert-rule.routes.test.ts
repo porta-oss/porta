@@ -466,7 +466,9 @@ describe("POST /api/alerts/:alertId/triage", () => {
     expect(payload.alert.snoozedUntil).toBeTruthy();
 
     // snoozedUntil should be approximately 24 hours from now
-    const snoozedUntil = new Date(payload.alert.snoozedUntil!).getTime();
+    const snoozedUntil = new Date(
+      payload.alert.snoozedUntil as string
+    ).getTime();
     const expectedMin = Date.now() + 23 * 60 * 60 * 1000;
     const expectedMax = Date.now() + 25 * 60 * 60 * 1000;
     expect(snoozedUntil).toBeGreaterThan(expectedMin);

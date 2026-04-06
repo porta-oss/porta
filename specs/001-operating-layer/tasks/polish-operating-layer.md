@@ -44,10 +44,10 @@ File: `apps/web/src/routes/_authenticated/dashboard.tsx`
 - [x] Test event filter bar wraps gracefully on narrow screens
 
 ### Task 3: Run Biome/Ultracite compliance
-- [ ] Run `pnpm check` across all workspaces
-- [ ] Fix any lint/format issues with `pnpm fix`
-- [ ] Verify no new warnings introduced by Wave 3 code
-- [ ] Ensure all new component files follow Biome import ordering rules
+- [x] Run `pnpm check` across all workspaces
+- [x] Fix any lint/format issues with `pnpm fix`
+- [x] Verify no new warnings introduced by Wave 3 code
+- [x] Ensure all new component files follow Biome import ordering rules
 
 ### Task 4: Run TypeScript typecheck
 - [ ] Run `pnpm typecheck` across all workspaces

@@ -446,6 +446,46 @@ async function requestJson(path: string, init?: RequestInit) {
   return payload;
 }
 
+function parseStartupSummary(
+  s: Record<string, unknown>
+): PortfolioStartupSummary | null {
+  if (typeof s.id !== "string" || typeof s.name !== "string") {
+    return null;
+  }
+  return {
+    id: s.id,
+    name: s.name,
+    type: typeof s.type === "string" ? s.type : "",
+    currency: typeof s.currency === "string" ? s.currency : "USD",
+    healthState:
+      typeof s.healthState === "string" && isHealthState(s.healthState)
+        ? s.healthState
+        : "syncing",
+    northStarKey: typeof s.northStarKey === "string" ? s.northStarKey : "mrr",
+    northStarValue:
+      typeof s.northStarValue === "number" ? s.northStarValue : null,
+    northStarDelta:
+      typeof s.northStarDelta === "number" ? s.northStarDelta : null,
+    universalMetrics: isRecord(s.universalMetrics)
+      ? (s.universalMetrics as Record<string, number | null>)
+      : {},
+    activeAlerts: typeof s.activeAlerts === "number" ? s.activeAlerts : 0,
+    lastSyncAt: typeof s.lastSyncAt === "string" ? s.lastSyncAt : null,
+  };
+}
+
+function buildQueryString(
+  params: Record<string, string | number | undefined | null>
+): string {
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value != null && value !== "") {
+      qs.set(key, String(value));
+    }
+  }
+  return qs.toString();
+}
+
 function parseBlockedReasons(payload: unknown): BlockedReason[] {
   const blockedReasons: BlockedReason[] = [];
   if (!Array.isArray(payload)) {
@@ -863,42 +903,11 @@ function createDefaultDashboardApi(): DashboardApi {
       }
 
       const data = payload.data;
-      const startups: PortfolioStartupSummary[] = [];
-
-      if (Array.isArray(data.startups)) {
-        for (const s of data.startups) {
-          if (
-            isRecord(s) &&
-            typeof s.id === "string" &&
-            typeof s.name === "string"
-          ) {
-            startups.push({
-              id: s.id,
-              name: s.name,
-              type: typeof s.type === "string" ? s.type : "",
-              currency: typeof s.currency === "string" ? s.currency : "USD",
-              healthState:
-                typeof s.healthState === "string" &&
-                isHealthState(s.healthState)
-                  ? s.healthState
-                  : "syncing",
-              northStarKey:
-                typeof s.northStarKey === "string" ? s.northStarKey : "mrr",
-              northStarValue:
-                typeof s.northStarValue === "number" ? s.northStarValue : null,
-              northStarDelta:
-                typeof s.northStarDelta === "number" ? s.northStarDelta : null,
-              universalMetrics: isRecord(s.universalMetrics)
-                ? (s.universalMetrics as Record<string, number | null>)
-                : {},
-              activeAlerts:
-                typeof s.activeAlerts === "number" ? s.activeAlerts : 0,
-              lastSyncAt:
-                typeof s.lastSyncAt === "string" ? s.lastSyncAt : null,
-            });
-          }
-        }
-      }
+      const rawStartups = Array.isArray(data.startups) ? data.startups : [];
+      const startups = rawStartups
+        .filter(isRecord)
+        .map(parseStartupSummary)
+        .filter((s): s is PortfolioStartupSummary => s !== null);
 
       return {
         startups,
@@ -937,26 +946,14 @@ function createDefaultDashboardApi(): DashboardApi {
       return { alerts: payload.alerts };
     },
     async listEvents(params) {
-      const qs = new URLSearchParams();
-      if (params.startupId) {
-        qs.set("startupId", params.startupId);
-      }
-      if (params.eventTypes) {
-        qs.set("eventTypes", params.eventTypes);
-      }
-      if (params.from) {
-        qs.set("from", params.from);
-      }
-      if (params.to) {
-        qs.set("to", params.to);
-      }
-      if (params.cursor) {
-        qs.set("cursor", params.cursor);
-      }
-      if (params.limit) {
-        qs.set("limit", String(params.limit));
-      }
-      const query = qs.toString();
+      const query = buildQueryString({
+        startupId: params.startupId,
+        eventTypes: params.eventTypes,
+        from: params.from,
+        to: params.to,
+        cursor: params.cursor,
+        limit: params.limit,
+      });
       const payload = await requestJson(`/events${query ? `?${query}` : ""}`);
 
       if (
@@ -1654,6 +1651,7 @@ function DashboardHealthConnectorsPanel({
   );
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: main dashboard orchestrator — state, effects, and three mode views are inherently coupled
 export function DashboardPage({
   authState,
   api = createDefaultDashboardApi(),

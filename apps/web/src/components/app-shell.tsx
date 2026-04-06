@@ -156,7 +156,6 @@ export function AppShell({
       {/* Mobile sidebar overlay */}
       {isMobile && sidebarOpen ? (
         <>
-          {/* biome-ignore lint/a11y/useKeyWithClickEvents: backdrop dismiss is decorative, keyboard handled via Escape */}
           <div
             aria-hidden="true"
             className="fixed inset-0 z-40 bg-black/50"

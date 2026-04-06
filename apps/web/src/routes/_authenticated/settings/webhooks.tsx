@@ -255,6 +255,7 @@ interface WebhookSettingsPageProps {
   authState: AuthSnapshot;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: settings page with form state, validation, and CRUD — tightly coupled by design
 export function WebhookSettingsPage({ authState }: WebhookSettingsPageProps) {
   const [startups, setStartups] = useState<{ id: string; name: string }[]>([]);
   const [selectedStartupId, setSelectedStartupId] = useState<string | null>(
@@ -375,6 +376,7 @@ export function WebhookSettingsPage({ authState }: WebhookSettingsPageProps) {
   const urlValid = urlInput.startsWith("https://") && urlInput.length > 10;
   const formValid = urlValid && selectedEventTypes.size > 0;
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: webhook save with create/update branching and error handling
   async function handleSave() {
     if (!(selectedStartupId && formValid)) {
       return;
