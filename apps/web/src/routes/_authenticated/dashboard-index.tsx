@@ -10,6 +10,10 @@ export const dashboardIndexRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: "app",
   validateSearch: (search): DashboardSearch => ({
+    event:
+      typeof search.event === "string" && search.event.length > 0
+        ? search.event
+        : undefined,
     mode:
       typeof search.mode === "string" &&
       VALID_MODES.includes(search.mode as DashboardMode)
@@ -29,6 +33,7 @@ function DashboardIndexRouteComponent() {
   return (
     <DashboardPage
       authState={authState}
+      eventId={search.event ?? null}
       mode={search.mode ?? "decide"}
       navigateToStartup={(startupId, replace = false) =>
         navigate({

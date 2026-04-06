@@ -7,6 +7,7 @@ import {
 import type { ConnectorProvider, ConnectorSummary } from "@shared/connectors";
 import type { CustomMetricSummary } from "@shared/custom-metric";
 import { isCustomMetricCategory } from "@shared/custom-metric";
+import type { EventLogEntrySummary } from "@shared/event-log";
 import type { InternalTaskPayload } from "@shared/internal-task";
 import { isTaskSyncStatus } from "@shared/internal-task";
 import type {
@@ -26,7 +27,14 @@ import {
 } from "@shared/startup-insight";
 import type { StartupRecord, WorkspaceSummary } from "@shared/types";
 import type { UniversalMetrics } from "@shared/universal-metrics";
-import { useEffect, useEffectEvent, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,11 +43,17 @@ import { AppShell } from "../../components/app-shell";
 import { ConnectorSetupCard } from "../../components/connector-setup-card";
 import { ConnectorStatusPanel } from "../../components/connector-status-panel";
 import { CustomMetricPanel } from "../../components/custom-metric-panel";
+import { DaySeparator } from "../../components/day-separator";
 import {
   DecisionSurface,
   type StreakInfo,
 } from "../../components/decision-surface";
 import { DisclosureSection } from "../../components/disclosure-section";
+import {
+  EventFilter,
+  type EventFilterValues,
+} from "../../components/event-filter";
+import { EventLogEntry } from "../../components/event-log-entry";
 import { FadeIn } from "../../components/fade-in";
 import type { DashboardMode } from "../../components/mode-switcher";
 import { ModeSwitcher } from "../../components/mode-switcher";
@@ -130,6 +144,17 @@ export interface DashboardApi {
   listConnectors: (
     startupId: string
   ) => Promise<{ connectors: ConnectorSummary[] }>;
+  listEvents: (params: {
+    cursor?: string;
+    eventTypes?: string;
+    from?: string;
+    limit?: number;
+    startupId?: string;
+    to?: string;
+  }) => Promise<{
+    events: EventLogEntrySummary[];
+    pagination: { cursor: string | null; hasMore: boolean; limit: number };
+  }>;
   listStartups: () => Promise<{
     workspace: WorkspaceSummary;
     startups: StartupRecord[];
@@ -155,12 +180,14 @@ export interface DashboardApi {
 }
 
 export interface DashboardSearch {
+  event?: string;
   mode?: DashboardMode;
 }
 
 export interface DashboardPageProps {
   api?: DashboardApi;
   authState: AuthSnapshot;
+  eventId?: string | null;
   mode?: DashboardMode;
   navigateToStartup?: (
     startupId: string,
@@ -790,6 +817,68 @@ function createDefaultDashboardApi(): DashboardApi {
       }
 
       return { alerts: payload.alerts };
+    },
+    async listEvents(params) {
+      const qs = new URLSearchParams();
+      if (params.startupId) {
+        qs.set("startupId", params.startupId);
+      }
+      if (params.eventTypes) {
+        qs.set("eventTypes", params.eventTypes);
+      }
+      if (params.from) {
+        qs.set("from", params.from);
+      }
+      if (params.to) {
+        qs.set("to", params.to);
+      }
+      if (params.cursor) {
+        qs.set("cursor", params.cursor);
+      }
+      if (params.limit) {
+        qs.set("limit", String(params.limit));
+      }
+      const query = qs.toString();
+      const payload = await requestJson(`/events${query ? `?${query}` : ""}`);
+
+      if (
+        !(
+          isRecord(payload) &&
+          Array.isArray(payload.events) &&
+          isRecord(payload.pagination)
+        )
+      ) {
+        throw new DashboardApiError(
+          "MALFORMED_EVENT_LIST",
+          "Could not load events. Please try again."
+        );
+      }
+
+      return {
+        events: payload.events.filter(isRecord).map((e) => ({
+          id: String(e.id),
+          workspaceId: String(e.workspaceId),
+          startupId: typeof e.startupId === "string" ? e.startupId : null,
+          eventType: String(e.eventType) as EventLogEntrySummary["eventType"],
+          actorType: String(e.actorType) as EventLogEntrySummary["actorType"],
+          actorId: typeof e.actorId === "string" ? e.actorId : null,
+          payload: isRecord(e.payload)
+            ? (e.payload as Record<string, unknown>)
+            : {},
+          createdAt: String(e.createdAt),
+        })),
+        pagination: {
+          cursor:
+            typeof payload.pagination.cursor === "string"
+              ? payload.pagination.cursor
+              : null,
+          hasMore: payload.pagination.hasMore === true,
+          limit:
+            typeof payload.pagination.limit === "number"
+              ? payload.pagination.limit
+              : 50,
+        },
+      };
     },
     async triageAlert(alertId, action, snoozeDurationHours) {
       const body: Record<string, unknown> = { action };
@@ -1441,6 +1530,7 @@ function DashboardHealthConnectorsPanel({
 export function DashboardPage({
   authState,
   api = createDefaultDashboardApi(),
+  eventId = null,
   mode = "decide",
   navigateToStartup,
   onModeChange,
@@ -1511,6 +1601,25 @@ export function DashboardPage({
   const [contentView, setContentView] = useState<DashboardContentView | null>(
     null
   );
+
+  // Journal mode state
+  const [journalEvents, setJournalEvents] = useState<EventLogEntrySummary[]>(
+    []
+  );
+  const [journalStatus, setJournalStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [journalError, setJournalError] = useState<string | null>(null);
+  const [journalCursor, setJournalCursor] = useState<string | null>(null);
+  const [journalHasMore, setJournalHasMore] = useState(false);
+  const [journalLoadingMore, setJournalLoadingMore] = useState(false);
+  const [journalFilters, setJournalFilters] =
+    useState<EventFilterValues | null>(null);
+  const [scrollToEventMessage, setScrollToEventMessage] = useState<
+    string | null
+  >(null);
+  const scrollToEventRef = useRef<string | null>(eventId ?? null);
+  const scrollToEventRetries = useRef(0);
 
   const activeWorkspace = useMemo(
     () =>
@@ -1762,6 +1871,68 @@ export function DashboardPage({
     }
   }
 
+  async function refreshJournalEvents(
+    filters: EventFilterValues | null,
+    startupId: string | null,
+    append = false,
+    cursor?: string
+  ) {
+    if (append) {
+      setJournalLoadingMore(true);
+    } else {
+      setJournalStatus("loading");
+      setJournalError(null);
+    }
+
+    try {
+      const eventTypes = filters
+        ? [...filters.eventTypes].join(",")
+        : undefined;
+      const result = await api.listEvents({
+        startupId: startupId ?? undefined,
+        eventTypes,
+        from: filters?.dateFrom ?? undefined,
+        to: filters?.dateTo ?? undefined,
+        cursor,
+        limit: 50,
+      });
+
+      if (append) {
+        setJournalEvents((prev) => [...prev, ...result.events]);
+      } else {
+        setJournalEvents(result.events);
+      }
+      setJournalCursor(result.pagination.cursor);
+      setJournalHasMore(result.pagination.hasMore);
+      setJournalStatus("ready");
+    } catch (error) {
+      setJournalError(
+        getDashboardErrorMessage(error, "Failed to load events.")
+      );
+      setJournalStatus("error");
+    } finally {
+      setJournalLoadingMore(false);
+    }
+  }
+
+  function handleJournalFilterApply(filters: EventFilterValues) {
+    setJournalFilters(filters);
+    setJournalCursor(null);
+    void refreshJournalEvents(filters, selectedStartupId);
+  }
+
+  function handleJournalLoadMore() {
+    if (!journalCursor || journalLoadingMore) {
+      return;
+    }
+    void refreshJournalEvents(
+      journalFilters,
+      selectedStartupId,
+      true,
+      journalCursor
+    );
+  }
+
   async function handleTriageAck(alertId: string) {
     setTriaging(true);
     try {
@@ -1966,6 +2137,85 @@ export function DashboardPage({
     refreshSelectedStartupData(selectedStartupId);
   }, [selectedStartupId]);
 
+  // Load journal events when mode switches to journal
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only trigger on mode/startup change
+  useEffect(() => {
+    if (mode === "journal") {
+      void refreshJournalEvents(journalFilters, selectedStartupId);
+    }
+  }, [mode, selectedStartupId]);
+
+  // Scroll-to-event: when events load, try to find the target event
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshJournalEvents is stable per render
+  const handleScrollToEvent = useCallback(
+    (events: EventLogEntrySummary[], targetId: string | null) => {
+      if (!targetId) {
+        return;
+      }
+
+      const found = events.find((e) => e.id === targetId);
+      if (found) {
+        scrollToEventRef.current = null;
+        scrollToEventRetries.current = 0;
+        setScrollToEventMessage(null);
+        // Scroll the element into view after render
+        requestAnimationFrame(() => {
+          const el = document.querySelector(`[data-event-id="${targetId}"]`);
+          el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+        return;
+      }
+
+      // Check if event is >90 days old based on targetId (we don't know timestamp yet)
+      // We'll check after retries exhaust
+
+      if (scrollToEventRetries.current < 2) {
+        scrollToEventRetries.current += 1;
+        // Retry after 2s
+        setTimeout(() => {
+          void refreshJournalEvents(journalFilters, selectedStartupId);
+        }, 2000);
+        return;
+      }
+
+      // Retries exhausted
+      scrollToEventRef.current = null;
+      scrollToEventRetries.current = 0;
+      setScrollToEventMessage(
+        "Event not found or expired. It may have been archived."
+      );
+    },
+    [journalFilters, selectedStartupId]
+  );
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only run when journal events change
+  useEffect(() => {
+    if (
+      mode === "journal" &&
+      journalStatus === "ready" &&
+      scrollToEventRef.current
+    ) {
+      handleScrollToEvent(journalEvents, scrollToEventRef.current);
+    }
+  }, [journalEvents, journalStatus, mode]);
+
+  // Group journal events by day for rendering
+  const journalEventsByDay = useMemo(() => {
+    const groups: { date: string; events: EventLogEntrySummary[] }[] = [];
+    let currentDate = "";
+
+    for (const event of journalEvents) {
+      const eventDate = event.createdAt.slice(0, 10); // YYYY-MM-DD
+      if (eventDate !== currentDate) {
+        currentDate = eventDate;
+        groups.push({ date: eventDate, events: [] });
+      }
+      groups.at(-1)?.events.push(event);
+    }
+
+    return groups;
+  }, [journalEvents]);
+
   // Filter active connectors for the status panel
   const activeConnectors = connectors.filter(
     (c) => c.status !== "disconnected"
@@ -2101,9 +2351,79 @@ export function DashboardPage({
 
             {mode === "journal" ? (
               <section aria-label="Journal mode" className="grid gap-4">
-                <p className="text-muted-foreground text-sm">
-                  Journal mode — event log coming soon.
-                </p>
+                <EventFilter onApply={handleJournalFilterApply} />
+
+                {scrollToEventMessage ? (
+                  <Alert>
+                    <AlertDescription>{scrollToEventMessage}</AlertDescription>
+                  </Alert>
+                ) : null}
+
+                {journalStatus === "loading" ? (
+                  <div className="grid gap-2">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <div
+                        className="h-14 animate-pulse rounded bg-muted"
+                        key={`journal-skeleton-${String(i)}`}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+
+                {journalStatus === "error" ? (
+                  <Alert variant="destructive">
+                    <AlertDescription>
+                      {journalError ?? "Failed to load events."}
+                      <Button
+                        className="ml-2"
+                        onClick={() => {
+                          void refreshJournalEvents(
+                            journalFilters,
+                            selectedStartupId
+                          );
+                        }}
+                        size="xs"
+                        variant="outline"
+                      >
+                        Retry
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+
+                {journalStatus === "ready" && journalEvents.length === 0 ? (
+                  <p className="py-8 text-center text-muted-foreground text-sm">
+                    No events match your filters.
+                  </p>
+                ) : null}
+
+                {journalStatus === "ready" && journalEvents.length > 0 ? (
+                  <div className="grid gap-0">
+                    {journalEventsByDay.map((group) => (
+                      <div key={group.date}>
+                        <DaySeparator date={group.date} />
+                        {group.events.map((event) => (
+                          <div data-event-id={event.id} key={event.id}>
+                            <EventLogEntry event={event} />
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+
+                    {journalHasMore ? (
+                      <div className="flex justify-center pt-4">
+                        <Button
+                          disabled={journalLoadingMore}
+                          onClick={handleJournalLoadMore}
+                          size="sm"
+                          variant="outline"
+                        >
+                          {journalLoadingMore ? "Loading…" : "Load more"}
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </section>
             ) : null}
 

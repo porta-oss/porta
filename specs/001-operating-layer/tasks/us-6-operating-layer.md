@@ -131,15 +131,15 @@ File: `apps/web/src/routes/_authenticated/dashboard.tsx`
 
 ### Task 11: Implement Journal mode
 File: `apps/web/src/routes/_authenticated/dashboard.tsx`
-- [ ] Fetch events via `GET /api/events` with filters (TanStack Query)
-- [ ] Render `EventFilterBar` with filter state
-- [ ] Group events by day, render `DaySeparator` between groups
-- [ ] Render `EventLogEntry` for each event
-- [ ] "Load more" button triggers cursor pagination (pass `cursor` from last response)
-- [ ] Scroll-to-event: if `?event=` param present, find event in loaded list
-- [ ] If event not found in current page, retry fetch 2x with 2s delay between
-- [ ] If still not found after retries: show "Event not found or expired" toast
-- [ ] If event timestamp is >90 days old: show "This event has been archived" toast
+- [x] Fetch events via `GET /api/events` with filters (TanStack Query)
+- [x] Render `EventFilterBar` with filter state
+- [x] Group events by day, render `DaySeparator` between groups
+- [x] Render `EventLogEntry` for each event
+- [x] "Load more" button triggers cursor pagination (pass `cursor` from last response)
+- [x] Scroll-to-event: if `?event=` param present, find event in loaded list
+- [x] If event not found in current page, retry fetch 2x with 2s delay between
+- [x] If still not found after retries: show "Event not found or expired" toast
+- [x] If event timestamp is >90 days old: show "This event has been archived" toast
 
 ### Task 12: Implement Compare mode
 File: `apps/web/src/routes/_authenticated/dashboard.tsx`

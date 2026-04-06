@@ -239,6 +239,12 @@ function createApi(overrides: Partial<DashboardApi> = {}): DashboardApi {
         throw new Error("not implemented");
       }),
     listAlerts: overrides.listAlerts ?? mock(async () => ({ alerts: [] })),
+    listEvents:
+      overrides.listEvents ??
+      mock(async () => ({
+        events: [],
+        pagination: { cursor: null, hasMore: false, limit: 50 },
+      })),
     triageAlert:
       overrides.triageAlert ??
       mock(async () => {

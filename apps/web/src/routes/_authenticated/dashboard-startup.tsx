@@ -10,6 +10,10 @@ export const dashboardStartupRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: "app/startups/$startupId",
   validateSearch: (search): DashboardSearch => ({
+    event:
+      typeof search.event === "string" && search.event.length > 0
+        ? search.event
+        : undefined,
     mode:
       typeof search.mode === "string" &&
       VALID_MODES.includes(search.mode as DashboardMode)
@@ -30,6 +34,7 @@ function DashboardStartupRouteComponent() {
   return (
     <DashboardPage
       authState={authState}
+      eventId={search.event ?? null}
       mode={search.mode ?? "decide"}
       navigateToStartup={(nextStartupId, replace = false) =>
         navigate({
