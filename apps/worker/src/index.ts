@@ -10,6 +10,7 @@ import {
   createAnthropicExplainer,
   createFounderProofExplainer,
 } from "./insights";
+import { createEventPurgeProcessor } from "./processors/event-purge";
 import { createSyncProcessor } from "./processors/sync";
 import {
   createFounderProofLinearClient,
@@ -20,7 +21,12 @@ import {
   createFounderProofSyncRouter,
   createProviderSyncRouter,
 } from "./providers";
-import { createSyncWorker, createTaskSyncWorker } from "./queues";
+import {
+  createEventPurgeQueue,
+  createEventPurgeWorker,
+  createSyncWorker,
+  createTaskSyncWorker,
+} from "./queues";
 import {
   createHealthSnapshotRepository,
   createInsightRepository,
@@ -232,6 +238,42 @@ async function main() {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Event purge worker (daily cleanup of old event_log rows)
+  // ---------------------------------------------------------------------------
+
+  const eventPurgeProcessor = createEventPurgeProcessor({ db, log });
+  const eventPurgeWorker = createEventPurgeWorker(
+    env.redisUrl,
+    eventPurgeProcessor
+  );
+
+  eventPurgeWorker.on("ready", () => {
+    log.info("event-purge worker ready", { queue: "event-purge" });
+  });
+
+  eventPurgeWorker.on("failed", (job: unknown, err: Error) => {
+    const j = job as Record<string, unknown> | undefined;
+    log.error("event-purge job failed", {
+      jobId: j?.id,
+      attempt: j?.attemptsMade,
+      error: err.message,
+    });
+  });
+
+  eventPurgeWorker.on("error", (err: Error) => {
+    log.error("event-purge worker error", { error: err.message });
+  });
+
+  // Register daily repeatable job (3am UTC)
+  const eventPurgeQueue = createEventPurgeQueue(env.redisUrl);
+  await eventPurgeQueue.upsertJobScheduler(
+    "event-purge-daily",
+    { pattern: "0 3 * * *" },
+    { data: {} }
+  );
+  log.info("event-purge daily schedule registered", { cron: "0 3 * * *" });
+
   // Graceful shutdown
   const shutdown = async (signal: string) => {
     log.info(`received ${signal}, shutting down`);
@@ -243,6 +285,8 @@ async function main() {
     if (taskSyncWorker) {
       await taskSyncWorker.close();
     }
+    await eventPurgeWorker.close();
+    await eventPurgeQueue.close();
     await pool.end();
     log.info("worker stopped");
     process.exit(0);

@@ -90,6 +90,7 @@ export const workspace = pgTable(
     logo: text("logo"),
     createdAt: timestamp("created_at").notNull(),
     metadata: text("metadata"),
+    legalHoldUntil: timestamp("legal_hold_until", { withTimezone: true }),
   },
   (table) => [uniqueIndex("workspace_slug_uidx").on(table.slug)]
 );

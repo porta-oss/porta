@@ -62,8 +62,8 @@ File: `apps/api/src/app.ts`
 
 ### Task 4: Implement event purge processor
 File: `apps/worker/src/processors/event-purge.ts`
-- [ ] Create processor for `EVENT_PURGE_QUEUE`
-- [ ] DELETE FROM `event_log` WHERE `created_at < now() - interval '90 days'`
-- [ ] Exclude workspaces with `legal_hold_until > now()` -- for those, UPDATE payload to redact PII fields (replace string values with `'[REDACTED]'`)
-- [ ] Log purge count
-- [ ] Register as daily repeatable job (cron: `'0 3 * * *'` -- 3am UTC)
+- [x] Create processor for `EVENT_PURGE_QUEUE`
+- [x] DELETE FROM `event_log` WHERE `created_at < now() - interval '90 days'`
+- [x] Exclude workspaces with `legal_hold_until > now()` -- for those, UPDATE payload to redact PII fields (replace string values with `'[REDACTED]'`)
+- [x] Log purge count
+- [x] Register as daily repeatable job (cron: `'0 3 * * *'` -- 3am UTC)
