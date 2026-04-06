@@ -76,11 +76,11 @@ File: `apps/api/src/routes/telegram.ts` (same file)
 
 ### Task 4: Implement sparkline generation
 File: `apps/worker/src/sparklines.ts`
-- [ ] Create `renderSparkline(values: number[], width?: number, height?: number): Promise<Buffer>`
-- [ ] Generate SVG path from values (200x50px default)
-- [ ] Convert SVG to PNG via `@resvg/resvg-js`
-- [ ] 5s timeout via AbortController
-- [ ] On timeout/error: return null (caller uses text fallback)
+- [x] Create `renderSparkline(values: number[], width?: number, height?: number): Promise<Buffer>`
+- [x] Generate SVG path from values (200x50px default)
+- [x] Convert SVG to PNG via `@resvg/resvg-js`
+- [x] 5s timeout via AbortController
+- [x] On timeout/error: return null (caller uses text fallback)
 
 ### Task 5: Implement daily digest processor
 File: `apps/worker/src/processors/telegram.ts`
