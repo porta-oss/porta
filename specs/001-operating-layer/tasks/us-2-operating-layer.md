@@ -114,7 +114,7 @@ File: `apps/web/src/routes/_authenticated/settings/telegram.tsx`
 
 ### Task 8: Register Telegram routes in app
 File: `apps/api/src/app.ts`
-- [ ] Import Telegram route handlers
-- [ ] Add POST/DELETE `/api/workspace/telegram` with session auth
-- [ ] Add Telegram webhook endpoint (no session auth -- Telegram calls this)
-- [ ] Wire `TelegramRuntime` with db + bot instance
+- [x] Import Telegram route handlers
+- [x] Add POST/DELETE `/api/workspace/telegram` with session auth
+- [x] Add Telegram webhook endpoint (no session auth -- Telegram calls this)
+- [x] Wire `TelegramRuntime` with db + bot instance

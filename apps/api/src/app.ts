@@ -89,6 +89,7 @@ import {
   handleDeleteTelegram,
   handleGetTelegram,
   handleSetupTelegram,
+  handleTelegramWebhook,
   type TelegramRuntime,
 } from "./routes/telegram";
 import {
@@ -2023,6 +2024,17 @@ export async function createApiApp(
         set
       );
     })
+    // -----------------------------------------------------------------
+    // Telegram webhook (no session auth — Telegram calls this)
+    // -----------------------------------------------------------------
+    .post("/telegram/webhook/:configId", async ({ params, body, set }) =>
+      handleTelegramWebhook(
+        { db: runtime.db } as TelegramRuntime,
+        params.configId,
+        body,
+        set
+      )
+    )
     // -----------------------------------------------------------------
     // MCP REST endpoints (API key auth, not session auth)
     // -----------------------------------------------------------------

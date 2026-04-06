@@ -758,3 +758,62 @@ describe("Telegram callback query (triage)", () => {
     expect(answerCall?.payload.text).toBe("Unknown action");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Webhook HTTP route registration tests
+// ---------------------------------------------------------------------------
+
+describe("Telegram webhook HTTP route", () => {
+  test("POST /api/telegram/webhook/:configId is accessible without session auth", async () => {
+    const a = requireValue(app, "Expected API test app to be initialized.");
+
+    // Ensure clean state + create config
+    await a.runtime.db.db.delete(telegramConfig);
+    const setupRes = await sendWithCookie("/api/workspace/telegram", {
+      method: "POST",
+      cookie,
+      body: {
+        botToken: "123456789:ABCdefGHIjklMNOpqrSTUvwxYZ012345678",
+        digestTime: "09:00",
+        digestTimezone: "UTC",
+      },
+    });
+    const setupPayload = await parseJson(setupRes);
+    const config = setupPayload.config as Record<string, unknown>;
+    const configId = config.id as string;
+
+    // Hit the webhook route WITHOUT any cookie/auth — should still work
+    const response = await a.handle(
+      new Request(`http://localhost:3000/api/telegram/webhook/${configId}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(
+          buildStartUpdate(77_777_777, "wrong-code-doesnt-matter")
+        ),
+      })
+    );
+
+    // Should return 200 with { ok: true } (the code is wrong, but route itself works)
+    expect(response.status).toBe(200);
+    const payload = await parseJson(response);
+    expect(payload.ok).toBe(true);
+  });
+
+  test("POST /api/telegram/webhook/:configId with unknown configId returns 404", async () => {
+    const a = requireValue(app, "Expected API test app to be initialized.");
+
+    const response = await a.handle(
+      new Request("http://localhost:3000/api/telegram/webhook/nonexistent-id", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(buildStartUpdate(88_888_888, "123456")),
+      })
+    );
+
+    expect(response.status).toBe(404);
+    const payload = await parseJson(response);
+    expect(payload.error).toBeDefined();
+    const err = payload.error as Record<string, unknown>;
+    expect(err.code).toBe("TELEGRAM_CONFIG_NOT_FOUND");
+  });
+});
