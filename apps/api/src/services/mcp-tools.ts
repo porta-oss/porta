@@ -96,6 +96,55 @@ interface CustomMetricRow {
   unit: string;
 }
 
+function matchesFilter(
+  metricCategory: string,
+  key: string,
+  category?: string,
+  metricKeys?: string[]
+): boolean {
+  if (category && metricCategory !== category) {
+    return false;
+  }
+  if (metricKeys && metricKeys.length > 0 && !metricKeys.includes(key)) {
+    return false;
+  }
+  return true;
+}
+
+function extractUniversalMetrics(
+  snapshot: HealthSnapshotRow,
+  category?: string,
+  metricKeys?: string[]
+): McpMetricValue[] {
+  const universalMetrics = snapshot.supporting_metrics as UniversalMetrics;
+  const results: McpMetricValue[] = [];
+
+  for (const key of UNIVERSAL_METRIC_KEYS) {
+    const value = universalMetrics[key];
+    if (value == null) {
+      continue;
+    }
+
+    const metricCategory = METRIC_CATEGORY_MAP[key] ?? "custom";
+    if (!matchesFilter(metricCategory, key, category, metricKeys)) {
+      continue;
+    }
+
+    results.push({
+      key,
+      label: METRIC_LABELS[key],
+      value,
+      previousValue: null,
+      delta: null,
+      unit: METRIC_UNITS[key],
+      category: metricCategory,
+      source: "health_snapshot",
+      isUniversal: true,
+    });
+  }
+  return results;
+}
+
 export async function getMetrics(
   db: McpDb,
   params: GetMetricsParams
@@ -113,35 +162,7 @@ export async function getMetrics(
 
   const snapshot = snapshotResult.rows[0] as HealthSnapshotRow | undefined;
   if (snapshot) {
-    const universalMetrics = snapshot.supporting_metrics as UniversalMetrics;
-
-    for (const key of UNIVERSAL_METRIC_KEYS) {
-      const value = universalMetrics[key];
-      if (value == null) {
-        continue;
-      }
-
-      const metricCategory = METRIC_CATEGORY_MAP[key] ?? "custom";
-
-      if (category && metricCategory !== category) {
-        continue;
-      }
-      if (metricKeys && metricKeys.length > 0 && !metricKeys.includes(key)) {
-        continue;
-      }
-
-      metrics.push({
-        key,
-        label: METRIC_LABELS[key],
-        value,
-        previousValue: null,
-        delta: null,
-        unit: METRIC_UNITS[key],
-        category: metricCategory,
-        source: "health_snapshot",
-        isUniversal: true,
-      });
-    }
+    metrics.push(...extractUniversalMetrics(snapshot, category, metricKeys));
   }
 
   // 2. Custom metrics
@@ -154,11 +175,7 @@ export async function getMetrics(
 
   for (const row of customResult.rows as CustomMetricRow[]) {
     const metricCategory = (row.category || "custom") as MetricCategory;
-
-    if (category && metricCategory !== category) {
-      continue;
-    }
-    if (metricKeys && metricKeys.length > 0 && !metricKeys.includes(row.key)) {
+    if (!matchesFilter(metricCategory, row.key, category, metricKeys)) {
       continue;
     }
 
@@ -248,7 +265,7 @@ export async function getAlerts(
     threshold: Number(row.threshold),
     status: row.status as McpAlert["status"],
     occurrenceCount: row.occurrence_count,
-    firedAt: toIso(row.fired_at)!,
+    firedAt: toIso(row.fired_at) ?? new Date().toISOString(),
   }));
 }
 
@@ -392,13 +409,16 @@ export async function getActivityLog(
     actorType: row.actor_type,
     actorId: row.actor_id,
     payload: row.payload,
-    createdAt: toIso(row.created_at)!,
+    createdAt: toIso(row.created_at) ?? new Date().toISOString(),
   }));
 
   const lastRow = pageRows.at(-1);
   const nextCursor =
     hasMore && lastRow
-      ? encodeCursor(toIso(lastRow.created_at)!, lastRow.id)
+      ? encodeCursor(
+          toIso(lastRow.created_at) ?? new Date().toISOString(),
+          lastRow.id
+        )
       : null;
 
   return {
@@ -666,7 +686,7 @@ export async function createTask(
       description: row.description,
       priority,
       syncStatus: row.sync_status,
-      createdAt: toIso(row.created_at)!,
+      createdAt: toIso(row.created_at) ?? new Date().toISOString(),
     },
   };
 }
@@ -737,7 +757,7 @@ export async function snoozeAlert(
     threshold: Number(row.threshold),
     status: row.status as McpAlert["status"],
     occurrenceCount: row.occurrence_count,
-    firedAt: toIso(row.fired_at)!,
+    firedAt: toIso(row.fired_at) ?? new Date().toISOString(),
   };
 }
 
