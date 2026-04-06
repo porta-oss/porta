@@ -52,12 +52,12 @@ File: `apps/web/src/components/mode-switcher.tsx`
 
 ### Task 2: Create decision surface component
 File: `apps/web/src/components/decision-surface.tsx`
-- [ ] Display highest-priority alert (sorted by severity, then firedAt)
-- [ ] Alert card with: severity badge, metric key, current value, threshold, fired time
-- [ ] Inline action buttons: Ack, Snooze (with duration picker), Investigate (navigates to journal with `?event={id}`)
-- [ ] Zero-alert state: "All clear" message with streak badge and celebration styling
-- [ ] Loading skeleton state while fetching alerts
-- [ ] Error state with retry button
+- [x] Display highest-priority alert (sorted by severity, then firedAt)
+- [x] Alert card with: severity badge, metric key, current value, threshold, fired time
+- [x] Inline action buttons: Ack, Snooze (with duration picker), Investigate (navigates to journal with `?event={id}`)
+- [x] Zero-alert state: "All clear" message with streak badge and celebration styling
+- [x] Loading skeleton state while fetching alerts
+- [x] Error state with retry button
 
 ### Task 3: Create event log entry component
 File: `apps/web/src/components/event-log-entry.tsx`
