@@ -222,6 +222,37 @@ export function buildContextString(startups: StartupWithHealth[]): string {
 }
 
 // ---------------------------------------------------------------------------
+// Per-startup summary (used when <2 startups — no cross-comparison)
+// ---------------------------------------------------------------------------
+
+export function generatePerStartupSummary(
+  startups: StartupWithHealth[]
+): string {
+  const lines: string[] = [];
+  for (const s of startups) {
+    lines.push(`${s.name} (${s.type}):`);
+    lines.push(`- Health: ${s.healthState}`);
+    lines.push(
+      `- North star (${s.northStarKey}): ${s.northStarValue ?? "N/A"}${s.northStarDelta == null ? "" : ` (delta: ${s.northStarDelta > 0 ? "+" : ""}${s.northStarDelta})`}`
+    );
+    lines.push(`- Active alerts: ${s.activeAlerts}`);
+
+    const metricBullets: string[] = [];
+    for (const key of UNIVERSAL_METRIC_KEYS) {
+      const val = s.supportingMetrics[key];
+      if (val != null) {
+        metricBullets.push(`  - ${key}: ${val}`);
+      }
+    }
+    if (metricBullets.length > 0) {
+      lines.push(`- Key metrics:\n${metricBullets.join("\n")}`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n").trim();
+}
+
+// ---------------------------------------------------------------------------
 // AI call
 // ---------------------------------------------------------------------------
 
@@ -386,11 +417,26 @@ export function createPortfolioDigestProcessor(
       })),
     };
 
-    // Step 3: Attempt AI synthesis if >=2 startups and API key available
+    // Step 3: Attempt AI synthesis or generate per-startup summary
     let aiSynthesis: string | null = null;
     let synthesizedAt: Date | null = null;
 
-    if (startups.length >= 2 && deps.anthropicApiKey) {
+    if (startups.length < 2) {
+      // <2 startups: generate per-startup summary text (no cross-comparison)
+      aiSynthesis = generatePerStartupSummary(startups);
+      synthesizedAt = new Date();
+
+      deps.log.info(
+        "fewer than 2 startups, generating per-startup summary only",
+        logCtx
+      );
+
+      await logDigestEvent(deps.db, workspaceId, "insight.degraded", {
+        reason: "insufficient_startups",
+        startupCount: startups.length,
+      });
+    } else if (deps.anthropicApiKey) {
+      // >=2 startups + API key: call Anthropic
       const contextString = buildContextString(startups);
 
       try {
@@ -409,7 +455,7 @@ export function createPortfolioDigestProcessor(
           outputTokens: result.tokenUsage.output,
         });
 
-        // Log cost event (fire-and-forget)
+        // Log AI API usage: token count, latency, cost estimate
         const estimatedCost =
           (result.tokenUsage.input * 0.003 + result.tokenUsage.output * 0.015) /
           1000;
@@ -425,18 +471,28 @@ export function createPortfolioDigestProcessor(
         });
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
+        const isTimeout = error.includes("timed out");
+        const reason = isTimeout ? "ai_timeout" : "ai_unavailable";
+
         deps.log.error("AI synthesis failed, storing metric-only digest", {
           ...logCtx,
           error,
+          degradedReason: reason,
+        });
+
+        await logDigestEvent(deps.db, workspaceId, "insight.degraded", {
+          reason,
+          startupCount: startups.length,
         });
       }
-    } else if (startups.length < 2) {
-      deps.log.info(
-        "fewer than 2 startups, generating per-startup summary only",
-        logCtx
-      );
     } else {
+      // No API key: metric-only digest
       deps.log.info("no Anthropic API key, storing metric-only digest", logCtx);
+
+      await logDigestEvent(deps.db, workspaceId, "insight.degraded", {
+        reason: "ai_unavailable",
+        startupCount: startups.length,
+      });
     }
 
     // Step 4: Store digest

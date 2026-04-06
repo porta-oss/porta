@@ -54,10 +54,10 @@ File: `apps/worker/src/processors/portfolio-digest.ts`
 
 ### Task 2: Add graceful degradation
 File: `apps/worker/src/processors/portfolio-digest.ts` (same file)
-- [ ] Check startup count: if <2, generate per-startup summary text (structured bullet points per startup, no cross-comparison)
-- [ ] Wrap AI call in try/catch: on timeout or API error, return metric-only digest (structured data without prose `aiSynthesis`)
-- [ ] Log AI API usage in `event_log`: token count (input + output), latency ms, cost estimate, as `insight.generated` event type
-- [ ] On degraded mode: log `insight.degraded` event with reason (insufficient_startups | ai_unavailable | ai_timeout)
+- [x] Check startup count: if <2, generate per-startup summary text (structured bullet points per startup, no cross-comparison)
+- [x] Wrap AI call in try/catch: on timeout or API error, return metric-only digest (structured data without prose `aiSynthesis`)
+- [x] Log AI API usage in `event_log`: token count (input + output), latency ms, cost estimate, as `insight.generated` event type
+- [x] On degraded mode: log `insight.degraded` event with reason (insufficient_startups | ai_unavailable | ai_timeout)
 
 ### Task 3: Wire AI synthesis into MCP + Compare mode
 File: `apps/api/src/services/mcp-tools.ts`

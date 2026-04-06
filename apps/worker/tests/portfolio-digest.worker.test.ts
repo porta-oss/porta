@@ -7,6 +7,7 @@ import type { PortfolioDigestProcessorDeps } from "../src/processors/portfolio-d
 import {
   buildContextString,
   createPortfolioDigestProcessor,
+  generatePerStartupSummary,
 } from "../src/processors/portfolio-digest";
 import type { PortfolioDigestJobPayload } from "../src/queues";
 
@@ -167,7 +168,7 @@ describe("portfolio-digest processor", () => {
     expect(skipMsg).toBeTruthy();
   });
 
-  test("generates metric-only digest for single startup (no AI synthesis)", async () => {
+  test("generates per-startup summary for single startup (no cross-comparison)", async () => {
     const log = createTestLog();
     const db = createStubDb({
       startups: [STARTUP_ALPHA],
@@ -179,14 +180,24 @@ describe("portfolio-digest processor", () => {
     const result = await processor(makeJob({ workspaceId: "ws-1" }));
 
     expect(result.startupCount).toBe(1);
-    expect(result.aiSynthesis).toBeNull();
-    expect(result.synthesized).toBe(false);
+    // Per-startup summary text is generated (not null)
+    expect(result.aiSynthesis).toContain("Alpha SaaS");
+    expect(result.aiSynthesis).toContain("Health: ready");
+    expect(result.synthesized).toBe(true);
 
     // Should log "fewer than 2 startups"
     const singleMsg = log.messages.find((m) =>
       m.msg.includes("fewer than 2 startups")
     );
     expect(singleMsg).toBeTruthy();
+
+    // Should log insight.degraded event with reason
+    const degradedEvent = db.queries.find(
+      (q) =>
+        q.includes("INSERT INTO event_log") && q.includes("insight.degraded")
+    );
+    expect(degradedEvent).toBeTruthy();
+    expect(degradedEvent).toContain("insufficient_startups");
 
     // Should store digest (DELETE + INSERT)
     const deleteQuery = db.queries.find((q) =>
@@ -199,7 +210,7 @@ describe("portfolio-digest processor", () => {
     expect(insertQuery).toBeTruthy();
   });
 
-  test("generates metric-only digest when no API key provided", async () => {
+  test("generates metric-only digest when no API key provided and logs degraded event", async () => {
     const log = createTestLog();
     const db = createStubDb({
       startups: [STARTUP_ALPHA, STARTUP_BETA],
@@ -219,6 +230,14 @@ describe("portfolio-digest processor", () => {
       m.msg.includes("no Anthropic API key")
     );
     expect(noKeyMsg).toBeTruthy();
+
+    // Should log insight.degraded event with ai_unavailable reason
+    const degradedEvent = db.queries.find(
+      (q) =>
+        q.includes("INSERT INTO event_log") && q.includes("insight.degraded")
+    );
+    expect(degradedEvent).toBeTruthy();
+    expect(degradedEvent).toContain("ai_unavailable");
   });
 
   test("stores structured data with correct startup count", async () => {
@@ -262,7 +281,7 @@ describe("portfolio-digest processor", () => {
     );
     expect(completedMsg).toBeTruthy();
     expect(completedMsg?.meta?.startupCount).toBe(1);
-    expect(completedMsg?.meta?.hasSynthesis).toBe(false);
+    expect(completedMsg?.meta?.hasSynthesis).toBe(true);
   });
 
   test("handles startups without health snapshots gracefully", async () => {
@@ -276,9 +295,11 @@ describe("portfolio-digest processor", () => {
 
     const result = await processor(makeJob({ workspaceId: "ws-1" }));
 
-    // Should still produce a digest with default health state
+    // Should still produce a digest with default health state and per-startup summary
     expect(result.startupCount).toBe(1);
-    expect(result.synthesized).toBe(false);
+    expect(result.synthesized).toBe(true);
+    expect(result.aiSynthesis).toContain("Alpha SaaS");
+    expect(result.aiSynthesis).toContain("Health: syncing");
   });
 
   test("computes north star delta correctly", async () => {
@@ -409,5 +430,66 @@ describe("buildContextString", () => {
     expect(result).toContain("North star (mrr): N/A");
     // Should NOT contain delta text
     expect(result).not.toContain("delta:");
+  });
+});
+
+describe("generatePerStartupSummary", () => {
+  test("generates bullet-point summary for a single startup", () => {
+    const result = generatePerStartupSummary([
+      {
+        startupId: "s-1",
+        name: "TestApp",
+        type: "b2b_saas",
+        healthState: "ready",
+        northStarKey: "mrr",
+        northStarValue: 5000,
+        northStarDelta: 500,
+        activeAlerts: 2,
+        supportingMetrics: {
+          mrr: 5000,
+          active_users: 100,
+          churn_rate: 3.0,
+          error_rate: null,
+          growth_rate: 10.0,
+          arpu: null,
+        },
+      },
+    ]);
+
+    expect(result).toContain("TestApp (b2b_saas):");
+    expect(result).toContain("- Health: ready");
+    expect(result).toContain("- North star (mrr): 5000");
+    expect(result).toContain("(delta: +500)");
+    expect(result).toContain("- Active alerts: 2");
+    expect(result).toContain("- Key metrics:");
+    expect(result).toContain("mrr: 5000");
+    expect(result).toContain("active_users: 100");
+  });
+
+  test("handles null values gracefully", () => {
+    const result = generatePerStartupSummary([
+      {
+        startupId: "s-1",
+        name: "NoData",
+        type: "b2b_saas",
+        healthState: "syncing",
+        northStarKey: "mrr",
+        northStarValue: null,
+        northStarDelta: null,
+        activeAlerts: 0,
+        supportingMetrics: {
+          mrr: null,
+          active_users: null,
+          churn_rate: null,
+          error_rate: null,
+          growth_rate: null,
+          arpu: null,
+        },
+      },
+    ]);
+
+    expect(result).toContain("- North star (mrr): N/A");
+    expect(result).not.toContain("delta:");
+    expect(result).not.toContain("- Key metrics:");
   });
 });

@@ -16,6 +16,7 @@ export const EVENT_TYPES = [
   "connector.errored",
   "connector.created",
   "connector.deleted",
+  "insight.degraded",
   "insight.generated",
   "insight.viewed",
   "telegram.digest",
@@ -89,6 +90,11 @@ const connectorCreatedPayload = z.object({
 const connectorDeletedPayload = z.object({
   connectorId: z.string(),
   provider: z.string(),
+});
+
+const insightDegradedPayload = z.object({
+  reason: z.enum(["insufficient_startups", "ai_unavailable", "ai_timeout"]),
+  startupCount: z.number().int(),
 });
 
 const insightGeneratedPayload = z.object({
@@ -180,6 +186,7 @@ export const EVENT_PAYLOAD_SCHEMAS = {
   "connector.deleted": connectorDeletedPayload,
   "connector.errored": connectorErroredPayload,
   "connector.synced": connectorSyncedPayload,
+  "insight.degraded": insightDegradedPayload,
   "insight.generated": insightGeneratedPayload,
   "insight.viewed": insightViewedPayload,
   "mcp.action": mcpActionPayload,
@@ -215,6 +222,7 @@ export const eventLogEntrySchema = z.discriminatedUnion("eventType", [
   eventEntry("connector.errored"),
   eventEntry("connector.created"),
   eventEntry("connector.deleted"),
+  eventEntry("insight.degraded"),
   eventEntry("insight.generated"),
   eventEntry("insight.viewed"),
   eventEntry("telegram.digest"),

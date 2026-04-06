@@ -109,6 +109,11 @@ const EVENT_CONFIG: Record<EventType, EventConfig> = {
     label: "Connector Deleted",
     variant: "outline",
   },
+  "insight.degraded": {
+    icon: AlertTriangle,
+    label: "Insight Degraded",
+    variant: "secondary",
+  },
   "insight.generated": {
     icon: Sparkles,
     label: "Insight Generated",
@@ -277,6 +282,13 @@ function InsightEventDetail({ event }: { event: EventLogEntrySummary }) {
       <span className="line-clamp-2 text-muted-foreground text-sm">
         {String(p.summary ?? "")}
       </span>
+    );
+  }
+
+  if (event.eventType === "insight.degraded") {
+    const reason = String(p.reason ?? "unknown").replace(/_/g, " ");
+    return (
+      <span className="text-muted-foreground text-sm">Degraded: {reason}</span>
     );
   }
 
