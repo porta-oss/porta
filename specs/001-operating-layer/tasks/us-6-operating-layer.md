@@ -143,9 +143,9 @@ File: `apps/web/src/routes/_authenticated/dashboard.tsx`
 
 ### Task 12: Implement Compare mode
 File: `apps/web/src/routes/_authenticated/dashboard.tsx`
-- [ ] Fetch all startups with metrics via batch endpoint (TanStack Query)
-- [ ] 60s `staleTime` client-side cache
-- [ ] Render `ComparisonMatrix` with startup data
-- [ ] Render `AiSynthesisCard` with portfolio summary from stored AI synthesis
-- [ ] Handle <2 startups: show per-startup summary card instead of matrix
-- [ ] Render `SystemStatusSection` in sidebar
+- [x] Fetch all startups with metrics via batch endpoint (TanStack Query)
+- [x] 60s `staleTime` client-side cache
+- [x] Render `ComparisonMatrix` with startup data
+- [x] Render `AiSynthesisCard` with portfolio summary from stored AI synthesis
+- [x] Handle <2 startups: show per-startup summary card instead of matrix
+- [x] Render `SystemStatusSection` in sidebar

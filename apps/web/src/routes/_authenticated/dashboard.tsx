@@ -39,7 +39,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { AiSynthesisCard } from "../../components/ai-synthesis-card";
 import { AppShell } from "../../components/app-shell";
+import {
+  ComparisonMatrix,
+  type StartupComparison,
+} from "../../components/comparison-matrix";
 import { ConnectorSetupCard } from "../../components/connector-setup-card";
 import { ConnectorStatusPanel } from "../../components/connector-status-panel";
 import { CustomMetricPanel } from "../../components/custom-metric-panel";
@@ -71,6 +76,7 @@ import { StartupInsightCard } from "../../components/startup-insight-card";
 import type { InsightDisplayStatus } from "../../components/startup-insight-card-types";
 import { StartupMetricsGrid } from "../../components/startup-metrics-grid";
 import { StartupTaskList } from "../../components/startup-task-list";
+import { SystemStatusSection } from "../../components/system-status-section";
 import {
   API_BASE_URL,
   type AuthSnapshot,
@@ -117,6 +123,28 @@ export interface StartupInsightPayload {
   insight: LatestInsightPayload | null;
 }
 
+/** Startup summary from the portfolio batch endpoint. */
+export interface PortfolioStartupSummary {
+  activeAlerts: number;
+  currency: string;
+  healthState: HealthState;
+  id: string;
+  lastSyncAt: string | null;
+  name: string;
+  northStarDelta: number | null;
+  northStarKey: string;
+  northStarValue: number | null;
+  type: string;
+  universalMetrics: Record<string, number | null>;
+}
+
+/** Payload returned by the portfolio summary batch endpoint. */
+export interface PortfolioSummaryPayload {
+  aiSynthesis?: string;
+  startups: PortfolioStartupSummary[];
+  synthesizedAt?: string;
+}
+
 export interface DashboardApi {
   createConnector: (
     startupId: string,
@@ -137,6 +165,7 @@ export interface DashboardApi {
   deleteConnector: (connectorId: string) => Promise<void>;
   fetchHealth: (startupId: string) => Promise<StartupHealthPayload>;
   fetchInsight: (startupId: string) => Promise<StartupInsightPayload>;
+  fetchPortfolioSummary: () => Promise<PortfolioSummaryPayload>;
   listAlerts: (
     startupId: string,
     status?: string
@@ -792,6 +821,64 @@ function createDefaultDashboardApi(): DashboardApi {
         `/startups/${encodeURIComponent(startupId)}/insight`
       );
       return parseInsightPayload(payload, startupId);
+    },
+    async fetchPortfolioSummary() {
+      const payload = await requestJson("/mcp/portfolio-summary");
+
+      if (!(isRecord(payload) && isRecord(payload.data))) {
+        throw new DashboardApiError(
+          "MALFORMED_PORTFOLIO_SUMMARY",
+          "Could not load portfolio summary. Please try again."
+        );
+      }
+
+      const data = payload.data;
+      const startups: PortfolioStartupSummary[] = [];
+
+      if (Array.isArray(data.startups)) {
+        for (const s of data.startups) {
+          if (
+            isRecord(s) &&
+            typeof s.id === "string" &&
+            typeof s.name === "string"
+          ) {
+            startups.push({
+              id: s.id,
+              name: s.name,
+              type: typeof s.type === "string" ? s.type : "",
+              currency: typeof s.currency === "string" ? s.currency : "USD",
+              healthState:
+                typeof s.healthState === "string" &&
+                isHealthState(s.healthState)
+                  ? s.healthState
+                  : "syncing",
+              northStarKey:
+                typeof s.northStarKey === "string" ? s.northStarKey : "mrr",
+              northStarValue:
+                typeof s.northStarValue === "number" ? s.northStarValue : null,
+              northStarDelta:
+                typeof s.northStarDelta === "number" ? s.northStarDelta : null,
+              universalMetrics: isRecord(s.universalMetrics)
+                ? (s.universalMetrics as Record<string, number | null>)
+                : {},
+              activeAlerts:
+                typeof s.activeAlerts === "number" ? s.activeAlerts : 0,
+              lastSyncAt:
+                typeof s.lastSyncAt === "string" ? s.lastSyncAt : null,
+            });
+          }
+        }
+      }
+
+      return {
+        startups,
+        aiSynthesis:
+          typeof data.aiSynthesis === "string" ? data.aiSynthesis : undefined,
+        synthesizedAt:
+          typeof data.synthesizedAt === "string"
+            ? data.synthesizedAt
+            : undefined,
+      };
     },
     async listAlerts(startupId, status) {
       const params = new URLSearchParams();
@@ -1621,6 +1708,15 @@ export function DashboardPage({
   const scrollToEventRef = useRef<string | null>(eventId ?? null);
   const scrollToEventRetries = useRef(0);
 
+  // Compare mode state
+  const [comparePayload, setComparePayload] =
+    useState<PortfolioSummaryPayload | null>(null);
+  const [compareStatus, setCompareStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [compareError, setCompareError] = useState<string | null>(null);
+  const compareFetchedAtRef = useRef<number>(0);
+
   const activeWorkspace = useMemo(
     () =>
       workspaces.find((workspace) => workspace.id === activeWorkspaceId) ??
@@ -1933,6 +2029,35 @@ export function DashboardPage({
     );
   }
 
+  // Compare mode: fetch portfolio summary with 60s staleTime
+  const COMPARE_STALE_TIME_MS = 60_000;
+
+  async function refreshCompareSummary(force = false) {
+    const now = Date.now();
+    if (
+      !force &&
+      comparePayload &&
+      now - compareFetchedAtRef.current < COMPARE_STALE_TIME_MS
+    ) {
+      return;
+    }
+
+    setCompareStatus("loading");
+    setCompareError(null);
+
+    try {
+      const payload = await api.fetchPortfolioSummary();
+      setComparePayload(payload);
+      compareFetchedAtRef.current = Date.now();
+      setCompareStatus("ready");
+    } catch (error) {
+      setCompareError(
+        getDashboardErrorMessage(error, "Failed to load portfolio summary.")
+      );
+      setCompareStatus("error");
+    }
+  }
+
   async function handleTriageAck(alertId: string) {
     setTriaging(true);
     try {
@@ -2145,6 +2270,14 @@ export function DashboardPage({
     }
   }, [mode, selectedStartupId]);
 
+  // Load portfolio summary when mode switches to compare
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only trigger on mode change
+  useEffect(() => {
+    if (mode === "compare") {
+      void refreshCompareSummary();
+    }
+  }, [mode]);
+
   // Scroll-to-event: when events load, try to find the target event
   // biome-ignore lint/correctness/useExhaustiveDependencies: refreshJournalEvents is stable per render
   const handleScrollToEvent = useCallback(
@@ -2238,6 +2371,45 @@ export function DashboardPage({
       ? { currentDays: 0, longestDays: 0 }
       : null;
   const supportingMetrics = healthPayload?.health?.supportingMetrics ?? null;
+
+  // Compare mode: transform portfolio payload into StartupComparison[]
+  const compareStartups: StartupComparison[] = useMemo(() => {
+    if (!comparePayload) {
+      return [];
+    }
+    return comparePayload.startups.map((s) => ({
+      id: s.id,
+      name: s.name,
+      healthState: s.healthState,
+      metrics: s.universalMetrics as UniversalMetrics,
+      previousMetrics: null,
+      sourceMetrics: null,
+    }));
+  }, [comparePayload]);
+
+  // Compare mode: derive system status from current alerts + connectors
+  const compareAlertsBySeverity = useMemo(() => {
+    const bySev: Partial<
+      Record<"critical" | "high" | "medium" | "low", number>
+    > = {};
+    for (const alert of alerts) {
+      bySev[alert.severity] = (bySev[alert.severity] ?? 0) + 1;
+    }
+    return bySev;
+  }, [alerts]);
+
+  const compareConnectorSyncInfo = useMemo(
+    () =>
+      connectors
+        .filter((c) => c.status !== "disconnected")
+        .map((c) => ({
+          provider: c.provider,
+          status: c.status,
+          lastSyncAt: typeof c.lastSyncAt === "string" ? c.lastSyncAt : null,
+          hasError: c.status === "error",
+        })),
+    [connectors]
+  );
 
   return (
     <AppShell
@@ -2429,9 +2601,75 @@ export function DashboardPage({
 
             {mode === "compare" ? (
               <section aria-label="Compare mode" className="grid gap-4">
-                <p className="text-muted-foreground text-sm">
-                  Compare mode — startup comparison coming soon.
-                </p>
+                {compareStatus === "loading" ? (
+                  <div className="grid gap-4">
+                    <div className="h-10 animate-pulse rounded bg-muted" />
+                    <div className="h-48 animate-pulse rounded bg-muted" />
+                    <div className="h-32 animate-pulse rounded bg-muted" />
+                  </div>
+                ) : null}
+
+                {compareStatus === "error" ? (
+                  <Alert variant="destructive">
+                    <AlertDescription>
+                      {compareError ?? "Failed to load portfolio summary."}
+                      <Button
+                        className="ml-2"
+                        onClick={() => {
+                          void refreshCompareSummary(true);
+                        }}
+                        size="xs"
+                        variant="outline"
+                      >
+                        Retry
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+
+                {compareStatus === "ready" && comparePayload ? (
+                  <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
+                    <div className="grid gap-4">
+                      {compareStartups.length >= 2 ? (
+                        <ComparisonMatrix startups={compareStartups} />
+                      ) : (
+                        <Card>
+                          <CardContent className="py-8">
+                            {compareStartups.length === 1 ? (
+                              <div className="grid gap-2">
+                                <p className="font-medium">
+                                  {compareStartups[0].name}
+                                </p>
+                                <StartupMetricsGrid
+                                  metrics={compareStartups[0].metrics}
+                                />
+                              </div>
+                            ) : (
+                              <p className="text-center text-muted-foreground text-sm">
+                                Add startups to see the comparison matrix.
+                              </p>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      <AiSynthesisCard
+                        loading={false}
+                        synthesizedAt={comparePayload.synthesizedAt ?? null}
+                        text={comparePayload.aiSynthesis ?? null}
+                      />
+                    </div>
+
+                    <aside className="grid content-start gap-4">
+                      <SystemStatusSection
+                        alertsBySeverity={compareAlertsBySeverity}
+                        connectors={compareConnectorSyncInfo}
+                        lastDigestAt={null}
+                        mcpQueryCount={0}
+                      />
+                    </aside>
+                  </div>
+                ) : null}
               </section>
             ) : null}
           </>

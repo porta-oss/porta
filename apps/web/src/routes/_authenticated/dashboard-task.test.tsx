@@ -280,6 +280,8 @@ function createApi(overrides: Partial<DashboardApi> = {}): DashboardApi {
       mock(async () => {
         throw new Error("not implemented");
       }),
+    fetchPortfolioSummary:
+      overrides.fetchPortfolioSummary ?? mock(async () => ({ startups: [] })),
   };
 }
 
