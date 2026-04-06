@@ -43,12 +43,12 @@ File: `apps/web/src/components/streak-badge.tsx`
 
 ### Task 2: Create alert rule row component
 File: `apps/web/src/components/alert-rule-row.tsx`
-- [ ] Display: metric key (human-readable label from universal metrics map), condition (formatted: "drops >20% week-over-week"), threshold value with unit, severity badge
-- [ ] Severity color coding: critical = red, high = orange, medium = yellow, low = blue
-- [ ] Enabled/disabled toggle switch (shadcn Switch)
-- [ ] `onToggle` callback prop for enable/disable
-- [ ] `onClick` callback prop for navigation to alert rule edit
-- [ ] Compact row layout suitable for list display
+- [x] Display: metric key (human-readable label from universal metrics map), condition (formatted: "drops >20% week-over-week"), threshold value with unit, severity badge
+- [x] Severity color coding: critical = red, high = orange, medium = yellow, low = blue
+- [x] Enabled/disabled toggle switch (shadcn Switch)
+- [x] `onToggle` callback prop for enable/disable
+- [x] `onClick` callback prop for navigation to alert rule edit
+- [x] Compact row layout suitable for list display
 
 ### Task 3: Integrate streak badges into dashboard
 File: `apps/web/src/routes/_authenticated/dashboard-startup.tsx`
