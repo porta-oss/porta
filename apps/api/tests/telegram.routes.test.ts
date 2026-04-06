@@ -1,15 +1,19 @@
 /**
  * Telegram config route tests (TDD).
  * Covers: POST setup (validates token, calls getMe, generates verification code),
- * DELETE unlink (clears chatId, sets isActive=false).
+ * DELETE unlink (clears chatId, sets isActive=false),
+ * Webhook handler (/start verification, expired/invalid codes).
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { convertSetCookieToCookie } from "better-auth/test";
+import { eq } from "drizzle-orm";
+import type { Transformer } from "grammy";
 
 import type { ApiApp } from "../src/app";
 import { telegramConfig } from "../src/db/schema/telegram-config";
 import type { fetchBotInfo } from "../src/routes/telegram";
+import { handleTelegramWebhook } from "../src/routes/telegram";
 import {
   closeTestApiApp,
   createTestApiApp,
@@ -262,5 +266,180 @@ describe("Telegram config routes", () => {
     });
 
     expect(response.status).toBeGreaterThanOrEqual(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Webhook handler tests
+// ---------------------------------------------------------------------------
+
+/** Transformer that captures outgoing Telegram API calls instead of hitting the network. */
+function createCapturingTransformer(): {
+  transformer: Transformer;
+  calls: Array<{ method: string; payload: Record<string, unknown> }>;
+} {
+  const calls: Array<{ method: string; payload: Record<string, unknown> }> = [];
+  // biome-ignore lint: test-only mock — exact return type doesn't matter
+  const transformer = (async (
+    _prev: unknown,
+    method: string,
+    payload: unknown
+  ) => {
+    calls.push({ method, payload: payload as Record<string, unknown> });
+    return { ok: true as const, result: true };
+  }) as Transformer;
+  return { transformer, calls };
+}
+
+/** Build a fake Telegram Update for a /start command. */
+function buildStartUpdate(chatId: number, code: string) {
+  const text = `/start ${code}`;
+  return {
+    update_id: Math.floor(Math.random() * 1_000_000),
+    message: {
+      message_id: 1,
+      from: {
+        id: chatId,
+        is_bot: false,
+        first_name: "Test",
+        language_code: "en",
+      },
+      chat: { id: chatId, type: "private" as const, first_name: "Test" },
+      date: Math.floor(Date.now() / 1000),
+      text,
+      entities: [{ type: "bot_command" as const, offset: 0, length: 6 }],
+    },
+  };
+}
+
+describe("Telegram webhook handler", () => {
+  /** Helper: set up a fresh telegram config and return its id + verification code. */
+  async function setupConfig() {
+    const a = requireValue(app, "Expected API test app to be initialized.");
+
+    // Ensure clean state
+    await a.runtime.db.db.delete(telegramConfig);
+
+    // Create a config via the setup route
+    const response = await sendWithCookie("/api/workspace/telegram", {
+      method: "POST",
+      cookie,
+      body: {
+        botToken: "123456789:ABCdefGHIjklMNOpqrSTUvwxYZ012345678",
+        digestTime: "09:00",
+        digestTimezone: "UTC",
+      },
+    });
+    const payload = await parseJson(response);
+    const config = payload.config as Record<string, unknown>;
+
+    return {
+      configId: config.id as string,
+      verificationCode: payload.verificationCode as string,
+    };
+  }
+
+  test("/start with valid code links chat and replies 'Linked!'", async () => {
+    const a = requireValue(app, "Expected API test app to be initialized.");
+    const { configId, verificationCode } = await setupConfig();
+    const { transformer, calls } = createCapturingTransformer();
+    const chatId = 99_887_766;
+
+    const set: { status?: number | string } = {};
+    const result = await handleTelegramWebhook(
+      { db: a.runtime.db },
+      configId,
+      buildStartUpdate(chatId, verificationCode),
+      set,
+      transformer
+    );
+
+    // Handler returns ok
+    expect(result).toEqual({ ok: true });
+
+    // Bot replied "Linked!"
+    const replyCall = calls.find((c) => c.method === "sendMessage");
+    expect(replyCall).toBeDefined();
+    expect(replyCall?.payload.text).toBe("Linked!");
+
+    // DB updated: chatId set, isActive true
+    const rows = await a.runtime.db.db
+      .select()
+      .from(telegramConfig)
+      .where(eq(telegramConfig.id, configId));
+    expect(rows.length).toBe(1);
+    expect(rows[0].chatId).toBe(String(chatId));
+    expect(rows[0].isActive).toBe(true);
+    expect(rows[0].verificationCode).toBeNull();
+  });
+
+  test("/start with wrong code replies 'Invalid or expired code'", async () => {
+    const a = requireValue(app, "Expected API test app to be initialized.");
+    const { configId } = await setupConfig();
+    const { transformer, calls } = createCapturingTransformer();
+
+    const set: { status?: number | string } = {};
+    await handleTelegramWebhook(
+      { db: a.runtime.db },
+      configId,
+      buildStartUpdate(11_111_111, "000000"),
+      set,
+      transformer
+    );
+
+    const replyCall = calls.find((c) => c.method === "sendMessage");
+    expect(replyCall).toBeDefined();
+    expect(replyCall?.payload.text).toBe("Invalid or expired code");
+
+    // DB NOT updated: isActive still false
+    const rows = await a.runtime.db.db
+      .select()
+      .from(telegramConfig)
+      .where(eq(telegramConfig.id, configId));
+    expect(rows[0].isActive).toBe(false);
+    expect(rows[0].chatId).toBeNull();
+  });
+
+  test("/start with expired code replies 'Invalid or expired code'", async () => {
+    const a = requireValue(app, "Expected API test app to be initialized.");
+    const { configId, verificationCode } = await setupConfig();
+    const { transformer, calls } = createCapturingTransformer();
+
+    // Expire the verification code by setting expiry to the past
+    await a.runtime.db.db
+      .update(telegramConfig)
+      .set({
+        verificationExpiresAt: new Date(Date.now() - 60_000),
+      })
+      .where(eq(telegramConfig.id, configId));
+
+    const set: { status?: number | string } = {};
+    await handleTelegramWebhook(
+      { db: a.runtime.db },
+      configId,
+      buildStartUpdate(22_222_222, verificationCode),
+      set,
+      transformer
+    );
+
+    const replyCall = calls.find((c) => c.method === "sendMessage");
+    expect(replyCall).toBeDefined();
+    expect(replyCall?.payload.text).toBe("Invalid or expired code");
+  });
+
+  test("webhook with unknown configId returns 404", async () => {
+    const a = requireValue(app, "Expected API test app to be initialized.");
+    const set: { status?: number | string } = {};
+    const result = await handleTelegramWebhook(
+      { db: a.runtime.db },
+      "nonexistent-config-id",
+      buildStartUpdate(33_333_333, "123456"),
+      set
+    );
+
+    expect(set.status).toBe(404);
+    expect(result).toHaveProperty("error");
+    const err = (result as { error: { code: string } }).error;
+    expect(err.code).toBe("TELEGRAM_CONFIG_NOT_FOUND");
   });
 });

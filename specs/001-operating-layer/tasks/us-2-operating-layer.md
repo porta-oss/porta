@@ -61,9 +61,9 @@ File: `apps/api/src/routes/telegram.ts`
 
 ### Task 2: Implement Telegram webhook handler
 File: `apps/api/src/routes/telegram.ts` (same file)
-- [ ] Use grammY `webhookCallback` to handle incoming Telegram updates
-- [ ] Handle `/start <code>` command: look up `telegram_config` by `verification_code`, check expiry, set `chat_id` + `is_active=true`, reply "Linked!"
-- [ ] Handle expired/invalid code: reply "Invalid or expired code"
+- [x] Use grammY `webhookCallback` to handle incoming Telegram updates
+- [x] Handle `/start <code>` command: look up `telegram_config` by `verification_code`, check expiry, set `chat_id` + `is_active=true`, reply "Linked!"
+- [x] Handle expired/invalid code: reply "Invalid or expired code"
 
 ### Task 3: Implement inline keyboard triage callback
 File: `apps/api/src/routes/telegram.ts` (same file)
