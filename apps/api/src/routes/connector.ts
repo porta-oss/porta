@@ -26,7 +26,12 @@ import type {
   ProviderValidationResult,
 } from "../lib/connectors/posthog";
 import type { SyncQueueProducer } from "../lib/connectors/queue";
+import type { SentryConfig, SentryValidator } from "../lib/connectors/sentry";
 import type { StripeConfig, StripeValidator } from "../lib/connectors/stripe";
+import type {
+  YooKassaConfig,
+  YooKassaValidator,
+} from "../lib/connectors/yookassa";
 
 // ------------------------------------------------------------------
 // Types
@@ -43,7 +48,9 @@ interface ConnectorRuntime {
   postgresValidator: PostgresValidator;
   posthogValidator: PostHogValidator;
   queueProducer: SyncQueueProducer;
+  sentryValidator: SentryValidator;
   stripeValidator: StripeValidator;
+  yookassaValidator: YooKassaValidator;
 }
 
 interface WorkspaceContext {
@@ -231,7 +238,7 @@ function parseCreateConnectorRequest(
   if (!isConnectorProvider(body.provider)) {
     return createErrorResponse(set, 400, {
       code: "UNSUPPORTED_PROVIDER",
-      message: `Provider must be one of: posthog, stripe, postgres. Received: ${body.provider}`,
+      message: `Provider must be one of: posthog, stripe, postgres, yookassa, sentry. Received: ${body.provider}`,
     });
   }
 
@@ -446,6 +453,23 @@ async function validateProviderConfig(
       connectionUri: config.connectionUri ?? "",
     };
     return runtime.postgresValidator.validate(pgInput);
+  }
+
+  if (provider === "yookassa") {
+    const yookassaConfig: YooKassaConfig = {
+      shopId: config.shopId ?? "",
+      secretKey: config.secretKey ?? "",
+    };
+    return runtime.yookassaValidator.validate(yookassaConfig);
+  }
+
+  if (provider === "sentry") {
+    const sentryConfig: SentryConfig = {
+      authToken: config.authToken ?? "",
+      organization: config.organization ?? "",
+      project: config.project ?? "",
+    };
+    return runtime.sentryValidator.validate(sentryConfig);
   }
 
   return { valid: false, error: `Unsupported provider: ${provider}` };

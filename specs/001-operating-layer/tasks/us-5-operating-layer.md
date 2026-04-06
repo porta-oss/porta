@@ -95,13 +95,13 @@ Files: `apps/api/src/lib/connectors/postgres.ts`, `apps/worker/src/providers.ts`
 
 ### Task 8: Update connector routes for new providers
 File: `apps/api/src/routes/connector.ts`
-- [ ] Add `yookassa` and `sentry` to provider validation dispatch
-- [ ] Handle yookassa config shape (`shopId`, `secretKey`) in create/update
-- [ ] Handle sentry config shape (`authToken`, `organization`, `project`) in create/update
-- [ ] Update serialization if needed
+- [x] Add `yookassa` and `sentry` to provider validation dispatch
+- [x] Handle yookassa config shape (`shopId`, `secretKey`) in create/update
+- [x] Handle sentry config shape (`authToken`, `organization`, `project`) in create/update
+- [x] Update serialization if needed
 
 ### Task 9: Register updated validators in app
 File: `apps/api/src/app.ts`
-- [ ] Import yookassa and sentry validator factories
-- [ ] Add them to the `ConnectorRuntime` validators map
-- [ ] Wire founder-proof variants when `FOUNDER_PROOF_MODE=true`
+- [x] Import yookassa and sentry validator factories
+- [x] Add them to the `ConnectorRuntime` validators map
+- [x] Wire founder-proof variants when `FOUNDER_PROOF_MODE=true`

@@ -22,11 +22,21 @@ import {
 } from "./lib/connectors/posthog";
 import type { SyncQueueProducer } from "./lib/connectors/queue";
 import { createSyncQueueProducer } from "./lib/connectors/queue";
+import type { SentryValidator } from "./lib/connectors/sentry";
+import {
+  createFounderProofSentryValidator,
+  createSentryValidator,
+} from "./lib/connectors/sentry";
 import type { StripeValidator } from "./lib/connectors/stripe";
 import {
   createFounderProofStripeValidator,
   createStripeValidator,
 } from "./lib/connectors/stripe";
+import type { YooKassaValidator } from "./lib/connectors/yookassa";
+import {
+  createFounderProofYooKassaValidator,
+  createYooKassaValidator,
+} from "./lib/connectors/yookassa";
 import { type ApiEnv, readApiEnv } from "./lib/env";
 import { loadStartupHealth } from "./lib/startup-health";
 import { loadLatestInsight } from "./lib/startup-insight";
@@ -98,8 +108,10 @@ interface ApiRuntime {
   postgresValidator: PostgresValidator;
   posthogValidator: PostHogValidator;
   queueProducer: SyncQueueProducer;
+  sentryValidator: SentryValidator;
   stripeValidator: StripeValidator;
   taskSyncQueueProducer: TaskSyncQueueProducer;
+  yookassaValidator: YooKassaValidator;
 }
 
 interface WorkspaceAuthApi {
@@ -438,10 +450,12 @@ export async function createApiApp(
     auth?: ApiAuthRuntime;
     bootstrapDatabase?: boolean;
     posthogValidator?: PostHogValidator;
+    sentryValidator?: SentryValidator;
     stripeValidator?: StripeValidator;
     postgresValidator?: PostgresValidator;
     queueProducer?: SyncQueueProducer;
     taskSyncQueueProducer?: TaskSyncQueueProducer;
+    yookassaValidator?: YooKassaValidator;
   }
 ): Promise<ApiApp> {
   const env = options?.env ?? readApiEnv(envSource, { strict: true });
@@ -464,6 +478,16 @@ export async function createApiApp(
       : createStripeValidator());
   const postgresValidator =
     options?.postgresValidator ?? createPostgresValidator();
+  const yookassaValidator =
+    options?.yookassaValidator ??
+    (env.founderProofMode
+      ? createFounderProofYooKassaValidator()
+      : createYooKassaValidator());
+  const sentryValidator =
+    options?.sentryValidator ??
+    (env.founderProofMode
+      ? createFounderProofSentryValidator()
+      : createSentryValidator());
   const queueProducer =
     options?.queueProducer ?? createSyncQueueProducer(env.redisUrl);
   const taskSyncQueueProducer =
@@ -476,6 +500,8 @@ export async function createApiApp(
     posthogValidator,
     stripeValidator,
     postgresValidator,
+    yookassaValidator,
+    sentryValidator,
     queueProducer,
     taskSyncQueueProducer,
   };
@@ -493,6 +519,8 @@ export async function createApiApp(
       {
         posthogValidator: "founder-proof",
         stripeValidator: "founder-proof",
+        yookassaValidator: "founder-proof",
+        sentryValidator: "founder-proof",
       }
     );
   }
@@ -1082,9 +1110,11 @@ export async function createApiApp(
           db: runtime.db,
           env: runtime.env,
           posthogValidator: runtime.posthogValidator,
+          sentryValidator: runtime.sentryValidator,
           stripeValidator: runtime.stripeValidator,
           postgresValidator: runtime.postgresValidator,
           queueProducer: runtime.queueProducer,
+          yookassaValidator: runtime.yookassaValidator,
         };
 
         return handleListConnectors(
@@ -1118,9 +1148,11 @@ export async function createApiApp(
           db: runtime.db,
           env: runtime.env,
           posthogValidator: runtime.posthogValidator,
+          sentryValidator: runtime.sentryValidator,
           stripeValidator: runtime.stripeValidator,
           postgresValidator: runtime.postgresValidator,
           queueProducer: runtime.queueProducer,
+          yookassaValidator: runtime.yookassaValidator,
         };
 
         return handleCreateConnector(
@@ -1156,9 +1188,11 @@ export async function createApiApp(
           db: runtime.db,
           env: runtime.env,
           posthogValidator: runtime.posthogValidator,
+          sentryValidator: runtime.sentryValidator,
           stripeValidator: runtime.stripeValidator,
           postgresValidator: runtime.postgresValidator,
           queueProducer: runtime.queueProducer,
+          yookassaValidator: runtime.yookassaValidator,
         };
 
         return handleDeleteConnector(
@@ -1187,9 +1221,11 @@ export async function createApiApp(
           db: runtime.db,
           env: runtime.env,
           posthogValidator: runtime.posthogValidator,
+          sentryValidator: runtime.sentryValidator,
           stripeValidator: runtime.stripeValidator,
           postgresValidator: runtime.postgresValidator,
           queueProducer: runtime.queueProducer,
+          yookassaValidator: runtime.yookassaValidator,
         };
 
         return handleTriggerSync(
@@ -1218,9 +1254,11 @@ export async function createApiApp(
           db: runtime.db,
           env: runtime.env,
           posthogValidator: runtime.posthogValidator,
+          sentryValidator: runtime.sentryValidator,
           stripeValidator: runtime.stripeValidator,
           postgresValidator: runtime.postgresValidator,
           queueProducer: runtime.queueProducer,
+          yookassaValidator: runtime.yookassaValidator,
         };
 
         return handleGetConnectorStatus(
