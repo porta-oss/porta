@@ -12,6 +12,7 @@ import {
   createWorkspaceSlug,
 } from "./auth";
 import { type ApiDatabase, createApiDatabase } from "./db/index";
+import { streak as streakTable } from "./db/schema/alert-rule";
 import { startup as startupTable } from "./db/schema/startup";
 import type { PostgresValidator } from "./lib/connectors/postgres";
 import { createPostgresValidator } from "./lib/connectors/postgres";
@@ -1391,6 +1392,94 @@ export async function createApiApp(
             error: {
               code: "HEALTH_READ_FAILED",
               message: "Failed to load startup health data. Please retry.",
+            },
+          };
+        }
+      }
+    )
+    .get(
+      "/startups/:startupId/streak",
+      async ({ authContext, request, set, params }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/streak"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        const startupRows = await withTimeout(
+          runtime.db.db
+            .select({ id: startupTable.id })
+            .from(startupTable)
+            .where(eq(startupTable.id, params.startupId)),
+          runtime.env.authContextTimeoutMs,
+          "Startup lookup"
+        );
+
+        if (!startupRows[0]) {
+          set.status = 404;
+          return {
+            error: {
+              code: "STARTUP_NOT_FOUND",
+              message: "Startup not found.",
+            },
+          };
+        }
+
+        const ownershipRows = await withTimeout(
+          runtime.db.db
+            .select({ id: startupTable.id })
+            .from(startupTable)
+            .where(eq(startupTable.workspaceId, activeWorkspace.workspace.id)),
+          runtime.env.authContextTimeoutMs,
+          "Startup ownership check"
+        );
+        const owned = ownershipRows.some((row) => row.id === params.startupId);
+
+        if (!owned) {
+          set.status = 403;
+          return {
+            error: {
+              code: "STARTUP_SCOPE_INVALID",
+              message: "The startup does not belong to the active workspace.",
+            },
+          };
+        }
+
+        try {
+          const rows = await withTimeout(
+            runtime.db.db
+              .select({
+                currentDays: streakTable.currentDays,
+                longestDays: streakTable.longestDays,
+              })
+              .from(streakTable)
+              .where(eq(streakTable.startupId, params.startupId)),
+            runtime.env.authContextTimeoutMs,
+            "Streak read"
+          );
+
+          const row = rows[0];
+          return {
+            streak: row
+              ? { currentDays: row.currentDays, longestDays: row.longestDays }
+              : null,
+          };
+        } catch (error) {
+          console.error("[streak] read failed", {
+            startupId: params.startupId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+
+          set.status = 500;
+          return {
+            error: {
+              code: "STREAK_READ_FAILED",
+              message: "Failed to load streak data. Please retry.",
             },
           };
         }

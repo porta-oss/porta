@@ -263,6 +263,7 @@ function createApi(overrides: Partial<DashboardApi> = {}): DashboardApi {
       }),
     fetchPortfolioSummary:
       overrides.fetchPortfolioSummary ?? mock(async () => ({ startups: [] })),
+    fetchStreak: overrides.fetchStreak ?? mock(async () => ({ streak: null })),
   };
 }
 

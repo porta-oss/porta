@@ -9,6 +9,7 @@ import type {
   PortfolioBadge,
   PortfolioCardViewModel,
 } from "../lib/portfolio-card";
+import { StreakBadge } from "./streak-badge";
 
 function badgeVariant(
   badge: PortfolioBadge
@@ -38,10 +39,14 @@ function trendColor(trendSummary: string): string {
 }
 
 export interface PortfolioStartupCardProps {
+  streakDays?: number | null;
   viewModel: PortfolioCardViewModel;
 }
 
-export function PortfolioStartupCard({ viewModel }: PortfolioStartupCardProps) {
+export function PortfolioStartupCard({
+  viewModel,
+  streakDays,
+}: PortfolioStartupCardProps) {
   const tone = toStartupHealthTone(viewModel.healthState);
 
   return (
@@ -59,13 +64,18 @@ export function PortfolioStartupCard({ viewModel }: PortfolioStartupCardProps) {
           >
             {viewModel.name}
           </h3>
-          <Badge
-            data-testid="portfolio-badge"
-            role="status"
-            variant={badgeVariant(viewModel.badge)}
-          >
-            {viewModel.badgeLabel}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {streakDays != null && streakDays >= 7 ? (
+              <StreakBadge streakDays={streakDays} />
+            ) : null}
+            <Badge
+              data-testid="portfolio-badge"
+              role="status"
+              variant={badgeVariant(viewModel.badge)}
+            >
+              {viewModel.badgeLabel}
+            </Badge>
+          </div>
         </div>
 
         <div className="flex items-baseline gap-3">

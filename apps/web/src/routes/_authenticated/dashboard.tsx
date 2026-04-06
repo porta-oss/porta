@@ -167,6 +167,9 @@ export interface DashboardApi {
   fetchHealth: (startupId: string) => Promise<StartupHealthPayload>;
   fetchInsight: (startupId: string) => Promise<StartupInsightPayload>;
   fetchPortfolioSummary: () => Promise<PortfolioSummaryPayload>;
+  fetchStreak: (
+    startupId: string
+  ) => Promise<{ streak: { currentDays: number; longestDays: number } | null }>;
   listAlerts: (
     startupId: string,
     status?: string
@@ -823,6 +826,30 @@ function createDefaultDashboardApi(): DashboardApi {
       );
       return parseInsightPayload(payload, startupId);
     },
+    async fetchStreak(startupId) {
+      const payload = await requestJson(
+        `/startups/${encodeURIComponent(startupId)}/streak`
+      );
+
+      if (
+        isRecord(payload) &&
+        (payload.streak === null ||
+          (isRecord(payload.streak) &&
+            typeof payload.streak.currentDays === "number" &&
+            typeof payload.streak.longestDays === "number"))
+      ) {
+        return {
+          streak: payload.streak
+            ? {
+                currentDays: payload.streak.currentDays as number,
+                longestDays: payload.streak.longestDays as number,
+              }
+            : null,
+        };
+      }
+
+      return { streak: null };
+    },
     async fetchPortfolioSummary() {
       const payload = await requestJson("/mcp/portfolio-summary");
 
@@ -1187,6 +1214,7 @@ interface DashboardOverviewPanelProps {
   onRetryInsight: () => void;
   onRetryTasks: () => void;
   primaryStartup: StartupRecord | null;
+  streakDays?: number | null;
   taskCreateError: string | null;
   taskListError: string | null;
   taskListStatus: "idle" | "loading" | "ready" | "error";
@@ -1205,6 +1233,7 @@ function DashboardOverviewPanel({
   onRetryInsight,
   onRetryTasks,
   primaryStartup,
+  streakDays,
   taskCreateError,
   taskListError,
   taskListStatus,
@@ -1236,6 +1265,7 @@ function DashboardOverviewPanel({
         {healthStatus === "ready" && healthPayload && primaryStartup ? (
           <FadeIn>
             <PortfolioStartupCard
+              streakDays={streakDays}
               viewModel={buildPortfolioCardViewModel(
                 primaryStartup,
                 healthPayload
@@ -1328,6 +1358,7 @@ interface DashboardHealthConnectorsPanelProps {
   posthogConnector: ConnectorSummary | null;
   resolvedCustomMetric: CustomMetricSummary | null;
   showConnectorStatusPanel: boolean;
+  streakDays?: number | null;
   stripeConnector: ConnectorSummary | null;
 }
 
@@ -1337,6 +1368,7 @@ interface DashboardHealthSectionProps {
   healthStatus: "idle" | "loading" | "ready" | "error";
   onRetryHealth: () => void;
   resolvedCustomMetric: CustomMetricSummary | null;
+  streakDays?: number | null;
 }
 
 function DashboardHealthSection({
@@ -1345,6 +1377,7 @@ function DashboardHealthSection({
   healthStatus,
   onRetryHealth,
   resolvedCustomMetric,
+  streakDays,
 }: DashboardHealthSectionProps) {
   const isHealthMuted =
     healthPayload?.status === "stale" || healthPayload?.status === "blocked";
@@ -1379,6 +1412,7 @@ function DashboardHealthSection({
               healthPayload.health?.northStarPreviousValue ?? null
             }
             northStarValue={healthPayload.health?.northStarValue ?? 0}
+            streakDays={streakDays}
           />
 
           {healthPayload.health ? (
@@ -1580,6 +1614,7 @@ function DashboardHealthConnectorsPanel({
   posthogConnector,
   resolvedCustomMetric,
   showConnectorStatusPanel,
+  streakDays,
   stripeConnector,
 }: DashboardHealthConnectorsPanelProps) {
   return (
@@ -1595,6 +1630,7 @@ function DashboardHealthConnectorsPanel({
         healthStatus={healthStatus}
         onRetryHealth={onRetryHealth}
         resolvedCustomMetric={resolvedCustomMetric}
+        streakDays={streakDays}
       />
       <DashboardConnectorsSection
         activeConnectors={activeConnectors}
@@ -1680,6 +1716,12 @@ export function DashboardPage({
   >("idle");
   const [alertError, setAlertError] = useState<string | null>(null);
   const [triaging, setTriaging] = useState(false);
+
+  // Streak state
+  const [streakDays, setStreakDays] = useState<number | null>(null);
+  const [streakStatus, setStreakStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
 
   // Custom metric state
   const [customMetric, setCustomMetric] = useState<CustomMetricSummary | null>(
@@ -1966,6 +2008,25 @@ export function DashboardPage({
     } catch (error) {
       setAlertError(getDashboardErrorMessage(error, "Failed to load alerts."));
       setAlertStatus("error");
+    }
+  }
+
+  async function refreshStreak(startupId: string | null) {
+    if (!startupId) {
+      setStreakDays(null);
+      setStreakStatus("idle");
+      return;
+    }
+
+    setStreakStatus("loading");
+
+    try {
+      const payload = await api.fetchStreak(startupId);
+      setStreakDays(payload.streak?.currentDays ?? null);
+      setStreakStatus("ready");
+    } catch {
+      setStreakDays(null);
+      setStreakStatus("error");
     }
   }
 
@@ -2257,6 +2318,7 @@ export function DashboardPage({
       void refreshInsight(startupId);
       void refreshTasks(startupId);
       void refreshAlerts(startupId);
+      void refreshStreak(startupId);
     }
   );
 
@@ -2368,10 +2430,13 @@ export function DashboardPage({
   const showNoWorkspaceState = !activeWorkspace && shellStatus === "ready";
 
   const topAlert = alerts.length > 0 ? (alerts[0] ?? null) : null;
-  const streakInfo: StreakInfo | null =
-    alertStatus === "ready" && alerts.length === 0
-      ? { currentDays: 0, longestDays: 0 }
-      : null;
+
+  let streakInfo: StreakInfo | null = null;
+  if (streakStatus === "ready" && streakDays != null) {
+    streakInfo = { currentDays: streakDays, longestDays: streakDays };
+  } else if (alertStatus === "ready" && alerts.length === 0) {
+    streakInfo = { currentDays: 0, longestDays: 0 };
+  }
   const supportingMetrics = healthPayload?.health?.supportingMetrics ?? null;
 
   // Compare mode: transform portfolio payload into StartupComparison[]
@@ -2489,6 +2554,7 @@ export function DashboardPage({
                       void refreshTasks(selectedStartupId);
                     }}
                     primaryStartup={selectedStartup}
+                    streakDays={streakDays}
                     taskCreateError={taskCreateError}
                     taskListError={taskListError}
                     taskListStatus={taskListStatus}
@@ -2517,6 +2583,7 @@ export function DashboardPage({
                     posthogConnector={posthogConnector}
                     resolvedCustomMetric={resolvedCustomMetric}
                     showConnectorStatusPanel={showConnectorStatusPanel}
+                    streakDays={streakDays}
                     stripeConnector={stripeConnector}
                   />
                 )}

@@ -52,11 +52,11 @@ File: `apps/web/src/components/alert-rule-row.tsx`
 
 ### Task 3: Integrate streak badges into dashboard
 File: `apps/web/src/routes/_authenticated/dashboard-startup.tsx`
-- [ ] Fetch streak data for current startup from streak endpoint
-- [ ] Display `StreakBadge` in startup health hero section (next to health state badge)
-- [ ] Display `StreakBadge` on portfolio startup cards (in Decide mode startup list)
-- [ ] Handle loading state (skeleton placeholder for badge area)
-- [ ] Handle no streak data (no badge rendered)
+- [x] Fetch streak data for current startup from streak endpoint
+- [x] Display `StreakBadge` in startup health hero section (next to health state badge)
+- [x] Display `StreakBadge` on portfolio startup cards (in Decide mode startup list)
+- [x] Handle loading state (skeleton placeholder for badge area)
+- [x] Handle no streak data (no badge rendered)
 
 ### Task 4: Display alert dedup badges
 File: `apps/web/src/components/decision-surface.tsx`

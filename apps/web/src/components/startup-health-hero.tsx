@@ -2,6 +2,7 @@ import type { HealthState } from "@shared/startup-health";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { StreakBadge } from "./streak-badge";
 
 export interface StartupHealthHeroProps {
   blockedReasons: Array<{ code: string; message: string }>;
@@ -10,6 +11,7 @@ export interface StartupHealthHeroProps {
   northStarKey: string;
   northStarPreviousValue: number | null;
   northStarValue: number | null;
+  streakDays?: number | null;
 }
 
 const NORTH_STAR_LABELS: Record<string, string> = {
@@ -115,6 +117,7 @@ export function StartupHealthHero({
   northStarPreviousValue,
   lastSnapshotAt,
   blockedReasons,
+  streakDays,
 }: StartupHealthHeroProps) {
   const banner = healthBannerConfig(healthState);
   const delta = computeDelta(northStarValue, northStarPreviousValue);
@@ -134,9 +137,14 @@ export function StartupHealthHero({
     <Card aria-label="startup health hero" className={banner.cardClass}>
       <CardContent className="grid gap-3 pt-5">
         <div className="flex items-center justify-between">
-          <Badge role="status" variant={banner.badgeVariant}>
-            {banner.text}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge role="status" variant={banner.badgeVariant}>
+              {banner.text}
+            </Badge>
+            {streakDays != null && streakDays >= 7 ? (
+              <StreakBadge streakDays={streakDays} />
+            ) : null}
+          </div>
           <span className="text-muted-foreground text-xs">
             {formatSnapshotAge(lastSnapshotAt)}
           </span>
