@@ -45,14 +45,14 @@ File: `apps/api/tests/event-log.routes.test.ts`
 
 ### Task 2: Implement event log query route
 File: `apps/api/src/routes/event-log.ts`
-- [ ] Create `EventLogRuntime` interface (db instance)
-- [ ] Implement GET /api/events handler with cursor pagination
-- [ ] Build query: `SELECT` from `event_log` WHERE `workspace_id = wsCtx.workspaceId`
-- [ ] Add optional filters: `startupId`, `eventTypes` (IN array), `from`/`to` date range
-- [ ] Implement cursor decode: base64 -> `{ createdAt, id }` and WHERE `created_at < cursor.createdAt OR (created_at = cursor.createdAt AND id < cursor.id)`
-- [ ] ORDER BY `created_at DESC, id DESC`, LIMIT `limit + 1` (fetch one extra to determine hasMore)
-- [ ] Encode next cursor as base64(`{ createdAt, id }`) from last row if hasMore
-- [ ] Return `{ events, pagination: { cursor, hasMore, limit } }`
+- [x] Create `EventLogRuntime` interface (db instance)
+- [x] Implement GET /api/events handler with cursor pagination
+- [x] Build query: `SELECT` from `event_log` WHERE `workspace_id = wsCtx.workspaceId`
+- [x] Add optional filters: `startupId`, `eventTypes` (IN array), `from`/`to` date range
+- [x] Implement cursor decode: base64 -> `{ createdAt, id }` and WHERE `created_at < cursor.createdAt OR (created_at = cursor.createdAt AND id < cursor.id)`
+- [x] ORDER BY `created_at DESC, id DESC`, LIMIT `limit + 1` (fetch one extra to determine hasMore)
+- [x] Encode next cursor as base64(`{ createdAt, id }`) from last row if hasMore
+- [x] Return `{ events, pagination: { cursor, hasMore, limit } }`
 
 ### Task 3: Register event log routes in app
 File: `apps/api/src/app.ts`

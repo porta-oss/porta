@@ -40,6 +40,7 @@ import {
   handleListConnectors,
   handleTriggerSync,
 } from "./routes/connector";
+import { handleListEvents } from "./routes/event-log";
 import { handleCreateTask, handleListTasks } from "./routes/internal-task";
 import {
   createStartupRouteContract,
@@ -1480,6 +1481,38 @@ export async function createApiApp(
       {
         query: t.Object({
           startupId: t.Optional(t.String()),
+        }),
+      }
+    )
+    .get(
+      "/events",
+      async ({ authContext, request, set, query }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/events"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleListEvents(
+          runtime,
+          { workspace: activeWorkspace.workspace },
+          query,
+          set
+        );
+      },
+      {
+        query: t.Object({
+          startupId: t.Optional(t.String()),
+          eventTypes: t.Optional(t.String()),
+          from: t.Optional(t.String()),
+          to: t.Optional(t.String()),
+          cursor: t.Optional(t.String()),
+          limit: t.Optional(t.String()),
         }),
       }
     )
