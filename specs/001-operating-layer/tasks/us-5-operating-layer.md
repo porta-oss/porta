@@ -52,11 +52,11 @@ File: `apps/api/tests/sentry.connector.test.ts`
 
 ### Task 3: Create YooKassa validator
 File: `apps/api/src/lib/connectors/yookassa.ts`
-- [ ] Define `YooKassaConfig` interface: `{ shopId: string, secretKey: string }`
-- [ ] Implement `createYooKassaValidator()`: GET `https://api.yookassa.ru/v3/me` with HTTP Basic (`shopId:secretKey`)
-- [ ] 10s timeout via AbortController
-- [ ] Return `ProviderValidationResult`
-- [ ] Implement `createFounderProofYooKassaValidator()` -- deterministic success
+- [x] Define `YooKassaConfig` interface: `{ shopId: string, secretKey: string }`
+- [x] Implement `createYooKassaValidator()`: GET `https://api.yookassa.ru/v3/me` with HTTP Basic (`shopId:secretKey`)
+- [x] 10s timeout via AbortController
+- [x] Return `ProviderValidationResult`
+- [x] Implement `createFounderProofYooKassaValidator()` -- deterministic success
 
 ### Task 4: Create Sentry validator
 File: `apps/api/src/lib/connectors/sentry.ts`
