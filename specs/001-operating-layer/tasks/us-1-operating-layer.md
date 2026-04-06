@@ -125,7 +125,7 @@ File: `apps/worker/src/processors/sync.ts`
 
 ### Task 8: Register alert routes in app
 File: `apps/api/src/app.ts`
-- [ ] Import alert rule route handlers
-- [ ] Add all alert rule CRUD routes with auth middleware
-- [ ] Add alert triage routes with auth middleware
-- [ ] Wire `AlertRuleRuntime` with db instance
+- [x] Import alert rule route handlers
+- [x] Add all alert rule CRUD routes with auth middleware
+- [x] Add alert triage routes with auth middleware
+- [x] Wire `AlertRuleRuntime` with db instance
