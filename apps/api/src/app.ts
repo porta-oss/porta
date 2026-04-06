@@ -43,6 +43,12 @@ import { loadLatestInsight } from "./lib/startup-insight";
 import type { TaskSyncQueueProducer } from "./lib/tasks/queue";
 import { createTaskSyncQueueProducer } from "./lib/tasks/queue";
 import {
+  handleCreateAlertRule,
+  handleDeleteAlertRule,
+  handleListAlertRules,
+  handleUpdateAlertRule,
+} from "./routes/alert-rule";
+import {
   type ConnectorRuntime,
   handleCreateConnector,
   handleDeleteConnector,
@@ -1552,6 +1558,118 @@ export async function createApiApp(
           cursor: t.Optional(t.String()),
           limit: t.Optional(t.String()),
         }),
+      }
+    )
+    .post(
+      "/startups/:startupId/alert-rules",
+      async ({ authContext, request, set, params, body }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/alert-rules"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleCreateAlertRule(
+          { db: runtime.db },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          body,
+          set
+        );
+      },
+      {
+        body: t.Object({
+          metricKey: t.String(),
+          condition: t.String(),
+          threshold: t.Number(),
+          severity: t.Optional(t.String()),
+          enabled: t.Optional(t.Boolean()),
+          minDataPoints: t.Optional(t.Number()),
+        }),
+      }
+    )
+    .get(
+      "/startups/:startupId/alert-rules",
+      async ({ authContext, request, set, params }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/alert-rules"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleListAlertRules(
+          { db: runtime.db },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          set
+        );
+      }
+    )
+    .patch(
+      "/startups/:startupId/alert-rules/:ruleId",
+      async ({ authContext, request, set, params, body }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/alert-rules/:ruleId"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleUpdateAlertRule(
+          { db: runtime.db },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          params.ruleId,
+          body,
+          set
+        );
+      },
+      {
+        body: t.Object({
+          threshold: t.Optional(t.Number()),
+          severity: t.Optional(t.String()),
+          enabled: t.Optional(t.Boolean()),
+          minDataPoints: t.Optional(t.Number()),
+          condition: t.Optional(t.String()),
+          metricKey: t.Optional(t.String()),
+        }),
+      }
+    )
+    .delete(
+      "/startups/:startupId/alert-rules/:ruleId",
+      async ({ authContext, request, set, params }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/alert-rules/:ruleId"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleDeleteAlertRule(
+          { db: runtime.db },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          params.ruleId,
+          set
+        );
       }
     )
     .all("/auth", ({ request }) => auth.auth.handler(request))

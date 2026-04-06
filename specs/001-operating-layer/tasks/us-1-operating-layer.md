@@ -98,12 +98,12 @@ File: `apps/api/src/lib/alerts/seeder.ts`
 
 ### Task 5: Implement alert rule CRUD routes
 File: `apps/api/src/routes/alert-rule.ts`
-- [ ] Create `AlertRuleRuntime` interface (db)
-- [ ] `POST /api/startups/:startupId/alert-rules` -- validate input with `AlertRuleSchema`, insert, return 201
-- [ ] Handle unique constraint violation -> 409
-- [ ] `GET /api/startups/:startupId/alert-rules` -- select all rules for startup
-- [ ] `PATCH /api/startups/:startupId/alert-rules/:ruleId` -- partial update
-- [ ] `DELETE /api/startups/:startupId/alert-rules/:ruleId` -- delete (cascades)
+- [x] Create `AlertRuleRuntime` interface (db)
+- [x] `POST /api/startups/:startupId/alert-rules` -- validate input with `AlertRuleSchema`, insert, return 201
+- [x] Handle unique constraint violation -> 409
+- [x] `GET /api/startups/:startupId/alert-rules` -- select all rules for startup
+- [x] `PATCH /api/startups/:startupId/alert-rules/:ruleId` -- partial update
+- [x] `DELETE /api/startups/:startupId/alert-rules/:ruleId` -- delete (cascades)
 
 ### Task 6: Implement alert triage routes
 File: `apps/api/src/routes/alert-rule.ts` (same file)
