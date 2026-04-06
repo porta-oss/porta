@@ -90,11 +90,11 @@ File: `apps/api/src/lib/alerts/evaluator.ts`
 
 ### Task 4: Implement default alert rule seeder
 File: `apps/api/src/lib/alerts/seeder.ts`
-- [ ] Create `seedDefaultAlerts(startupId, availableMetricKeys, db)` async function
-- [ ] Check if startup already has alert rules (skip if any exist)
-- [ ] For each default rule config (mrr `drop_wow_pct` 20% critical, active_users `drop_wow_pct` 25% high, etc.)
-- [ ] Only seed if `metricKey` is in `availableMetricKeys`
-- [ ] Insert `alert_rule` rows via Drizzle
+- [x] Create `seedDefaultAlerts(startupId, availableMetricKeys, db)` async function
+- [x] Check if startup already has alert rules (skip if any exist)
+- [x] For each default rule config (mrr `drop_wow_pct` 20% critical, active_users `drop_wow_pct` 25% high, etc.)
+- [x] Only seed if `metricKey` is in `availableMetricKeys`
+- [x] Insert `alert_rule` rows via Drizzle
 
 ### Task 5: Implement alert rule CRUD routes
 File: `apps/api/src/routes/alert-rule.ts`
