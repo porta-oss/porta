@@ -17,6 +17,7 @@ import {
   createLinearIssueClient,
   createTaskSyncProcessor,
 } from "./processors/task-sync";
+import { createWebhookDeliveryProcessor } from "./processors/webhook";
 import {
   createFounderProofSyncRouter,
   createProviderSyncRouter,
@@ -26,6 +27,7 @@ import {
   createEventPurgeWorker,
   createSyncWorker,
   createTaskSyncWorker,
+  createWebhookWorker,
 } from "./queues";
 import {
   createAlertRepository,
@@ -279,6 +281,41 @@ async function main() {
   );
   log.info("event-purge daily schedule registered", { cron: "0 3 * * *" });
 
+  // ---------------------------------------------------------------------------
+  // Webhook delivery worker (outbound webhook events with circuit breaker)
+  // ---------------------------------------------------------------------------
+
+  const webhookProcessor = createWebhookDeliveryProcessor({
+    db: db as unknown as Parameters<
+      typeof createWebhookDeliveryProcessor
+    >[0]["db"],
+    pool,
+    log,
+  });
+  const webhookWorker = createWebhookWorker(env.redisUrl, webhookProcessor);
+
+  webhookWorker.on("ready", () => {
+    log.info("webhook worker ready", { queue: "webhook", concurrency: 5 });
+  });
+
+  webhookWorker.on("failed", (job: unknown, err: Error) => {
+    const j = job as Record<string, unknown> | undefined;
+    const data = j?.data as Record<string, unknown> | undefined;
+    log.error("webhook job failed", {
+      jobId: j?.id,
+      deliveryId: data?.deliveryId,
+      webhookConfigId: data?.webhookConfigId,
+      attempt: j?.attemptsMade,
+      error: err.message,
+    });
+  });
+
+  webhookWorker.on("error", (err: Error) => {
+    log.error("webhook worker error", { error: err.message });
+  });
+
+  log.info("webhook delivery worker started");
+
   // Graceful shutdown
   const shutdown = async (signal: string) => {
     log.info(`received ${signal}, shutting down`);
@@ -292,6 +329,7 @@ async function main() {
     }
     await eventPurgeWorker.close();
     await eventPurgeQueue.close();
+    await webhookWorker.close();
     await pool.end();
     log.info("worker stopped");
     process.exit(0);

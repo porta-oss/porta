@@ -83,14 +83,14 @@ File: `apps/api/src/routes/webhook-config.ts`
 
 ### Task 4: Implement webhook delivery processor
 File: `apps/worker/src/processors/webhook.ts`
-- [ ] Create processor for `WEBHOOK_QUEUE`
-- [ ] Job payload: `{ webhookConfigId, eventType, eventPayload, startupId, deliveryId }`
-- [ ] Load `webhook_config`, call `deliverWebhook`
-- [ ] On success: reset `consecutive_failures` to 0, log `webhook.delivered` event
-- [ ] On failure: increment `consecutive_failures`, log `webhook.failed` event
-- [ ] Circuit breaker: if `consecutive_failures >= 10`, set `enabled=false`, set `circuit_broken_at`
-- [ ] BullMQ retry config: attempts 4, backoff exponential (60000, 300000, 900000, 3600000)
-- [ ] Dead-letter queue for final failures
+- [x] Create processor for `WEBHOOK_QUEUE`
+- [x] Job payload: `{ webhookConfigId, eventType, eventPayload, startupId, deliveryId }`
+- [x] Load `webhook_config`, call `deliverWebhook`
+- [x] On success: reset `consecutive_failures` to 0, log `webhook.delivered` event
+- [x] On failure: increment `consecutive_failures`, log `webhook.failed` event
+- [x] Circuit breaker: if `consecutive_failures >= 10`, set `enabled=false`, set `circuit_broken_at`
+- [x] BullMQ retry config: attempts 4, backoff exponential (60000, 300000, 900000, 3600000)
+- [x] Dead-letter queue for final failures
 
 ### Task 5: Integrate webhook dispatch into alert pipeline
 File: `apps/worker/src/processors/sync.ts`
