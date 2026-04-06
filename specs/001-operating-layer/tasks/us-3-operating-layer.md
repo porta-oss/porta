@@ -98,14 +98,14 @@ File: `apps/api/src/routes/api-key.ts`
 
 ### Task 6: Implement 8 MCP tool handlers
 File: `apps/api/src/services/mcp-tools.ts`
-- [ ] Implement `getMetrics(startupId, filters, db)`: query `health_snapshot` universal metrics + `custom_metric` table, merge, filter by keys/category
-- [ ] Implement `getAlerts(startupId?, status?, db)`: query `alert` table sorted by severity then `firedAt` DESC
-- [ ] Implement `getAtRiskCustomers(startupId, db)`: query at-risk data (from existing insight/customer data)
-- [ ] Implement `getActivityLog(startupId?, eventTypes?, cursor?, limit?, db)`: delegate to event log query logic
-- [ ] Implement `getPortfolioSummary(workspaceId, db)`: query all startups with metrics, load latest AI synthesis if available
-- [ ] Implement `createTask(startupId, title, description?, priority?, db)`: insert `internal_task`, enqueue Linear sync
-- [ ] Implement `snoozeAlert(alertId, duration?, db)`: update alert status, emit event
-- [ ] Implement `triggerSync(startupId, connectorId?, db)`: enqueue sync jobs
+- [x] Implement `getMetrics(startupId, filters, db)`: query `health_snapshot` universal metrics + `custom_metric` table, merge, filter by keys/category
+- [x] Implement `getAlerts(startupId?, status?, db)`: query `alert` table sorted by severity then `firedAt` DESC
+- [x] Implement `getAtRiskCustomers(startupId, db)`: query at-risk data (from existing insight/customer data)
+- [x] Implement `getActivityLog(startupId?, eventTypes?, cursor?, limit?, db)`: delegate to event log query logic
+- [x] Implement `getPortfolioSummary(workspaceId, db)`: query all startups with metrics, load latest AI synthesis if available
+- [x] Implement `createTask(startupId, title, description?, priority?, db)`: insert `internal_task`, enqueue Linear sync
+- [x] Implement `snoozeAlert(alertId, duration?, db)`: update alert status, emit event
+- [x] Implement `triggerSync(startupId, connectorId?, db)`: enqueue sync jobs
 
 ### Task 7: Implement MCP REST routes
 File: `apps/api/src/routes/mcp-rest.ts`
