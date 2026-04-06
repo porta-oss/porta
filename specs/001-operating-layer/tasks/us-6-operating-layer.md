@@ -95,12 +95,12 @@ File: `apps/web/src/components/comparison-matrix.tsx`
 
 ### Task 7: Create AI synthesis card component
 File: `apps/web/src/components/ai-synthesis-card.tsx`
-- [ ] Display AI-generated cross-startup analysis text (markdown rendered)
-- [ ] "Synthesized at" timestamp with relative time
-- [ ] Loading state with skeleton (while AI generates)
-- [ ] Empty state: "Add 2+ startups for cross-portfolio analysis"
-- [ ] Subtle card styling with AI indicator icon
-- [ ] Stale indicator if synthesis is >7 days old
+- [x] Display AI-generated cross-startup analysis text (markdown rendered)
+- [x] "Synthesized at" timestamp with relative time
+- [x] Loading state with skeleton (while AI generates)
+- [x] Empty state: "Add 2+ startups for cross-portfolio analysis"
+- [x] Subtle card styling with AI indicator icon
+- [x] Stale indicator if synthesis is >7 days old
 
 ### Task 8: Create system status sidebar section
 File: `apps/web/src/components/system-status-section.tsx`
