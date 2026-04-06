@@ -119,7 +119,7 @@ export function AlertRuleRow({
 
   return (
     <div
-      className={`flex items-center gap-3 rounded-md border px-3 py-2 text-sm ${rule.enabled ? "" : "opacity-60"} ${className ?? ""}`}
+      className={`flex min-h-[44px] items-center gap-3 rounded-md border px-3 py-2 text-sm ${rule.enabled ? "" : "opacity-60"} ${className ?? ""}`}
       data-testid="alert-rule-row"
     >
       <button

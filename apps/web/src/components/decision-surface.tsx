@@ -258,9 +258,10 @@ function AlertCard({
           ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           {onAck ? (
             <Button
+              className="min-h-[44px]"
               disabled={triaging}
               onClick={() => onAck(alert.id)}
               size="sm"
@@ -274,7 +275,7 @@ function AlertCard({
           {onSnooze ? (
             <div className="flex items-center gap-1">
               <Select onValueChange={setSnoozeDuration} value={snoozeDuration}>
-                <SelectTrigger size="sm">
+                <SelectTrigger className="min-h-[44px]" size="sm">
                   <Clock className="size-3.5" />
                   <SelectValue />
                 </SelectTrigger>
@@ -287,6 +288,7 @@ function AlertCard({
                 </SelectContent>
               </Select>
               <Button
+                className="min-h-[44px]"
                 disabled={triaging}
                 onClick={() =>
                   onSnooze(alert.id, Number.parseInt(snoozeDuration, 10))
@@ -301,6 +303,7 @@ function AlertCard({
 
           {onInvestigate ? (
             <Button
+              className="min-h-[44px]"
               onClick={() => onInvestigate(alert.id)}
               size="sm"
               variant="secondary"

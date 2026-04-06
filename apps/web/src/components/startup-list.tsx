@@ -126,7 +126,7 @@ export function StartupList({
                   <button
                     aria-pressed={isActive}
                     className={cn(
-                      "flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors",
+                      "flex min-h-[44px] w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors",
                       isActive ? startupRowToneClass(tone) : "hover:bg-muted/50"
                     )}
                     data-health-indicator={indicatorVariant}

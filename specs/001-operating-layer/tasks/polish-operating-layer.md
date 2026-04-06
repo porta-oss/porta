@@ -35,13 +35,13 @@ File: `apps/web/src/routes/_authenticated/dashboard.tsx`
 
 ### Task 2: Implement responsive layout
 File: `apps/web/src/routes/_authenticated/dashboard.tsx`
-- [ ] Mobile (<768px): move mode switcher tabs to fixed bottom bar
-- [ ] Mobile: collapsible sidebar (hamburger menu trigger)
-- [ ] Mobile Compare mode: stacked cards layout instead of horizontal matrix table
-- [ ] Tablet (768-1024px): compact sidebar with icon-only mode
-- [ ] Ensure all touch targets are minimum 44x44px (buttons, tabs, toggle switches)
-- [ ] Test decision surface action buttons stack vertically on mobile
-- [ ] Test event filter bar wraps gracefully on narrow screens
+- [x] Mobile (<768px): move mode switcher tabs to fixed bottom bar
+- [x] Mobile: collapsible sidebar (hamburger menu trigger)
+- [x] Mobile Compare mode: stacked cards layout instead of horizontal matrix table
+- [x] Tablet (768-1024px): compact sidebar with icon-only mode
+- [x] Ensure all touch targets are minimum 44x44px (buttons, tabs, toggle switches)
+- [x] Test decision surface action buttons stack vertically on mobile
+- [x] Test event filter bar wraps gracefully on narrow screens
 
 ### Task 3: Run Biome/Ultracite compliance
 - [ ] Run `pnpm check` across all workspaces

@@ -27,6 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useIsMobile } from "@/hooks/use-media-query";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -204,7 +205,7 @@ function SortIndicator({
       className="ml-1"
       role="img"
     >
-      {direction === "asc" ? "↑" : "↓"}
+      {direction === "asc" ? "\u2191" : "\u2193"}
     </span>
   );
 }
@@ -231,7 +232,7 @@ function SourceDetail({
               <span className="text-sm" key={key}>
                 <span className="text-muted-foreground">{key}:</span>{" "}
                 <span className="tabular-nums">
-                  {value === null ? "—" : String(value)}
+                  {value === null ? "\u2014" : String(value)}
                 </span>
               </span>
             ))}
@@ -243,10 +244,87 @@ function SourceDetail({
 }
 
 // ---------------------------------------------------------------------------
+// Mobile card view
+// ---------------------------------------------------------------------------
+
+function MobileComparisonCard({ startup }: { startup: StartupComparison }) {
+  const [expanded, setExpanded] = useState(false);
+  const health = HEALTH_CONFIG[startup.healthState];
+  const hasSourceMetrics =
+    startup.sourceMetrics && Object.keys(startup.sourceMetrics).length > 0;
+
+  return (
+    <Card>
+      <CardContent className="grid gap-3 pt-5">
+        <div className="flex items-center justify-between">
+          <span className="font-medium">{startup.name}</span>
+          <Badge variant={health.variant}>{health.label}</Badge>
+        </div>
+
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+          {UNIVERSAL_METRIC_KEYS.map((key) => {
+            const value = startup.metrics[key];
+            const prevValue = startup.previousMetrics?.[key];
+            const delta = computeDelta(value, prevValue);
+
+            return (
+              <div key={key}>
+                <p className="text-muted-foreground text-xs">
+                  {METRIC_LABELS[key]}
+                </p>
+                <p className="text-sm tabular-nums">
+                  {value !== null && value !== undefined ? (
+                    <span>
+                      {formatMetricValue(key, value)}{" "}
+                      <DeltaIndicator direction={delta} />
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">{"\u2014"}</span>
+                  )}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+
+        {hasSourceMetrics ? (
+          <>
+            <button
+              aria-expanded={expanded}
+              className="flex min-h-[44px] items-center gap-1 text-muted-foreground text-xs hover:text-foreground"
+              onClick={() => setExpanded((prev) => !prev)}
+              type="button"
+            >
+              {expanded ? (
+                <ChevronDown className="size-3.5" />
+              ) : (
+                <ChevronRight className="size-3.5" />
+              )}
+              Source details
+            </button>
+            {expanded ? (
+              <SourceDetail
+                sourceMetrics={
+                  startup.sourceMetrics as Record<
+                    string,
+                    Record<string, number | null>
+                  >
+                }
+              />
+            ) : null}
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
 export function ComparisonMatrix({ startups }: ComparisonMatrixProps) {
+  const isMobile = useIsMobile();
   const [sort, setSort] = useState<SortState>({
     key: "name",
     direction: "asc",
@@ -267,6 +345,17 @@ export function ComparisonMatrix({ startups }: ComparisonMatrixProps) {
   }
 
   const sorted = sortStartups(startups, sort);
+
+  // Mobile: stacked cards layout
+  if (isMobile) {
+    return (
+      <section aria-label="Startup comparison" className="grid gap-3">
+        {sorted.map((startup) => (
+          <MobileComparisonCard key={startup.id} startup={startup} />
+        ))}
+      </section>
+    );
+  }
 
   function handleSort(key: UniversalMetricKey | "name") {
     setSort((prev) => {
@@ -388,7 +477,9 @@ export function ComparisonMatrix({ startups }: ComparisonMatrixProps) {
                                 <DeltaIndicator direction={delta} />
                               </span>
                             ) : (
-                              <span className="text-muted-foreground">—</span>
+                              <span className="text-muted-foreground">
+                                {"\u2014"}
+                              </span>
                             )}
                           </div>
                         );

@@ -119,7 +119,7 @@ export function EventFilter({ onApply }: EventFilterProps) {
     <div className="flex flex-col gap-3" data-testid="event-filter">
       {/* Category checkboxes */}
       <div className="flex flex-wrap items-center gap-2">
-        <label className="flex cursor-pointer items-center gap-1.5 rounded border border-input px-2 py-1 text-xs transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5">
+        <label className="flex cursor-pointer items-center gap-1.5 rounded border border-input px-2 py-2 text-xs transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5 md:py-1">
           <input
             checked={showAll}
             className="accent-primary"
@@ -139,7 +139,7 @@ export function EventFilter({ onApply }: EventFilterProps) {
           return (
             <label
               className={cn(
-                "flex cursor-pointer items-center gap-1.5 rounded border border-input px-2 py-1 text-xs transition-colors",
+                "flex cursor-pointer items-center gap-1.5 rounded border border-input px-2 py-2 text-xs transition-colors md:py-1",
                 allChecked && "border-primary bg-primary/5",
                 someChecked && "border-primary/50 bg-primary/[0.02]"
               )}
@@ -183,7 +183,7 @@ export function EventFilter({ onApply }: EventFilterProps) {
         <div className="flex items-center gap-1.5">
           <span className="text-muted-foreground text-xs">From</span>
           <Input
-            className="h-7 w-32 px-2 text-xs"
+            className="h-9 w-32 px-2 text-xs md:h-7"
             data-testid="date-from"
             onChange={(e) => setDateFrom(e.target.value)}
             type="date"
@@ -193,7 +193,7 @@ export function EventFilter({ onApply }: EventFilterProps) {
         <div className="flex items-center gap-1.5">
           <span className="text-muted-foreground text-xs">To</span>
           <Input
-            className="h-7 w-32 px-2 text-xs"
+            className="h-9 w-32 px-2 text-xs md:h-7"
             data-testid="date-to"
             onChange={(e) => setDateTo(e.target.value)}
             type="date"
@@ -202,6 +202,7 @@ export function EventFilter({ onApply }: EventFilterProps) {
         </div>
 
         <Button
+          className="min-h-[44px] md:min-h-0"
           data-testid="apply-filters"
           onClick={handleApply}
           size="xs"
@@ -210,6 +211,7 @@ export function EventFilter({ onApply }: EventFilterProps) {
           Apply
         </Button>
         <Button
+          className="min-h-[44px] md:min-h-0"
           data-testid="reset-filters"
           onClick={handleReset}
           size="xs"

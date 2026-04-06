@@ -58,23 +58,55 @@ export function ModeSwitcher({
   }, [onChange]);
 
   return (
-    <Tabs
-      className={cn("w-auto", className)}
-      onValueChange={(v) => onChange(v as DashboardMode)}
-      value={value}
-    >
-      <TabsList role="tablist">
-        {modes.map((mode) => (
-          <TabsTrigger key={mode.value} role="tab" value={mode.value}>
-            <mode.icon className="size-4" />
-            {mode.label}
-            <kbd className="ml-1 hidden rounded bg-muted-foreground/10 px-1 font-mono text-[10px] text-muted-foreground md:inline-block">
-              {"\u2318"}
-              {mode.shortcut}
-            </kbd>
-          </TabsTrigger>
-        ))}
-      </TabsList>
-    </Tabs>
+    <>
+      {/* Desktop/tablet: inline tabs */}
+      <Tabs
+        className={cn("hidden w-auto md:block", className)}
+        onValueChange={(v) => onChange(v as DashboardMode)}
+        value={value}
+      >
+        <TabsList role="tablist">
+          {modes.map((mode) => (
+            <TabsTrigger key={mode.value} role="tab" value={mode.value}>
+              <mode.icon className="size-4" />
+              {mode.label}
+              <kbd className="ml-1 hidden rounded bg-muted-foreground/10 px-1 font-mono text-[10px] text-muted-foreground md:inline-block">
+                {"\u2318"}
+                {mode.shortcut}
+              </kbd>
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
+      {/* Mobile: fixed bottom bar */}
+      <nav
+        aria-label="Dashboard mode"
+        className="fixed inset-x-0 bottom-0 z-30 border-t bg-background md:hidden"
+      >
+        <div className="flex justify-around">
+          {modes.map((mode) => {
+            const isActive = value === mode.value;
+            return (
+              <button
+                aria-pressed={isActive}
+                className={cn(
+                  "flex min-h-[44px] flex-1 flex-col items-center justify-center gap-0.5 py-2 text-xs transition-colors",
+                  isActive
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                key={mode.value}
+                onClick={() => onChange(mode.value)}
+                type="button"
+              >
+                <mode.icon className="size-5" />
+                <span>{mode.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+    </>
   );
 }

@@ -2649,7 +2649,7 @@ export function DashboardPage({
 
             {mode === "journal" ? (
               <section aria-label="Journal mode" className="grid gap-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <EventFilter onApply={handleJournalFilterApply} />
                   <DataFreshnessBadge
                     fetchedAt={journalFetchedAt}
