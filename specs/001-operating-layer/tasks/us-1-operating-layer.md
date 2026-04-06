@@ -107,13 +107,13 @@ File: `apps/api/src/routes/alert-rule.ts`
 
 ### Task 6: Implement alert triage routes
 File: `apps/api/src/routes/alert-rule.ts` (same file)
-- [ ] `GET /api/startups/:startupId/alerts` -- list with optional status filter
-- [ ] `POST /api/alerts/:alertId/triage` -- validate action (`ack`/`snooze`/`dismiss`)
-- [ ] For ack: set `status='acknowledged'`
-- [ ] For snooze: set `status='snoozed'`, `snoozedUntil = now + hours` (default 24, max 168)
-- [ ] For dismiss: set `status='dismissed'`
-- [ ] Emit `alert.ack`/`alert.snoozed`/`alert.dismissed` event
-- [ ] `POST /api/startups/:startupId/alerts/bulk-triage` -- apply action to multiple alerts (`alertIds` or all active)
+- [x] `GET /api/startups/:startupId/alerts` -- list with optional status filter
+- [x] `POST /api/alerts/:alertId/triage` -- validate action (`ack`/`snooze`/`dismiss`)
+- [x] For ack: set `status='acknowledged'`
+- [x] For snooze: set `status='snoozed'`, `snoozedUntil = now + hours` (default 24, max 168)
+- [x] For dismiss: set `status='dismissed'`
+- [x] Emit `alert.ack`/`alert.snoozed`/`alert.dismissed` event
+- [x] `POST /api/startups/:startupId/alerts/bulk-triage` -- apply action to multiple alerts (`alertIds` or all active)
 
 ### Task 7: Integrate alert evaluation into post-sync pipeline
 File: `apps/worker/src/processors/sync.ts`

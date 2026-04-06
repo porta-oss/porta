@@ -43,9 +43,12 @@ import { loadLatestInsight } from "./lib/startup-insight";
 import type { TaskSyncQueueProducer } from "./lib/tasks/queue";
 import { createTaskSyncQueueProducer } from "./lib/tasks/queue";
 import {
+  handleBulkTriageAlerts,
   handleCreateAlertRule,
   handleDeleteAlertRule,
   handleListAlertRules,
+  handleListAlerts,
+  handleTriageAlert,
   handleUpdateAlertRule,
 } from "./routes/alert-rule";
 import {
@@ -1670,6 +1673,93 @@ export async function createApiApp(
           params.ruleId,
           set
         );
+      }
+    )
+    .get(
+      "/startups/:startupId/alerts",
+      async ({ authContext, request, set, params, query }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/alerts"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleListAlerts(
+          { db: runtime.db },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          query.status,
+          set
+        );
+      },
+      {
+        query: t.Object({
+          status: t.Optional(t.String()),
+        }),
+      }
+    )
+    .post(
+      "/alerts/:alertId/triage",
+      async ({ authContext, request, set, params, body }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/alerts/:alertId/triage"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleTriageAlert(
+          { db: runtime.db },
+          { workspace: activeWorkspace.workspace },
+          params.alertId,
+          body,
+          set
+        );
+      },
+      {
+        body: t.Object({
+          action: t.String(),
+          snoozeDurationHours: t.Optional(t.Number()),
+        }),
+      }
+    )
+    .post(
+      "/startups/:startupId/alerts/bulk-triage",
+      async ({ authContext, request, set, params, body }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/startups/:startupId/alerts/bulk-triage"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleBulkTriageAlerts(
+          { db: runtime.db },
+          { workspace: activeWorkspace.workspace },
+          params.startupId,
+          body,
+          set
+        );
+      },
+      {
+        body: t.Object({
+          action: t.String(),
+          alertIds: t.Optional(t.Array(t.String())),
+          snoozeDurationHours: t.Optional(t.Number()),
+        }),
       }
     )
     .all("/auth", ({ request }) => auth.auth.handler(request))
