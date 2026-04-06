@@ -70,10 +70,10 @@ File: `apps/web/src/components/event-log-entry.tsx`
 
 ### Task 4: Create day separator component
 File: `apps/web/src/components/day-separator.tsx`
-- [ ] Date header with formatted date (e.g., "Monday, April 3")
-- [ ] Horizontal rule styling with date centered
-- [ ] "Today" and "Yesterday" labels for recent dates
-- [ ] Muted text color for separator styling
+- [x] Date header with formatted date (e.g., "Monday, April 3")
+- [x] Horizontal rule styling with date centered
+- [x] "Today" and "Yesterday" labels for recent dates
+- [x] Muted text color for separator styling
 
 ### Task 5: Create event filter bar component
 File: `apps/web/src/components/event-filter.tsx`
