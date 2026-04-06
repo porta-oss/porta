@@ -92,9 +92,9 @@ File: `apps/api/src/lib/mcp/auth.ts` (same file)
 
 ### Task 5: Implement API key management routes
 File: `apps/api/src/routes/api-key.ts`
-- [ ] `POST /api/settings/api-keys` -- validate name + scope, generate key (`porta_{scope}_{32 random}`), hash with SHA-256, store hash + prefix (first 8 chars), return full key in response
-- [ ] `GET /api/settings/api-keys` -- list non-revoked keys for workspace (id, name, prefix, scope, lastUsedAt, createdAt)
-- [ ] `DELETE /api/settings/api-keys/:keyId` -- set `revoked_at = now()`
+- [x] `POST /api/settings/api-keys` -- validate name + scope, generate key (`porta_{scope}_{32 random}`), hash with SHA-256, store hash + prefix (first 8 chars), return full key in response
+- [x] `GET /api/settings/api-keys` -- list non-revoked keys for workspace (id, name, prefix, scope, lastUsedAt, createdAt)
+- [x] `DELETE /api/settings/api-keys/:keyId` -- set `revoked_at = now()`
 
 ### Task 6: Implement 8 MCP tool handlers
 File: `apps/api/src/services/mcp-tools.ts`

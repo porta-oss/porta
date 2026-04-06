@@ -52,6 +52,11 @@ import {
   handleUpdateAlertRule,
 } from "./routes/alert-rule";
 import {
+  handleCreateApiKey,
+  handleListApiKeys,
+  handleRevokeApiKey,
+} from "./routes/api-key";
+import {
   type ConnectorRuntime,
   handleCreateConnector,
   handleDeleteConnector,
@@ -1871,6 +1876,64 @@ export async function createApiApp(
           { db: runtime.db, resolver: runtime.webhookResolver },
           { workspace: activeWorkspace.workspace },
           params.startupId,
+          set
+        );
+      }
+    )
+    .post("/settings/api-keys", async ({ authContext, body, request, set }) => {
+      const activeWorkspace = await resolveActiveWorkspace(
+        runtime,
+        request,
+        authContext,
+        set,
+        "/api/settings/api-keys"
+      );
+      if ("error" in activeWorkspace) {
+        return activeWorkspace;
+      }
+
+      return handleCreateApiKey(
+        { db: runtime.db },
+        { workspace: activeWorkspace.workspace },
+        body as { name: string; scope: string },
+        set
+      );
+    })
+    .get("/settings/api-keys", async ({ authContext, request, set }) => {
+      const activeWorkspace = await resolveActiveWorkspace(
+        runtime,
+        request,
+        authContext,
+        set,
+        "/api/settings/api-keys"
+      );
+      if ("error" in activeWorkspace) {
+        return activeWorkspace;
+      }
+
+      return handleListApiKeys(
+        { db: runtime.db },
+        { workspace: activeWorkspace.workspace }
+      );
+    })
+    .delete(
+      "/settings/api-keys/:keyId",
+      async ({ authContext, params, request, set }) => {
+        const activeWorkspace = await resolveActiveWorkspace(
+          runtime,
+          request,
+          authContext,
+          set,
+          "/api/settings/api-keys/:keyId"
+        );
+        if ("error" in activeWorkspace) {
+          return activeWorkspace;
+        }
+
+        return handleRevokeApiKey(
+          { db: runtime.db },
+          { workspace: activeWorkspace.workspace },
+          params.keyId,
           set
         );
       }
